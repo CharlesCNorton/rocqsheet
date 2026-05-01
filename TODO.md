@@ -1,17 +1,10 @@
 # Rocqsheet TODO
 
-Functionality gaps and the theorems that would pair with each, if they
-were closed.  Items are grouped by area; within each area, ordered
-roughly by how visible the gap is to a real user.
-
-The format for each item is:
+Functionality gaps and the theorems that would pair with each, if
+they were closed.  Each item:
 
 > **Feature.** What it adds.
 > *Theorems:* the proof obligations the addition would create.
-
-UI-only items (formatting, keyboard nav) carry no kernel theorems;
-they're called out so the list is honest about scope rather than
-complete.
 
 ---
 
