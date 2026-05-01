@@ -19,6 +19,7 @@ From Stdlib Require Import List BinInt PArray Lia.
 From Stdlib.Numbers.Cyclic.Int63 Require Import Uint63.
 From Corelib Require Import PrimInt63 Uint63Axioms.
 From Corelib Require PrimFloat FloatAxioms.
+From Corelib Require Import PrimString.
 From Crane Require Import Mapping.NatIntStd Mapping.ZInt.
 From Crane Require Extraction.
 Import ListNotations.
@@ -82,12 +83,17 @@ Inductive Expr : Type :=
   | EFAdd  : Expr -> Expr -> Expr
   | EFSub  : Expr -> Expr -> Expr
   | EFMul  : Expr -> Expr -> Expr
-  | EFDiv  : Expr -> Expr -> Expr.
+  | EFDiv  : Expr -> Expr -> Expr
+  | EStr   : PrimString.string -> Expr
+  | EConcat: Expr -> Expr -> Expr
+  | ELen   : Expr -> Expr
+  | ESubstr: Expr -> Expr -> Expr -> Expr.
 
 Inductive Cell : Type :=
   | CEmpty : Cell
   | CLit   : Z -> Cell
   | CFloat : PrimFloat.float -> Cell
+  | CStr   : PrimString.string -> Cell
   | CForm  : Expr -> Cell.
 
 Definition Sheet : Type := PrimArray.array Cell.
@@ -121,6 +127,7 @@ Definition cell_row_of (r : CellRef) : int :=
 Inductive EvalResult : Type :=
   | EVal  : Z -> EvalResult
   | EFVal : PrimFloat.float -> EvalResult
+  | EValS : PrimString.string -> EvalResult
   | EErr  : EvalResult
   | EFuel : EvalResult.
 
@@ -151,6 +158,19 @@ Definition combine_binf (op : PrimFloat.float -> PrimFloat.float -> EvalResult)
   | _, _          => EErr
   end.
 
+(* Same shape, for two [string] operands.  Other operand types here
+   degrade to [EErr]. *)
+Definition combine_bins (op : PrimString.string -> PrimString.string -> EvalResult)
+                        (ra rb : EvalResult) : EvalResult :=
+  match ra, rb with
+  | EFuel, _      => EFuel
+  | _, EFuel      => EFuel
+  | EErr, _       => EErr
+  | _, EErr       => EErr
+  | EValS sa, EValS sb => op sa sb
+  | _, _          => EErr
+  end.
+
 Fixpoint eval_expr (fuel : nat) (visited : list CellRef) (s : Sheet)
                    (e : Expr) : EvalResult :=
   match fuel with
@@ -166,6 +186,7 @@ Fixpoint eval_expr (fuel : nat) (visited : list CellRef) (s : Sheet)
         | CEmpty   => EVal 0%Z
         | CLit n   => EVal n
         | CFloat f => EFVal f
+        | CStr s'  => EValS s'
         | CForm e' => eval_expr fuel' (r :: visited) s e'
         end
     | EAdd a b =>
@@ -199,6 +220,7 @@ Fixpoint eval_expr (fuel : nat) (visited : list CellRef) (s : Sheet)
       | EVal 0%Z => eval_expr fuel' visited s e
       | EVal _   => eval_expr fuel' visited s t
       | EFVal _  => eval_expr fuel' visited s t
+      | EValS _  => eval_expr fuel' visited s t
       | EErr     => EErr
       | EFuel    => EFuel
       end
@@ -263,6 +285,7 @@ Fixpoint eval_expr (fuel : nat) (visited : list CellRef) (s : Sheet)
       match eval_expr fuel' visited s a with
       | EVal v  => EVal v
       | EFVal f => EFVal f
+      | EValS s' => EValS s'
       | EErr    => eval_expr fuel' visited s fb
       | EFuel   => EFuel
       end
@@ -278,6 +301,31 @@ Fixpoint eval_expr (fuel : nat) (visited : list CellRef) (s : Sheet)
     | EFDiv a b =>
       combine_binf (fun fa fb => EFVal (PrimFloat.div fa fb))
         (eval_expr fuel' visited s a) (eval_expr fuel' visited s b)
+    | EStr s' => EValS s'
+    | EConcat a b =>
+      combine_bins (fun sa sb => EValS (PrimString.cat sa sb))
+        (eval_expr fuel' visited s a) (eval_expr fuel' visited s b)
+    | ELen a =>
+      match eval_expr fuel' visited s a with
+      | EValS sv => EVal (Uint63.to_Z (PrimString.length sv))
+      | EErr     => EErr
+      | EFuel    => EFuel
+      | _        => EErr
+      end
+    | ESubstr str start len =>
+      match eval_expr fuel' visited s str,
+            eval_expr fuel' visited s start,
+            eval_expr fuel' visited s len with
+      | EFuel, _, _ => EFuel
+      | _, EFuel, _ => EFuel
+      | _, _, EFuel => EFuel
+      | EErr, _, _ => EErr
+      | _, EErr, _ => EErr
+      | _, _, EErr => EErr
+      | EValS sv, EVal startv, EVal lenv =>
+          EValS (PrimString.sub sv (Uint63.of_Z startv) (Uint63.of_Z lenv))
+      | _, _, _ => EErr
+      end
     end
   end
 
@@ -292,6 +340,7 @@ with eval_at_ref (fuel : nat) (visited : list CellRef) (s : Sheet)
       | CEmpty   => EVal 0%Z
       | CLit n   => EVal n
       | CFloat f => EFVal f
+      | CStr s'  => EValS s'
       | CForm e  => eval_expr fuel' (r :: visited) s e
       end
   end
@@ -307,6 +356,7 @@ with sum_cols (fuel : nat) (visited : list CellRef) (s : Sheet)
       | EVal v  => sum_cols fuel' visited s
                      (PrimInt63.add col 1) hc row (Z.add acc v)
       | EFVal _ => EErr
+      | EValS _ => EErr
       | EErr    => EErr
       | EFuel   => EFuel
       end
@@ -323,6 +373,7 @@ with sum_rows (fuel : nat) (visited : list CellRef) (s : Sheet)
       | EVal acc' => sum_rows fuel' visited s lc hc
                        (PrimInt63.add row 1) hr acc'
       | EFVal _   => EErr
+      | EValS _   => EErr
       | EErr      => EErr
       | EFuel     => EFuel
       end
@@ -333,6 +384,7 @@ Definition eval_cell (fuel : nat) (s : Sheet) (r : CellRef) : EvalResult :=
   | CEmpty   => EVal 0%Z
   | CLit n   => EVal n
   | CFloat f => EFVal f
+  | CStr s'  => EValS s'
   | CForm e  => eval_expr fuel (r :: nil) s e
   end.
 
@@ -643,6 +695,33 @@ Proof.
   reflexivity.
 Qed.
 
+Lemma combine_bins_left_not_fuel :
+  forall op ra rb,
+    combine_bins op ra rb <> EFuel ->
+    ra <> EFuel.
+Proof. intros op ra rb H Heq. subst. simpl in H. congruence. Qed.
+
+Lemma combine_bins_right_not_fuel :
+  forall op ra rb,
+    combine_bins op ra rb <> EFuel ->
+    rb <> EFuel.
+Proof.
+  intros op ra rb H Heq. subst. destruct ra; simpl in H; congruence.
+Qed.
+
+Lemma combine_bins_monotone_eq :
+  forall op ra ra' rb rb',
+    (ra <> EFuel -> ra' = ra) ->
+    (rb <> EFuel -> rb' = rb) ->
+    combine_bins op ra rb <> EFuel ->
+    combine_bins op ra' rb' = combine_bins op ra rb.
+Proof.
+  intros op ra ra' rb rb' Ha Hb Hnf.
+  rewrite (Ha (combine_bins_left_not_fuel _ _ _ Hnf)).
+  rewrite (Hb (combine_bins_right_not_fuel _ _ _ Hnf)).
+  reflexivity.
+Qed.
+
 Lemma fuel_monotone_all : forall fuel,
   (forall e fuel' visited s,
      fuel <= fuel' ->
@@ -677,6 +756,8 @@ Proof.
         try (apply combine_bin_monotone_eq; try assumption;
              intros Hr; apply IHe; assumption);
         try (apply combine_binf_monotone_eq; try assumption;
+             intros Hr; apply IHe; assumption);
+        try (apply combine_bins_monotone_eq; try assumption;
              intros Hr; apply IHe; assumption).
       * reflexivity.
       * destruct (mem_cellref c visited); [reflexivity|].
@@ -688,6 +769,10 @@ Proof.
            rewrite Ec.
            destruct z; apply IHe; assumption.
         -- (* EFVal: nonzero/non-NaN takes the then branch. *)
+           rewrite (IHe e1 fuel' visited s Hle') by congruence.
+           rewrite Ec.
+           apply IHe; assumption.
+        -- (* EValS: any string is truthy. *)
            rewrite (IHe e1 fuel' visited s Hle') by congruence.
            rewrite Ec.
            apply IHe; assumption.
@@ -710,6 +795,9 @@ Proof.
            ++ (* EFVal *)
               rewrite (IHs _ _ _ _ _ _ _ _ Hle') by congruence.
               rewrite Esr. reflexivity.
+           ++ (* EValS *)
+              rewrite (IHs _ _ _ _ _ _ _ _ Hle') by congruence.
+              rewrite Esr. reflexivity.
            ++ rewrite (IHs _ _ _ _ _ _ _ _ Hle') by congruence.
               rewrite Esr. reflexivity.
       * (* ECount *)
@@ -721,11 +809,28 @@ Proof.
         -- (* EFVal: passthrough *)
            rewrite (IHe e1 fuel' visited s Hle') by congruence.
            rewrite Ea. reflexivity.
+        -- (* EValS: passthrough *)
+           rewrite (IHe e1 fuel' visited s Hle') by congruence.
+           rewrite Ea. reflexivity.
         -- rewrite (IHe e1 fuel' visited s Hle') by congruence.
            rewrite Ea.
            apply IHe; assumption.
         -- congruence.
       * (* EFloat *) reflexivity.
+      * (* EStr *) reflexivity.
+      * (* ELen *)
+        destruct (eval_expr fuel visited s e) eqn:Ea; try congruence;
+          rewrite (IHe e fuel' visited s Hle') by congruence;
+          rewrite Ea; reflexivity.
+      * (* ESubstr *)
+        destruct (eval_expr fuel visited s e1) eqn:Es;
+        destruct (eval_expr fuel visited s e2) eqn:Estart;
+        destruct (eval_expr fuel visited s e3) eqn:Elen;
+        try congruence;
+        try (rewrite (IHe e1 fuel' visited s Hle') by congruence;
+             rewrite (IHe e2 fuel' visited s Hle') by congruence;
+             rewrite (IHe e3 fuel' visited s Hle') by congruence;
+             rewrite Es, Estart, Elen; reflexivity).
     + (* eval_at_ref *)
       intros r fuel' visited s Hle Hnf.
       destruct fuel' as [|fuel']; [lia|].
@@ -748,6 +853,9 @@ Proof.
       -- (* EFVal *)
          rewrite (IHr (mkRef col row) fuel' visited s Hle') by congruence.
          rewrite Eat. reflexivity.
+      -- (* EValS *)
+         rewrite (IHr (mkRef col row) fuel' visited s Hle') by congruence.
+         rewrite Eat. reflexivity.
       -- rewrite (IHr (mkRef col row) fuel' visited s Hle') by congruence.
          rewrite Eat. reflexivity.
     + (* sum_rows *)
@@ -762,6 +870,9 @@ Proof.
          rewrite Esc.
          apply IHs; assumption.
       -- (* EFVal *)
+         rewrite (IHc lc hc row acc fuel' visited s Hle') by congruence.
+         rewrite Esc. reflexivity.
+      -- (* EValS *)
          rewrite (IHc lc hc row acc fuel' visited s Hle') by congruence.
          rewrite Esc. reflexivity.
       -- rewrite (IHc lc hc row acc fuel' visited s Hle') by congruence.
@@ -1112,6 +1223,62 @@ Theorem eval_float_signed_zero_eqb :
   PrimFloat.eqb (PrimFloat.of_uint63 0%uint63)
                 (PrimFloat.opp (PrimFloat.of_uint63 0%uint63)) = true.
 Proof. vm_compute. reflexivity. Qed.
+
+(* --- String theorems ----------------------------------------------- *)
+
+Theorem eval_str_lit : forall fuel visited s sv,
+  eval_expr (S fuel) visited s (EStr sv) = EValS sv.
+Proof. reflexivity. Qed.
+
+Theorem eval_concat_lit : forall fuel visited s a b,
+  eval_expr (S (S fuel)) visited s (EConcat (EStr a) (EStr b))
+  = EValS (PrimString.cat a b).
+Proof. reflexivity. Qed.
+
+Theorem eval_len_lit : forall fuel visited s sv,
+  eval_expr (S (S fuel)) visited s (ELen (EStr sv))
+  = EVal (Uint63.to_Z (PrimString.length sv)).
+Proof. reflexivity. Qed.
+
+(* len (concat a b) = len a + len b, smoke. *)
+Theorem eval_len_concat_smoke :
+  let a := "ab"%pstring in
+  let b := "cd"%pstring in
+  Uint63.to_Z (PrimString.length (PrimString.cat a b))
+  = (Uint63.to_Z (PrimString.length a) + Uint63.to_Z (PrimString.length b))%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+(* concat_assoc, smoke. *)
+Theorem eval_concat_assoc_smoke :
+  let a := "a"%pstring in
+  let b := "b"%pstring in
+  let c := "c"%pstring in
+  PrimString.cat (PrimString.cat a b) c
+  = PrimString.cat a (PrimString.cat b c).
+Proof. vm_compute. reflexivity. Qed.
+
+(* concat_empty_l, smoke. *)
+Theorem eval_concat_empty_l_smoke :
+  PrimString.cat ""%pstring "x"%pstring = "x"%pstring.
+Proof. vm_compute. reflexivity. Qed.
+
+(* concat_empty_r, smoke. *)
+Theorem eval_concat_empty_r_smoke :
+  PrimString.cat "x"%pstring ""%pstring = "x"%pstring.
+Proof. vm_compute. reflexivity. Qed.
+
+(* substr_full = id, smoke. *)
+Theorem eval_substr_full_smoke :
+  let s := "hello"%pstring in
+  PrimString.sub s 0%uint63 (PrimString.length s) = s.
+Proof. vm_compute. reflexivity. Qed.
+
+(* len_substr_le_len, smoke. *)
+Theorem eval_len_substr_le_len_smoke :
+  (Uint63.to_Z (PrimString.length (PrimString.sub "hello"%pstring
+                                                  1%uint63 3%uint63))
+   <= Uint63.to_Z (PrimString.length "hello"%pstring))%Z.
+Proof. vm_compute. easy. Qed.
 
 End Rocqsheet.
 

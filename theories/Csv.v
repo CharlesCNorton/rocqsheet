@@ -17,6 +17,7 @@ Definition cell_to_csv (c : Cell) : PrimString.string :=
   | CEmpty    => ""
   | CLit n    => string_of_z n
   | CFloat _  => ""
+  | CStr s    => s
   | CForm _   => ""
   end.
 

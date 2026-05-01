@@ -38,6 +38,10 @@ Fixpoint shift_refs (dc dr : int) (e : Expr) : Expr :=
   | EFSub a b => EFSub (shift_refs dc dr a) (shift_refs dc dr b)
   | EFMul a b => EFMul (shift_refs dc dr a) (shift_refs dc dr b)
   | EFDiv a b => EFDiv (shift_refs dc dr a) (shift_refs dc dr b)
+  | EStr s => EStr s
+  | EConcat a b => EConcat (shift_refs dc dr a) (shift_refs dc dr b)
+  | ELen a => ELen (shift_refs dc dr a)
+  | ESubstr a b c => ESubstr (shift_refs dc dr a) (shift_refs dc dr b) (shift_refs dc dr c)
   end.
 
 Theorem shift_ref_zero : forall r, shift_ref 0 0 r = r.

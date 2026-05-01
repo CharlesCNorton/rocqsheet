@@ -33,6 +33,12 @@ Fixpoint replace_int_in_expr (from to : Z) (e : Expr) : Expr :=
   | EFSub a b => EFSub (replace_int_in_expr from to a) (replace_int_in_expr from to b)
   | EFMul a b => EFMul (replace_int_in_expr from to a) (replace_int_in_expr from to b)
   | EFDiv a b => EFDiv (replace_int_in_expr from to a) (replace_int_in_expr from to b)
+  | EStr s => EStr s
+  | EConcat a b => EConcat (replace_int_in_expr from to a) (replace_int_in_expr from to b)
+  | ELen a => ELen (replace_int_in_expr from to a)
+  | ESubstr a b c => ESubstr (replace_int_in_expr from to a)
+                             (replace_int_in_expr from to b)
+                             (replace_int_in_expr from to c)
   end.
 
 Theorem replace_idempotent_when_equal :
@@ -44,6 +50,7 @@ Proof.
   - destruct (Z.eqb z n) eqn:H.
     + apply Z.eqb_eq in H. subst. reflexivity.
     + reflexivity.
+  - rewrite IHe1, IHe2, IHe3. reflexivity.
   - rewrite IHe1, IHe2, IHe3. reflexivity.
 Qed.
 

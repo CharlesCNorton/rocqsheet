@@ -245,6 +245,21 @@ Fixpoint show_expr (e : Expr) : PrimString.string :=
                     (PrimString.cat "(" (show_expr a))
                     ")./(")
                   (PrimString.cat (show_expr b) ")")
+  | EStr s => PrimString.cat """" (PrimString.cat s """")
+  | EConcat a b =>
+    PrimString.cat "CONCAT("
+      (PrimString.cat (show_expr a)
+        (PrimString.cat ","
+          (PrimString.cat (show_expr b) ")")))
+  | ELen a =>
+    PrimString.cat "LEN(" (PrimString.cat (show_expr a) ")")
+  | ESubstr a b c =>
+    PrimString.cat "SUBSTR("
+      (PrimString.cat (show_expr a)
+        (PrimString.cat ","
+          (PrimString.cat (show_expr b)
+            (PrimString.cat ","
+              (PrimString.cat (show_expr c) ")")))))
   end.
 
 Definition show_cell (c : Cell) : PrimString.string :=
@@ -252,6 +267,7 @@ Definition show_cell (c : Cell) : PrimString.string :=
   | CEmpty   => ""
   | CLit n   => string_of_z n
   | CFloat _ => "<float>"
+  | CStr s   => s
   | CForm e  => PrimString.cat "=" (show_expr e)
   end.
 
@@ -323,12 +339,14 @@ Definition cell_display (s : Sheet) (errs : list CellRef) (r : CellRef)
     | CEmpty   => ("", false)
     | CLit n   => (string_of_z n, false)
     | CFloat _ => ("<float>", false)
+    | CStr str => (str, false)
     | CForm e =>
       match eval_expr DEFAULT_FUEL (cons r nil) s e with
-      | EVal v  => (string_of_z v, false)
-      | EFVal _ => ("<float>", false)
-      | EErr    => (err_marker, true)
-      | EFuel   => (err_marker, true)
+      | EVal v   => (string_of_z v, false)
+      | EFVal _  => ("<float>", false)
+      | EValS sv => (sv, false)
+      | EErr     => (err_marker, true)
+      | EFuel    => (err_marker, true)
       end
     end.
 
