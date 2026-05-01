@@ -1,7 +1,7 @@
 (* Copyright (c) 2026 CharlesCNorton.  Licensed under the MIT License. *)
 From Corelib Require Import PrimString PrimInt63.
-From Stdlib Require Import List.
-From Crane Require Import Mapping.Std.
+From Stdlib Require Import List BinInt.
+From Crane Require Import Mapping.Std Mapping.ZInt.
 From Rocqsheet Require Import Rocqsheet.
 Import ListNotations.
 Import Rocqsheet.
