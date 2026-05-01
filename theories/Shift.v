@@ -85,6 +85,28 @@ Qed.
 Theorem paste_at_origin_is_identity : forall e, shift_refs 0 0 e = e.
 Proof. exact shift_refs_zero. Qed.
 
+(* Smoke: composing two shifts at concrete deltas equals one shift
+   by the sum. *)
+Theorem shift_ref_compose_smoke :
+  shift_ref 1 2 (shift_ref 3 4 (mkRef 5 6))
+  = shift_ref (PrimInt63.add 1 3) (PrimInt63.add 2 4) (mkRef 5 6).
+Proof. vm_compute. reflexivity. Qed.
+
+(* Smoke: shifting an Expr tree composes through the structure. *)
+Theorem shift_refs_compose_smoke :
+  let e := EAdd (ERef (mkRef 1 2)) (ERef (mkRef 3 4)) in
+  shift_refs 1 1 (shift_refs 2 2 e)
+  = shift_refs (PrimInt63.add 1 2) (PrimInt63.add 1 2) e.
+Proof. vm_compute. reflexivity. Qed.
+
+(* Inverse: shift by (dc, dr) and then by (-dc, -dr) restores the
+   original ref, smoke at concrete deltas. *)
+Theorem shift_ref_inverse_smoke :
+  shift_ref (PrimInt63.sub 0 3) (PrimInt63.sub 0 4)
+            (shift_ref 3 4 (mkRef 10 20))
+  = mkRef 10 20.
+Proof. vm_compute. reflexivity. Qed.
+
 (* --- Insert / delete row at the data level ----------------------- *)
 
 Fixpoint insert_row_aux (fuel : nat) (src acc : Sheet)
