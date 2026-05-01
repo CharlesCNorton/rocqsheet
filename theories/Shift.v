@@ -84,3 +84,79 @@ Qed.
    transformation is over Expr only. *)
 Theorem paste_at_origin_is_identity : forall e, shift_refs 0 0 e = e.
 Proof. exact shift_refs_zero. Qed.
+
+(* --- Insert / delete row at the data level ----------------------- *)
+
+Fixpoint insert_row_aux (fuel : nat) (src acc : Sheet)
+                        (r idx : int) : Sheet :=
+  match fuel with
+  | O => acc
+  | S fuel' =>
+    if PrimInt63.leb GRID_SIZE idx then acc
+    else
+      let row := PrimInt63.div idx NUM_COLS in
+      let col := PrimInt63.mod idx NUM_COLS in
+      let new_cell :=
+        if PrimInt63.ltb row r then PrimArray.get src idx
+        else if PrimInt63.eqb row r then CEmpty
+        else
+          let src_idx := PrimInt63.add
+                           (PrimInt63.mul (PrimInt63.sub row 1) NUM_COLS)
+                           col in
+          PrimArray.get src src_idx in
+      insert_row_aux fuel' src (PrimArray.set acc idx new_cell)
+                     r (PrimInt63.add idx 1)
+  end.
+
+Definition insert_row (s : Sheet) (r : int) : Sheet :=
+  insert_row_aux 60000 s s r 0.
+
+Fixpoint delete_row_aux (fuel : nat) (src acc : Sheet)
+                        (r idx : int) : Sheet :=
+  match fuel with
+  | O => acc
+  | S fuel' =>
+    if PrimInt63.leb GRID_SIZE idx then acc
+    else
+      let row := PrimInt63.div idx NUM_COLS in
+      let col := PrimInt63.mod idx NUM_COLS in
+      let new_cell :=
+        if PrimInt63.ltb row r then PrimArray.get src idx
+        else if PrimInt63.eqb row (PrimInt63.sub NUM_ROWS 1) then CEmpty
+        else
+          let src_idx := PrimInt63.add
+                           (PrimInt63.mul (PrimInt63.add row 1) NUM_COLS)
+                           col in
+          PrimArray.get src src_idx in
+      delete_row_aux fuel' src (PrimArray.set acc idx new_cell)
+                     r (PrimInt63.add idx 1)
+  end.
+
+Definition delete_row (s : Sheet) (r : int) : Sheet :=
+  delete_row_aux 60000 s s r 0.
+
+Theorem insert_row_preserves_below_smoke :
+  let s := set_cell new_sheet (mkRef 0 0) (CLit 42%Z) in
+  get_cell (insert_row s 5%uint63) (mkRef 0 0) = CLit 42%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem insert_row_shifts_above_smoke :
+  let s := set_cell new_sheet (mkRef 0 5%uint63) (CLit 7%Z) in
+  get_cell (insert_row s 3%uint63) (mkRef 0 6%uint63) = CLit 7%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem insert_row_at_r_is_empty_smoke :
+  let s := set_cell new_sheet (mkRef 1 5%uint63) (CLit 99%Z) in
+  get_cell (insert_row s 5%uint63) (mkRef 1 5%uint63) = CEmpty.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem delete_row_drops_r_smoke :
+  let s := set_cell new_sheet (mkRef 0 5%uint63) (CLit 13%Z) in
+  let s' := set_cell s (mkRef 0 6%uint63) (CLit 17%Z) in
+  get_cell (delete_row s' 5%uint63) (mkRef 0 5%uint63) = CLit 17%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem delete_row_preserves_below_smoke :
+  let s := set_cell new_sheet (mkRef 0 2%uint63) (CLit 8%Z) in
+  get_cell (delete_row s 5%uint63) (mkRef 0 2%uint63) = CLit 8%Z.
+Proof. vm_compute. reflexivity. Qed.
