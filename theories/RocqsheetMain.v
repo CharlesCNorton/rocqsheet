@@ -920,3 +920,46 @@ Definition rocqsheet_run : itree imguiE c_int :=
 
 Crane Extraction "rocqsheet" rocqsheet_run smoke eval_cell
   parse_formula parse_int_literal.
+
+(* --- Loop-state correctness ------------------------------------- *)
+
+(* Inductive description of the legal pure transitions a single
+   user step can take.  Effectful operations (save, load, copy,
+   paste) are not pure and are excluded from this relation. *)
+Inductive pure_edit_step : loop_state -> loop_state -> Prop :=
+  | PESelect : forall ls r, pure_edit_step ls (select_cell ls r)
+  | PEFbar : forall ls s', pure_edit_step ls (update_fbar ls s')
+  | PECommit : forall ls, pure_edit_step ls (do_commit ls)
+  | PEUndo : forall ls, pure_edit_step ls (do_undo ls)
+  | PERedo : forall ls, pure_edit_step ls (do_redo ls)
+  | PEClear : forall ls, pure_edit_step ls (do_clear ls)
+  | PELeft : forall ls, pure_edit_step ls (do_left ls)
+  | PERight : forall ls, pure_edit_step ls (do_right ls)
+  | PEUp : forall ls, pure_edit_step ls (do_up ls)
+  | PEDown : forall ls, pure_edit_step ls (do_down ls).
+
+(* do_clear lands in a fresh state. *)
+Theorem do_clear_state :
+  forall ls,
+    ls_selected (do_clear ls) = None
+    /\ ls_edit_buf (do_clear ls) = nil
+    /\ ls_parse_errs (do_clear ls) = nil.
+Proof. intros. unfold do_clear. simpl. repeat split. Qed.
+
+(* select_cell preserves all non-selected, non-fbar fields. *)
+Theorem select_cell_preserves_fields :
+  forall ls r,
+    ls_sheet (select_cell ls r) = ls_sheet ls
+    /\ ls_edit_buf (select_cell ls r) = ls_edit_buf ls
+    /\ ls_parse_errs (select_cell ls r) = ls_parse_errs ls
+    /\ ls_undo (select_cell ls r) = ls_undo ls
+    /\ ls_redo (select_cell ls r) = ls_redo ls.
+Proof. intros. unfold select_cell. simpl. repeat split. Qed.
+
+(* update_fbar only changes the formula-bar text. *)
+Theorem update_fbar_preserves_fields :
+  forall ls s',
+    ls_sheet (update_fbar ls s') = ls_sheet ls
+    /\ ls_selected (update_fbar ls s') = ls_selected ls
+    /\ ls_edit_buf (update_fbar ls s') = ls_edit_buf ls.
+Proof. intros. unfold update_fbar. simpl. repeat split. Qed.
