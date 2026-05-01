@@ -21,6 +21,17 @@ From Crane Require Import Mapping.NatIntStd Mapping.ZInt.
 From Crane Require Extraction.
 Import ListNotations.
 
+(* Override Z arithmetic so the extracted C++ saturates on int64_t
+   overflow rather than wrapping (which is undefined behaviour for
+   signed types).  The Rocq proofs are over unbounded Z, so they
+   remain valid; the override only affects extracted runtime. *)
+Crane Extract Inlined Constant Z.add =>
+  "([&]() -> int64_t { int64_t _r; if (__builtin_add_overflow(%a0, %a1, &_r)) return ((%a0) < 0) ? INT64_MIN : INT64_MAX; return _r; }())".
+Crane Extract Inlined Constant Z.sub =>
+  "([&]() -> int64_t { int64_t _r; if (__builtin_sub_overflow(%a0, %a1, &_r)) return ((%a0) < 0) ? INT64_MIN : INT64_MAX; return _r; }())".
+Crane Extract Inlined Constant Z.mul =>
+  "([&]() -> int64_t { int64_t _r; if (__builtin_mul_overflow(%a0, %a1, &_r)) return (((%a0) < 0) != ((%a1) < 0)) ? INT64_MIN : INT64_MAX; return _r; }())".
+
 Module Rocqsheet.
 
 Open Scope int63.
