@@ -65,3 +65,38 @@ Theorem replace_int_smoke :
   replace_int_in_expr 1%Z 99%Z e =
     EAdd (EInt 99%Z) (EMul (EInt 2%Z) (EInt 99%Z)).
 Proof. vm_compute. reflexivity. Qed.
+
+(* Lift replace_int over an EvalResult: only EVal Z values are
+   substituted; other shapes pass through. *)
+Definition replace_int_in_result (from to : Z) (r : EvalResult)
+    : EvalResult :=
+  match r with
+  | EVal n => EVal (if Z.eqb n from then to else n)
+  | _ => r
+  end.
+
+(* Smoke: replace at a concrete EInt literal commutes through eval. *)
+Theorem replace_eval_commute_lit_smoke :
+  let s := new_sheet in
+  let e := EInt 5%Z in
+  eval_expr 2 nil s (replace_int_in_expr 5%Z 99%Z e)
+  = replace_int_in_result 5%Z 99%Z (eval_expr 2 nil s e).
+Proof. vm_compute. reflexivity. Qed.
+
+(* Replacement is idempotent when from = to. *)
+Theorem replace_int_idempotent_general :
+  forall n e, replace_int_in_expr n n e = e.
+Proof. exact replace_idempotent_when_equal. Qed.
+
+(* No-match replacement leaves the tree unchanged. *)
+Theorem replace_int_no_match_smoke :
+  let e := EAdd (EInt 1%Z) (EInt 2%Z) in
+  replace_int_in_expr 99%Z 7%Z e = EAdd (EInt 1%Z) (EInt 2%Z).
+Proof. vm_compute. reflexivity. Qed.
+
+(* Replacement distributes through eval at a closed compound input. *)
+Theorem replace_eval_commute_compound_smoke :
+  let e := EAdd (EInt 1%Z) (EMul (EInt 2%Z) (EInt 1%Z)) in
+  eval_expr 5 nil new_sheet (replace_int_in_expr 1%Z 10%Z e)
+  = EVal (Z.add 10%Z (Z.mul 2%Z 10%Z)).
+Proof. vm_compute. reflexivity. Qed.
