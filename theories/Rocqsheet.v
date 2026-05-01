@@ -194,6 +194,17 @@ Theorem eval_divzero :
   eval_cell DEFAULT_FUEL s r = None.
 Proof. vm_compute. reflexivity. Qed.
 
+(* Visited-set catches cycles in general: if a ref is already on the
+   evaluation path and the expression is just that ref, [eval_expr]
+   returns [None] for any positive fuel. *)
+Theorem mem_cellref_eval_ref_none : forall fuel visited s r,
+  mem_cellref r visited = true ->
+  eval_expr (S fuel) visited s (ERef r) = None.
+Proof.
+  intros fuel visited s r H.
+  simpl. rewrite H. reflexivity.
+Qed.
+
 End Rocqsheet.
 
 Crane Extraction "rocqsheet" Rocqsheet.
