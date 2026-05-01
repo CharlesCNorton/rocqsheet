@@ -65,3 +65,28 @@ Theorem range_rect_smoke :
   range_cells (mkRef 0 0) (mkRef 1 1)
   = [mkRef 0 0; mkRef 1 0; mkRef 0 1; mkRef 1 1].
 Proof. vm_compute. reflexivity. Qed.
+
+(* Length: a 3x2 rectangle has 6 cells. *)
+Theorem range_length_3x2_smoke :
+  length (range_cells (mkRef 0 0) (mkRef 2 1)) = 6%nat.
+Proof. vm_compute. reflexivity. Qed.
+
+(* Length: a 5x4 rectangle has 20 cells. *)
+Theorem range_length_5x4_smoke :
+  length (range_cells (mkRef 0 0) (mkRef 4 3)) = 20%nat.
+Proof. vm_compute. reflexivity. Qed.
+
+(* Membership: a cell strictly inside a rectangle is in the range. *)
+Theorem range_member_inside_smoke :
+  In (mkRef 1 1) (range_cells (mkRef 0 0) (mkRef 2 2)).
+Proof. vm_compute. right. left. reflexivity. Qed.
+
+(* Membership: a cell at the rectangle corner is in the range. *)
+Theorem range_member_corner_smoke :
+  In (mkRef 2 2) (range_cells (mkRef 0 0) (mkRef 2 2)).
+Proof. vm_compute. repeat (right; try (left; reflexivity)). Qed.
+
+(* Empty range: no cells when the rectangle is inverted. *)
+Theorem range_empty_when_inverted_smoke :
+  range_cells (mkRef 5 5) (mkRef 5 3) = [].
+Proof. vm_compute. reflexivity. Qed.
