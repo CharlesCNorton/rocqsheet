@@ -139,10 +139,18 @@ Definition eval_cell (fuel : nat) (s : Sheet) (r : CellRef) : option Z :=
   | CForm e => eval_expr fuel (r :: nil) s e
   end.
 
-(* A generous safety cap.  Real cycles are caught by the visited-set
-   check before fuel matters; fuel only stops adversarially deep
-   expression trees that exhaust grid traversal budget. *)
-Definition DEFAULT_FUEL : nat := 100000.
+(* Safety cap on evaluation recursion depth.
+
+   Sized to stay well under the C++ stack budget after extraction:
+   [eval_expr] extracts as native recursion, and each recursive call
+   passes [visited] by value (an O(N) list copy on the heap plus a
+   stack frame in the caller).  At ~1 KB per frame and an 8 MB default
+   thread stack, fuel above ~4-5k risks a hard stack overflow rather
+   than a graceful [None].
+
+   Real cycles are caught earlier by the visited-set check; this fuel
+   only gates adversarially deep expression trees. *)
+Definition DEFAULT_FUEL : nat := 4000.
 
 (* Smoke value used by the harness during bring-up. *)
 Definition smoke : option Z :=
