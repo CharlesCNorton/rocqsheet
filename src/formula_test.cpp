@@ -91,6 +91,13 @@ int main() {
   want_int_fail("mixed", "12 abc");
   want_int_fail("over", "9999999999999999999");
 
+  want_ok("mod",         "10%3");
+  want_ok("mod-prec",    "1+10%3");
+  want_ok("pow",         "2^10");
+  want_ok("pow-mix",     "2^3*4");
+  want_fail("mod-trail", "10%");
+  want_fail("pow-trail", "2^");
+
   want_ok("eq",          "A1=B1");
   want_ok("lt",          "A1<B1");
   want_ok("gt",          "A1>B1");

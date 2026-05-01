@@ -73,7 +73,9 @@ Inductive token : Type :=
   | TLParen
   | TRParen
   | TComma
-  | TIf.
+  | TIf
+  | TMod
+  | TPow.
 
 (* INT64_MAX / 10 = 922337203685477580; one extra digit must not
    exceed (INT64_MAX mod 10) = 7. *)
@@ -199,6 +201,10 @@ Fixpoint tokenize_aux
         tokenize_aux fuel' s len (PrimInt63.add i 1) (TRParen :: acc)
       else if PrimInt63.eqb n 44 then
         tokenize_aux fuel' s len (PrimInt63.add i 1) (TComma :: acc)
+      else if PrimInt63.eqb n 37 then
+        tokenize_aux fuel' s len (PrimInt63.add i 1) (TMod :: acc)
+      else if PrimInt63.eqb n 94 then
+        tokenize_aux fuel' s len (PrimInt63.add i 1) (TPow :: acc)
       else if is_digit c then
         match read_int fuel s len i with
         | None => None
@@ -329,6 +335,16 @@ with parse_term_tail (fuel : nat) (lhs : Expr) (toks : list token)
     | TDiv :: rest =>
       match parse_factor fuel' rest with
       | Some (rhs, rest') => parse_term_tail fuel' (EDiv lhs rhs) rest'
+      | None => None
+      end
+    | TMod :: rest =>
+      match parse_factor fuel' rest with
+      | Some (rhs, rest') => parse_term_tail fuel' (EMod lhs rhs) rest'
+      | None => None
+      end
+    | TPow :: rest =>
+      match parse_factor fuel' rest with
+      | Some (rhs, rest') => parse_term_tail fuel' (EPow lhs rhs) rest'
       | None => None
       end
     | _ => Some (lhs, toks)

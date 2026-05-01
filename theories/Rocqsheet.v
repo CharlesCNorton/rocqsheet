@@ -72,7 +72,9 @@ Inductive Expr : Type :=
   | EEq  : Expr -> Expr -> Expr
   | ELt  : Expr -> Expr -> Expr
   | EGt  : Expr -> Expr -> Expr
-  | EIf  : Expr -> Expr -> Expr -> Expr.
+  | EIf  : Expr -> Expr -> Expr -> Expr
+  | EMod : Expr -> Expr -> Expr
+  | EPow : Expr -> Expr -> Expr.
 
 Inductive Cell : Type :=
   | CEmpty : Cell
@@ -162,6 +164,18 @@ Fixpoint eval_expr (fuel : nat) (visited : list CellRef) (s : Sheet)
       | Some 0%Z => eval_expr fuel' visited s e
       | Some _ => eval_expr fuel' visited s t
       | None => None
+      end
+    | EMod a b =>
+      match eval_expr fuel' visited s a, eval_expr fuel' visited s b with
+      | Some va, Some vb =>
+        if Z.eqb vb 0%Z then None else Some (Z.modulo va vb)
+      | _, _ => None
+      end
+    | EPow a b =>
+      match eval_expr fuel' visited s a, eval_expr fuel' visited s b with
+      | Some va, Some vb =>
+        if Z.ltb vb 0%Z then None else Some (Z.pow va vb)
+      | _, _ => None
       end
     end
   end.
@@ -496,7 +510,7 @@ Proof.
   - destruct fuel' as [|fuel']; [lia|].
     assert (Hle' : fuel <= fuel') by lia.
     simpl in Hev. simpl.
-    destruct e as [n|r|a b|a b|a b|a b|a b|a b|a b|cnd th el].
+    destruct e as [n|r|a b|a b|a b|a b|a b|a b|a b|cnd th el|a b|a b].
     + exact Hev.
     + destruct (mem_cellref r visited); [discriminate|].
       destruct (get_cell s r) as [|n|e'].
@@ -544,6 +558,18 @@ Proof.
       * apply (IH _ _ _ _ _ Hle' Hev).
       * apply (IH _ _ _ _ _ Hle' Hev).
       * apply (IH _ _ _ _ _ Hle' Hev).
+    + (* EMod *)
+      destruct (eval_expr fuel visited s a) as [va|] eqn:Ea; [|discriminate].
+      destruct (eval_expr fuel visited s b) as [vb|] eqn:Eb; [|discriminate].
+      rewrite (IH _ _ _ _ _ Hle' Ea).
+      rewrite (IH _ _ _ _ _ Hle' Eb).
+      exact Hev.
+    + (* EPow *)
+      destruct (eval_expr fuel visited s a) as [va|] eqn:Ea; [|discriminate].
+      destruct (eval_expr fuel visited s b) as [vb|] eqn:Eb; [|discriminate].
+      rewrite (IH _ _ _ _ _ Hle' Ea).
+      rewrite (IH _ _ _ _ _ Hle' Eb).
+      exact Hev.
 Qed.
 
 (* --- Algebraic lifts from Z --------------------------------------- *)

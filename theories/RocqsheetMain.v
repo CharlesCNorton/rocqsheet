@@ -153,6 +153,16 @@ Fixpoint show_expr (e : Expr) : PrimString.string :=
           (PrimString.cat (show_expr t)
             (PrimString.cat ","
               (PrimString.cat (show_expr e) ")")))))
+  | EMod a b => PrimString.cat
+                 (PrimString.cat
+                   (PrimString.cat "(" (show_expr a))
+                   ")%(")
+                 (PrimString.cat (show_expr b) ")")
+  | EPow a b => PrimString.cat
+                 (PrimString.cat
+                   (PrimString.cat "(" (show_expr a))
+                   ")^(")
+                 (PrimString.cat (show_expr b) ")")
   end.
 
 Definition show_cell (c : Cell) : PrimString.string :=
