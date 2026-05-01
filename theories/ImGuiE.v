@@ -38,11 +38,29 @@ Inductive imguiE : Type -> Type :=
   | EClipperStep      : imguiE bool
   | EClipperGetStart  : imguiE int
   | EClipperGetEnd    : imguiE int
-  | EClipperEnd       : imguiE unit.
+  | EClipperEnd       : imguiE unit
+  | ESelectable       : int -> int -> bool -> bool -> PrimString.string ->
+                        imguiE cell_event
+  (* InputText returns (current_buffer, enter_pressed). *)
+  | EInputText        : PrimString.string -> PrimString.string ->
+                        imguiE (PrimString.string * bool)
+  | EBeginMenuBar     : imguiE bool
+  | EEndMenuBar       : imguiE unit
+  | EBeginMenu        : PrimString.string -> imguiE bool
+  | EEndMenu          : imguiE unit
+  | EMenuItem         : PrimString.string -> bool -> imguiE bool
+  (* Sets the next-window flag so the upcoming begin_window opens
+     a menu-bar-enabled window. *)
+  | ENextWindowMenuBar : imguiE unit
+  | EFileRead         : PrimString.string -> imguiE (PrimString.string * bool)
+  | EFileWrite        : PrimString.string -> PrimString.string -> imguiE bool
+  | EClipboardGet     : imguiE PrimString.string
+  | EClipboardSet     : PrimString.string -> imguiE unit
+  | ECtrlKeyPressed   : PrimString.string -> imguiE bool
+  | ESameLine         : imguiE unit
+  | EFbarRefLabel     : PrimString.string -> imguiE unit.
 
-(* Smart constructors.  Each one is a one-liner [trigger E*] that
-   the [Crane Extract Inlined Constant] directives below resolve to
-   the matching C++ helper call. *)
+(* Smart constructors. *)
 Definition glfw_should_close : itree imguiE bool := trigger EShouldClose.
 Definition glfw_poll_events : itree imguiE unit := trigger EPollEvents.
 Definition imgui_new_frame : itree imguiE unit := trigger ENewFrame.
@@ -75,6 +93,36 @@ Definition imgui_clipper_step : itree imguiE bool := trigger EClipperStep.
 Definition imgui_clipper_get_start : itree imguiE int := trigger EClipperGetStart.
 Definition imgui_clipper_get_end : itree imguiE int := trigger EClipperGetEnd.
 Definition imgui_clipper_end : itree imguiE unit := trigger EClipperEnd.
+Definition imgui_selectable_cell
+    (c r : int) (selected : bool) (is_error : bool)
+    (display : PrimString.string)
+  : itree imguiE cell_event :=
+  trigger (ESelectable c r selected is_error display).
+Definition imgui_input_text (id : PrimString.string) (cur : PrimString.string)
+  : itree imguiE (PrimString.string * bool) :=
+  trigger (EInputText id cur).
+Definition imgui_begin_menu_bar : itree imguiE bool := trigger EBeginMenuBar.
+Definition imgui_end_menu_bar : itree imguiE unit := trigger EEndMenuBar.
+Definition imgui_begin_menu (label : PrimString.string) : itree imguiE bool :=
+  trigger (EBeginMenu label).
+Definition imgui_end_menu : itree imguiE unit := trigger EEndMenu.
+Definition imgui_menu_item (label : PrimString.string) (enabled : bool)
+  : itree imguiE bool := trigger (EMenuItem label enabled).
+Definition imgui_next_window_menu_bar : itree imguiE unit :=
+  trigger ENextWindowMenuBar.
+Definition file_read (path : PrimString.string)
+  : itree imguiE (PrimString.string * bool) := trigger (EFileRead path).
+Definition file_write (path : PrimString.string) (content : PrimString.string)
+  : itree imguiE bool := trigger (EFileWrite path content).
+Definition clipboard_get : itree imguiE PrimString.string :=
+  trigger EClipboardGet.
+Definition clipboard_set (s : PrimString.string) : itree imguiE unit :=
+  trigger (EClipboardSet s).
+Definition ctrl_key_pressed (k : PrimString.string) : itree imguiE bool :=
+  trigger (ECtrlKeyPressed k).
+Definition imgui_same_line : itree imguiE unit := trigger ESameLine.
+Definition fbar_ref_label (s : PrimString.string) : itree imguiE unit :=
+  trigger (EFbarRefLabel s).
 
 (* Erased-itree extraction: each constructor inlines to its C++
    helper at the call site; the inductive itself maps to the empty
@@ -109,7 +157,22 @@ Crane Extract Inductive imguiE => ""
     "imgui_helpers::clipper_step()"
     "imgui_helpers::clipper_get_start()"
     "imgui_helpers::clipper_get_end()"
-    "imgui_helpers::clipper_end()" ]
+    "imgui_helpers::clipper_end()"
+    "imgui_helpers::selectable_cell(%a0, %a1, %a2, %a3, %a4)"
+    "imgui_helpers::input_text(%a0, %a1)"
+    "imgui_helpers::begin_menu_bar()"
+    "imgui_helpers::end_menu_bar()"
+    "imgui_helpers::begin_menu(%a0)"
+    "imgui_helpers::end_menu()"
+    "imgui_helpers::menu_item(%a0, %a1)"
+    "imgui_helpers::next_window_menu_bar()"
+    "imgui_helpers::file_read(%a0)"
+    "imgui_helpers::file_write(%a0, %a1)"
+    "imgui_helpers::clipboard_get()"
+    "imgui_helpers::clipboard_set(%a0)"
+    "imgui_helpers::ctrl_key_pressed(%a0)"
+    "imgui_helpers::same_line()"
+    "imgui_helpers::fbar_ref_label(%a0)" ]
   From "imgui_helpers.h".
 
 Crane Extract Inlined Constant glfw_should_close =>
@@ -156,3 +219,33 @@ Crane Extract Inlined Constant imgui_clipper_get_end =>
   "imgui_helpers::clipper_get_end()" From "imgui_helpers.h".
 Crane Extract Inlined Constant imgui_clipper_end =>
   "imgui_helpers::clipper_end()" From "imgui_helpers.h".
+Crane Extract Inlined Constant imgui_selectable_cell =>
+  "imgui_helpers::selectable_cell(%a0, %a1, %a2, %a3, %a4)" From "imgui_helpers.h".
+Crane Extract Inlined Constant imgui_input_text =>
+  "imgui_helpers::input_text(%a0, %a1)" From "imgui_helpers.h".
+Crane Extract Inlined Constant imgui_begin_menu_bar =>
+  "imgui_helpers::begin_menu_bar()" From "imgui_helpers.h".
+Crane Extract Inlined Constant imgui_end_menu_bar =>
+  "imgui_helpers::end_menu_bar()" From "imgui_helpers.h".
+Crane Extract Inlined Constant imgui_begin_menu =>
+  "imgui_helpers::begin_menu(%a0)" From "imgui_helpers.h".
+Crane Extract Inlined Constant imgui_end_menu =>
+  "imgui_helpers::end_menu()" From "imgui_helpers.h".
+Crane Extract Inlined Constant imgui_menu_item =>
+  "imgui_helpers::menu_item(%a0, %a1)" From "imgui_helpers.h".
+Crane Extract Inlined Constant imgui_next_window_menu_bar =>
+  "imgui_helpers::next_window_menu_bar()" From "imgui_helpers.h".
+Crane Extract Inlined Constant file_read =>
+  "imgui_helpers::file_read(%a0)" From "imgui_helpers.h".
+Crane Extract Inlined Constant file_write =>
+  "imgui_helpers::file_write(%a0, %a1)" From "imgui_helpers.h".
+Crane Extract Inlined Constant clipboard_get =>
+  "imgui_helpers::clipboard_get()" From "imgui_helpers.h".
+Crane Extract Inlined Constant clipboard_set =>
+  "imgui_helpers::clipboard_set(%a0)" From "imgui_helpers.h".
+Crane Extract Inlined Constant ctrl_key_pressed =>
+  "imgui_helpers::ctrl_key_pressed(%a0)" From "imgui_helpers.h".
+Crane Extract Inlined Constant imgui_same_line =>
+  "imgui_helpers::same_line()" From "imgui_helpers.h".
+Crane Extract Inlined Constant fbar_ref_label =>
+  "imgui_helpers::fbar_ref_label(%a0)" From "imgui_helpers.h".
