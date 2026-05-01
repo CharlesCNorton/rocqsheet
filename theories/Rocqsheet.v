@@ -33,6 +33,14 @@ Crane Extract Inlined Constant Z.sub =>
 Crane Extract Inlined Constant Z.mul =>
   "([&]() -> int64_t { int64_t _r; if (__builtin_mul_overflow(%a0, %a1, &_r)) return (((%a0) < 0) != ((%a1) < 0)) ? INT64_MIN : INT64_MAX; return _r; }())".
 
+(* Guard the two UB cases for signed integer division: divide-by-zero
+   and INT64_MIN / -1 (whose mathematical result overflows int64).
+   Both are handled by saturating to INT64_MIN. *)
+Crane Extract Inlined Constant Z.div =>
+  "((%a1 == 0) ? INT64_C(0) : (((%a0 == INT64_MIN) && (%a1 == -1)) ? INT64_MIN : ((%a0) / (%a1))))".
+Crane Extract Inlined Constant Z.modulo =>
+  "((%a1 == 0) ? INT64_C(0) : (((%a0 == INT64_MIN) && (%a1 == -1)) ? INT64_C(0) : ((%a0) % (%a1))))".
+
 Module Rocqsheet.
 
 Open Scope int63.
@@ -360,6 +368,182 @@ Proof.
   apply get_set_eq.
   rewrite Hlen.
   apply cell_index_in_grid; assumption.
+Qed.
+
+(* --- Sheet well-formedness ----------------------------------------- *)
+
+Definition well_formed_sheet (s : Sheet) : Prop :=
+  PrimArray.length s = GRID_SIZE.
+
+Lemma new_sheet_wf : well_formed_sheet new_sheet.
+Proof. unfold well_formed_sheet. apply length_new_sheet. Qed.
+
+Lemma set_cell_preserves_wf : forall s r c,
+  well_formed_sheet s -> well_formed_sheet (set_cell s r c).
+Proof.
+  unfold well_formed_sheet. intros s r c H.
+  rewrite length_set_cell. exact H.
+Qed.
+
+Theorem get_set_eq_wf : forall s r c,
+  well_formed_sheet s ->
+  valid_ref r = true ->
+  get_cell (set_cell s r c) r = c.
+Proof.
+  unfold well_formed_sheet. intros s r c H Hv.
+  apply get_set_eq_valid; assumption.
+Qed.
+
+(* --- cellref_eqb soundness ----------------------------------------- *)
+
+Lemma cellref_eqb_sound : forall r1 r2,
+  cellref_eqb r1 r2 = true <-> r1 = r2.
+Proof.
+  intros [c1 r1] [c2 r2]. unfold cellref_eqb. simpl.
+  rewrite Bool.andb_true_iff.
+  split.
+  - intros [Hc Hr].
+    apply eqb_correct in Hc.
+    apply eqb_correct in Hr.
+    subst. reflexivity.
+  - intros Heq. injection Heq as Hc Hr. subst.
+    split; apply eqb_refl.
+Qed.
+
+Lemma cellref_eqb_refl : forall r,
+  cellref_eqb r r = true.
+Proof.
+  intros r. apply cellref_eqb_sound. reflexivity.
+Qed.
+
+(* --- cell_index injectivity on valid refs -------------------------- *)
+
+Lemma cell_index_inj : forall r1 r2,
+  valid_ref r1 = true -> valid_ref r2 = true ->
+  cell_index r1 = cell_index r2 ->
+  r1 = r2.
+Proof.
+  intros [c1 rw1] [c2 rw2] Hv1 Hv2 Hidx.
+  unfold valid_ref in *. simpl in *.
+  apply Bool.andb_true_iff in Hv1 as [Hc1 Hr1].
+  apply Bool.andb_true_iff in Hv2 as [Hc2 Hr2].
+  rewrite ltb_spec in Hc1, Hr1, Hc2, Hr2.
+  unfold cell_index in Hidx. simpl in Hidx.
+  pose proof (to_Z_bounded c1).
+  pose proof (to_Z_bounded c2).
+  pose proof (to_Z_bounded rw1).
+  pose proof (to_Z_bounded rw2).
+  assert (E1 : to_Z NUM_COLS = 260%Z) by reflexivity.
+  assert (E2 : to_Z NUM_ROWS = 200%Z) by reflexivity.
+  assert (EwB : wB = 9223372036854775808%Z) by reflexivity.
+  rewrite E1 in *. rewrite E2 in *. rewrite EwB in *.
+  apply (f_equal to_Z) in Hidx.
+  rewrite !add_spec, !mul_spec in Hidx.
+  rewrite !(Z.mod_small (to_Z _ * 260)) in Hidx by nia.
+  rewrite !Z.mod_small in Hidx by nia.
+  assert (Hr_eq : to_Z rw1 = to_Z rw2) by nia.
+  assert (Hc_eq : to_Z c1 = to_Z c2) by nia.
+  apply to_Z_inj in Hr_eq.
+  apply to_Z_inj in Hc_eq.
+  subst. reflexivity.
+Qed.
+
+(* --- Compositional None-propagation ------------------------------ *)
+
+Lemma eval_eadd_none_l : forall fuel visited s a b,
+  eval_expr fuel visited s a = None ->
+  eval_expr (S fuel) visited s (EAdd a b) = None.
+Proof. intros. simpl. rewrite H. reflexivity. Qed.
+
+Lemma eval_esub_none_l : forall fuel visited s a b,
+  eval_expr fuel visited s a = None ->
+  eval_expr (S fuel) visited s (ESub a b) = None.
+Proof. intros. simpl. rewrite H. reflexivity. Qed.
+
+Lemma eval_emul_none_l : forall fuel visited s a b,
+  eval_expr fuel visited s a = None ->
+  eval_expr (S fuel) visited s (EMul a b) = None.
+Proof. intros. simpl. rewrite H. reflexivity. Qed.
+
+Lemma eval_ediv_none_l : forall fuel visited s a b,
+  eval_expr fuel visited s a = None ->
+  eval_expr (S fuel) visited s (EDiv a b) = None.
+Proof. intros. simpl. rewrite H. reflexivity. Qed.
+
+Lemma eval_eif_none_cond : forall fuel visited s c t e,
+  eval_expr fuel visited s c = None ->
+  eval_expr (S fuel) visited s (EIf c t e) = None.
+Proof. intros. simpl. rewrite H. reflexivity. Qed.
+
+(* If the right operand fails after the left succeeded, the whole
+   binary op returns None. *)
+Lemma eval_eadd_none_r : forall fuel visited s a b va,
+  eval_expr fuel visited s a = Some va ->
+  eval_expr fuel visited s b = None ->
+  eval_expr (S fuel) visited s (EAdd a b) = None.
+Proof. intros. simpl. rewrite H, H0. reflexivity. Qed.
+
+(* --- Fuel monotonicity ------------------------------------------- *)
+
+Theorem eval_fuel_monotone :
+  forall fuel e fuel' visited s v,
+    fuel <= fuel' ->
+    eval_expr fuel visited s e = Some v ->
+    eval_expr fuel' visited s e = Some v.
+Proof.
+  induction fuel as [|fuel IH]; intros e fuel' visited s v Hle Hev.
+  - simpl in Hev. discriminate.
+  - destruct fuel' as [|fuel']; [lia|].
+    assert (Hle' : fuel <= fuel') by lia.
+    simpl in Hev. simpl.
+    destruct e as [n|r|a b|a b|a b|a b|a b|a b|a b|cnd th el].
+    + exact Hev.
+    + destruct (mem_cellref r visited); [discriminate|].
+      destruct (get_cell s r) as [|n|e'].
+      * exact Hev.
+      * exact Hev.
+      * apply (IH _ _ _ _ _ Hle' Hev).
+    + destruct (eval_expr fuel visited s a) as [va|] eqn:Ea; [|discriminate].
+      destruct (eval_expr fuel visited s b) as [vb|] eqn:Eb; [|discriminate].
+      rewrite (IH _ _ _ _ _ Hle' Ea).
+      rewrite (IH _ _ _ _ _ Hle' Eb).
+      exact Hev.
+    + destruct (eval_expr fuel visited s a) as [va|] eqn:Ea; [|discriminate].
+      destruct (eval_expr fuel visited s b) as [vb|] eqn:Eb; [|discriminate].
+      rewrite (IH _ _ _ _ _ Hle' Ea).
+      rewrite (IH _ _ _ _ _ Hle' Eb).
+      exact Hev.
+    + destruct (eval_expr fuel visited s a) as [va|] eqn:Ea; [|discriminate].
+      destruct (eval_expr fuel visited s b) as [vb|] eqn:Eb; [|discriminate].
+      rewrite (IH _ _ _ _ _ Hle' Ea).
+      rewrite (IH _ _ _ _ _ Hle' Eb).
+      exact Hev.
+    + destruct (eval_expr fuel visited s a) as [va|] eqn:Ea; [|discriminate].
+      destruct (eval_expr fuel visited s b) as [vb|] eqn:Eb; [|discriminate].
+      rewrite (IH _ _ _ _ _ Hle' Ea).
+      rewrite (IH _ _ _ _ _ Hle' Eb).
+      exact Hev.
+    + destruct (eval_expr fuel visited s a) as [va|] eqn:Ea; [|discriminate].
+      destruct (eval_expr fuel visited s b) as [vb|] eqn:Eb; [|discriminate].
+      rewrite (IH _ _ _ _ _ Hle' Ea).
+      rewrite (IH _ _ _ _ _ Hle' Eb).
+      exact Hev.
+    + destruct (eval_expr fuel visited s a) as [va|] eqn:Ea; [|discriminate].
+      destruct (eval_expr fuel visited s b) as [vb|] eqn:Eb; [|discriminate].
+      rewrite (IH _ _ _ _ _ Hle' Ea).
+      rewrite (IH _ _ _ _ _ Hle' Eb).
+      exact Hev.
+    + destruct (eval_expr fuel visited s a) as [va|] eqn:Ea; [|discriminate].
+      destruct (eval_expr fuel visited s b) as [vb|] eqn:Eb; [|discriminate].
+      rewrite (IH _ _ _ _ _ Hle' Ea).
+      rewrite (IH _ _ _ _ _ Hle' Eb).
+      exact Hev.
+    + destruct (eval_expr fuel visited s cnd) as [vc|] eqn:Ec; [|discriminate].
+      rewrite (IH _ _ _ _ _ Hle' Ec).
+      destruct vc as [|p|p].
+      * apply (IH _ _ _ _ _ Hle' Hev).
+      * apply (IH _ _ _ _ _ Hle' Hev).
+      * apply (IH _ _ _ _ _ Hle' Hev).
 Qed.
 
 End Rocqsheet.
