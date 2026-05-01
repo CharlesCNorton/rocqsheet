@@ -1,10 +1,9 @@
 # Rocqsheet TODO
 
-Functionality gaps and the theorems that would pair with each, if
-they were closed.  Each item:
+Functionality gaps to close and the theorems each one brings.
 
 > **Feature.** What it adds.
-> *Theorems:* the proof obligations the addition would create.
+> *Theorems:* the proof obligations the addition creates.
 
 ---
 
