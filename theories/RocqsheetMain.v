@@ -718,6 +718,35 @@ Definition render_menu_bar (ls : loop_state) : itree imguiE loop_state :=
     Ret ls2
   else Ret ls.
 
+(* Move selection by (dc, dr) with clamping to the grid. *)
+Definition move_selection (dc dr : int) (ls : loop_state) : loop_state :=
+  match ls_selected ls with
+  | None => ls
+  | Some r =>
+    let new_c :=
+      let c1 := PrimInt63.add (cell_col_of r) dc in
+      if PrimInt63.ltb c1 0 then 0
+      else if PrimInt63.leb (int_of_nat num_cols_nat) c1
+      then PrimInt63.sub (int_of_nat num_cols_nat) 1
+      else c1 in
+    let new_r :=
+      let r1 := PrimInt63.add (cell_row_of r) dr in
+      if PrimInt63.ltb r1 0 then 0
+      else if PrimInt63.leb (int_of_nat num_rows_nat) r1
+      then PrimInt63.sub (int_of_nat num_rows_nat) 1
+      else r1 in
+    select_cell ls (mkRef new_c new_r)
+  end.
+
+Definition do_left  (ls : loop_state) : loop_state :=
+  move_selection (PrimInt63.sub 0 1) 0 ls.
+Definition do_right (ls : loop_state) : loop_state :=
+  move_selection 1 0 ls.
+Definition do_up    (ls : loop_state) : loop_state :=
+  move_selection 0 (PrimInt63.sub 0 1) ls.
+Definition do_down  (ls : loop_state) : loop_state :=
+  move_selection 0 1 ls.
+
 Definition handle_shortcuts (ls : loop_state) : itree imguiE loop_state :=
   z <- ctrl_key_pressed "z" ;;
   let ls1 := cond_apply z do_undo ls in
@@ -725,7 +754,15 @@ Definition handle_shortcuts (ls : loop_state) : itree imguiE loop_state :=
   let ls2 := cond_apply y do_redo ls1 in
   n <- ctrl_key_pressed "n" ;;
   let ls3 := cond_apply n do_clear ls2 in
-  Ret ls3.
+  up <- key_pressed "Up" ;;
+  let ls4 := cond_apply up do_up ls3 in
+  dn <- key_pressed "Down" ;;
+  let ls5 := cond_apply dn do_down ls4 in
+  lf <- key_pressed "Left" ;;
+  let ls6 := cond_apply lf do_left ls5 in
+  rt <- key_pressed "Right" ;;
+  let ls7 := cond_apply rt do_right ls6 in
+  Ret ls7.
 
 (* ----- Per-frame procedure -------------------------------- *)
 

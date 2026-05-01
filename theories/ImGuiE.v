@@ -57,6 +57,7 @@ Inductive imguiE : Type -> Type :=
   | EClipboardGet     : imguiE PrimString.string
   | EClipboardSet     : PrimString.string -> imguiE unit
   | ECtrlKeyPressed   : PrimString.string -> imguiE bool
+  | EKeyPressed       : PrimString.string -> imguiE bool
   | ESameLine         : imguiE unit
   | EFbarRefLabel     : PrimString.string -> imguiE unit.
 
@@ -120,6 +121,8 @@ Definition clipboard_set (s : PrimString.string) : itree imguiE unit :=
   trigger (EClipboardSet s).
 Definition ctrl_key_pressed (k : PrimString.string) : itree imguiE bool :=
   trigger (ECtrlKeyPressed k).
+Definition key_pressed (k : PrimString.string) : itree imguiE bool :=
+  trigger (EKeyPressed k).
 Definition imgui_same_line : itree imguiE unit := trigger ESameLine.
 Definition fbar_ref_label (s : PrimString.string) : itree imguiE unit :=
   trigger (EFbarRefLabel s).
@@ -171,6 +174,7 @@ Crane Extract Inductive imguiE => ""
     "imgui_helpers::clipboard_get()"
     "imgui_helpers::clipboard_set(%a0)"
     "imgui_helpers::ctrl_key_pressed(%a0)"
+    "imgui_helpers::key_pressed(%a0)"
     "imgui_helpers::same_line()"
     "imgui_helpers::fbar_ref_label(%a0)" ]
   From "imgui_helpers.h".
@@ -245,6 +249,8 @@ Crane Extract Inlined Constant clipboard_set =>
   "imgui_helpers::clipboard_set(%a0)" From "imgui_helpers.h".
 Crane Extract Inlined Constant ctrl_key_pressed =>
   "imgui_helpers::ctrl_key_pressed(%a0)" From "imgui_helpers.h".
+Crane Extract Inlined Constant key_pressed =>
+  "imgui_helpers::key_pressed(%a0)" From "imgui_helpers.h".
 Crane Extract Inlined Constant imgui_same_line =>
   "imgui_helpers::same_line()" From "imgui_helpers.h".
 Crane Extract Inlined Constant fbar_ref_label =>

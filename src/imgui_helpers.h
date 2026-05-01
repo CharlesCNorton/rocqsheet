@@ -250,6 +250,15 @@ inline bool ctrl_key_pressed(const std::string& k) {
   return false;
 }
 
+inline bool key_pressed(const std::string& k) {
+  if (k == "Up")    return ImGui::IsKeyPressed(ImGuiKey_UpArrow);
+  if (k == "Down")  return ImGui::IsKeyPressed(ImGuiKey_DownArrow);
+  if (k == "Left")  return ImGui::IsKeyPressed(ImGuiKey_LeftArrow);
+  if (k == "Right") return ImGui::IsKeyPressed(ImGuiKey_RightArrow);
+  if (k == "Tab")   return ImGui::IsKeyPressed(ImGuiKey_Tab);
+  return false;
+}
+
 // ----- Formula bar reference label -------------------------------------
 // Displays a small read-only label widget for the current selected
 // cell ref (e.g. "A1") in the formula bar.

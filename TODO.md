@@ -192,10 +192,9 @@ Functionality gaps to close and the theorems each one brings.
 
 ## UI-only (no kernel theorems)
 
-28. Keyboard navigation between cells.
-29. Cell formatting (bold, color, borders, alignment).
-30. Number formatting (decimals, currency, percent) — display layer
+28. Cell formatting (bold, color, borders, alignment).
+29. Number formatting (decimals, currency, percent) — display layer
     only; the `format_then_parse = original` round-trip lemma would
     apply if a parser is added.
-31. Charts.
-32. Conditional formatting.
+30. Charts.
+31. Conditional formatting.
