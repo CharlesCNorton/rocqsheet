@@ -34,3 +34,39 @@ Theorem add_days_no_overflow_in_range :
     -1000000 <= n <= 1000000 ->
     -2000000 <= add_days d n <= 2000000.
 Proof. intros. unfold add_days. lia. Qed.
+
+(* A small date sublanguage with its own evaluator, parallel to
+   the integer Expr.  The result type carries either a Date or a
+   plain Z (for sub_days / weekday). *)
+
+Inductive DateExpr : Type :=
+  | DLit     : Date -> DateExpr
+  | DAddDays : DateExpr -> Z -> DateExpr.
+
+Inductive DiffExpr : Type :=
+  | DSubDays : DateExpr -> DateExpr -> DiffExpr
+  | DWeekday : DateExpr -> DiffExpr.
+
+Fixpoint eval_date (e : DateExpr) : Date :=
+  match e with
+  | DLit d => d
+  | DAddDays e' n => add_days (eval_date e') n
+  end.
+
+Definition eval_diff (e : DiffExpr) : Z :=
+  match e with
+  | DSubDays a b => sub_days (eval_date a) (eval_date b)
+  | DWeekday a => weekday (eval_date a)
+  end.
+
+Theorem eval_add_days_zero : forall e,
+  eval_date (DAddDays e 0) = eval_date e.
+Proof. intros. simpl. apply add_days_zero. Qed.
+
+Theorem eval_sub_days_self : forall e,
+  eval_diff (DSubDays e e) = 0.
+Proof. intros. simpl. apply sub_days_self. Qed.
+
+Theorem eval_weekday_add_seven : forall e,
+  eval_diff (DWeekday (DAddDays e 7)) = eval_diff (DWeekday e).
+Proof. intros. simpl. apply weekday_add_seven. Qed.
