@@ -1,5 +1,7 @@
 # Rocqsheet
 
+![Rocqsheet screenshot](assets/screenshot.png)
+
 A small spreadsheet whose evaluation kernel is written in
 [Rocq](https://rocq-prover.org/) and extracted to C++ with
 [Crane](https://github.com/bloomberg/crane).  A Dear ImGui front-end
