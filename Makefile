@@ -6,13 +6,22 @@
 #                    rocqsheet.{h,cpp} into src/generated/.
 #   make          -- extract, configure cmake, and build the binary.
 #   make run      -- build and launch.
-#   make test     -- build, then run the parser unit tests.
+#   make test     -- build, then run the parser and kernel tests.
 #   make clean    -- nuke generated files and the cmake build dir.
+#
+# All steps are file-dependency-driven: re-running the same target
+# without changes is a no-op.
 
 CRANE_DIR  := crane
 GEN_DIR    := src/generated
 CMAKE_DIR  := _build/cmake
 THEORY_DIR := _build/Rocqsheet
+
+THEORY_VO  := _build/default/theories/Rocqsheet.vo
+GEN_FILES  := $(GEN_DIR)/rocqsheet.h $(GEN_DIR)/rocqsheet.cpp
+CMAKE_TAG  := $(CMAKE_DIR)/CMakeCache.txt
+
+CXX_SOURCES := $(wildcard src/*.cpp src/*.h tests/*.cpp) src/CMakeLists.txt
 
 .PHONY: all extract check-crane configure build run test clean
 
@@ -24,15 +33,25 @@ check-crane:
 	   echo "Run: git submodule update --init"; \
 	   exit 1)
 
-extract: check-crane theories/Rocqsheet.v
+# Theory rebuild only when .v or dune metadata changes.
+$(THEORY_VO): theories/Rocqsheet.v theories/dune dune-project | check-crane
 	dune build theories/Rocqsheet.vo
+
+# Generated header/source regen when the theory rebuilds.
+$(GEN_FILES): $(THEORY_VO)
 	@mkdir -p $(GEN_DIR)
 	cp $(THEORY_DIR)/rocqsheet.h $(THEORY_DIR)/rocqsheet.cpp $(GEN_DIR)/
 
-configure: extract
+extract: $(GEN_FILES)
+
+# Reconfigure cmake when CMakeLists or generated files change.
+$(CMAKE_TAG): src/CMakeLists.txt $(GEN_FILES)
 	cmake -S src -B $(CMAKE_DIR) -G "Unix Makefiles"
 
-build: configure
+configure: $(CMAKE_TAG)
+
+# cmake --build is itself incremental.
+build: $(CMAKE_TAG) $(CXX_SOURCES)
 	cmake --build $(CMAKE_DIR) -j
 
 run: build
