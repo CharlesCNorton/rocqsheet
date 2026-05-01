@@ -60,7 +60,7 @@ target_include_directories(rocqsheet PRIVATE
   ${CRANE_THEORIES_CPP})
 target_link_libraries(rocqsheet PRIVATE imgui)
 target_compile_options(rocqsheet PRIVATE
-  -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable)
+  -Wall -Wextra)
 
 # --- Tests ------------------------------------------------------------------
 
@@ -75,7 +75,7 @@ target_include_directories(formula_test PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CRANE_THEORIES_CPP})
 target_compile_options(formula_test PRIVATE
-  -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable)
+  -Wall -Wextra)
 add_test(NAME formula_test COMMAND formula_test)
 
 add_executable(kernel_test
@@ -87,5 +87,5 @@ target_include_directories(kernel_test PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CRANE_THEORIES_CPP})
 target_compile_options(kernel_test PRIVATE
-  -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable)
+  -Wall -Wextra)
 add_test(NAME kernel_test COMMAND kernel_test)

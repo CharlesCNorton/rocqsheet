@@ -3,7 +3,10 @@
 #include "eval_iter.h"
 
 #include <climits>
+#include <cstddef>
+#include <functional>
 #include <memory>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -15,16 +18,18 @@ using Cell = Rocqsheet::Cell;
 using Expr = Rocqsheet::Expr;
 using CellRef = Rocqsheet::CellRef;
 
-bool ref_eq(const CellRef& a, const CellRef& b) {
-  return a.ref_col == b.ref_col && a.ref_row == b.ref_row;
-}
-
-bool mem_ref(const CellRef& r, const std::vector<CellRef>& visited) {
-  for (const auto& v : visited) {
-    if (ref_eq(v, r)) return true;
+struct CellRefHash {
+  std::size_t operator()(const CellRef& r) const noexcept {
+    // The grid is small; mix col/row into a single key.
+    return std::hash<int64_t>{}(r.ref_col * 1'000'003LL + r.ref_row);
   }
-  return false;
-}
+};
+struct CellRefEq {
+  bool operator()(const CellRef& a, const CellRef& b) const noexcept {
+    return a.ref_col == b.ref_col && a.ref_row == b.ref_row;
+  }
+};
+using VisitedSet = std::unordered_set<CellRef, CellRefHash, CellRefEq>;
 
 // Saturating int64 arithmetic mirroring the Z.add/sub/mul overrides
 // in theories/Rocqsheet.v.
@@ -52,7 +57,7 @@ struct Cont {
   enum class Kind { EvalRight, CombineLeft };
   Kind kind;
   Op op;
-  std::vector<CellRef> visited;
+  VisitedSet visited;
   const Expr* right_expr = nullptr;
   int64_t val_left = 0;
 };
@@ -75,8 +80,8 @@ std::optional<int64_t> eval_iter(const Sheet& sheet, const CellRef& root_ref) {
   const Expr* cur_e = &std::get<Cell::CForm>(owned.back()->v()).d_a0;
 
   std::vector<Cont> stack;
-  std::vector<CellRef> visited;
-  visited.push_back(root_ref);
+  VisitedSet visited;
+  visited.insert(root_ref);
 
   bool have_val = false;
   std::optional<int64_t> cur_val;
@@ -89,7 +94,7 @@ std::optional<int64_t> eval_iter(const Sheet& sheet, const CellRef& root_ref) {
         have_val = true;
       } else if (std::holds_alternative<Expr::ERef>(v)) {
         const auto& r = std::get<Expr::ERef>(v).d_a0;
-        if (mem_ref(r, visited)) {
+        if (visited.count(r)) {
           cur_val = std::nullopt;
           have_val = true;
         } else {
@@ -103,9 +108,8 @@ std::optional<int64_t> eval_iter(const Sheet& sheet, const CellRef& root_ref) {
             have_val = true;
           } else {
             owned.push_back(std::make_unique<Cell>(std::move(target_cell)));
-            visited.push_back(r);
+            visited.insert(r);
             cur_e = &std::get<Cell::CForm>(owned.back()->v()).d_a0;
-            // have_val remains false
           }
         }
       } else {
@@ -136,11 +140,9 @@ std::optional<int64_t> eval_iter(const Sheet& sheet, const CellRef& root_ref) {
         k.right_expr = b;
         stack.push_back(std::move(k));
         cur_e = a;
-        // have_val remains false
       }
     } else {
       if (!cur_val.has_value()) {
-        // Failure propagates: drop the pending continuation stack.
         return std::nullopt;
       }
       if (stack.empty()) {
