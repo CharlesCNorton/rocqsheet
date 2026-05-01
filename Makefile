@@ -40,6 +40,7 @@ run: build
 
 test: build
 	./$(CMAKE_DIR)/formula_test
+	./$(CMAKE_DIR)/kernel_test
 
 clean:
 	dune clean

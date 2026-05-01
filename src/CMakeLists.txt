@@ -61,7 +61,9 @@ target_link_libraries(rocqsheet PRIVATE imgui)
 target_compile_options(rocqsheet PRIVATE
   -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable)
 
-# --- Parser unit tests ------------------------------------------------------
+# --- Tests ------------------------------------------------------------------
+
+enable_testing()
 
 add_executable(formula_test
   formula_test.cpp
@@ -73,5 +75,14 @@ target_include_directories(formula_test PRIVATE
   ${CRANE_THEORIES_CPP})
 target_compile_options(formula_test PRIVATE
   -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable)
-enable_testing()
 add_test(NAME formula_test COMMAND formula_test)
+
+add_executable(kernel_test
+  ${REPO_ROOT}/tests/kernel_test.cpp
+  ${GEN_DIR}/rocqsheet.cpp)
+target_include_directories(kernel_test PRIVATE
+  ${GEN_DIR}
+  ${CRANE_THEORIES_CPP})
+target_compile_options(kernel_test PRIVATE
+  -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable)
+add_test(NAME kernel_test COMMAND kernel_test)

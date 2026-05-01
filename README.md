@@ -28,7 +28,7 @@ git clone --recurse-submodules https://github.com/CharlesCNorton/rocqsheet.git
 cd rocqsheet
 make           # extract + configure + build
 make run       # launch the GUI
-make test      # parser unit tests
+make test      # parser and kernel runtime tests
 ```
 
 Requirements:
