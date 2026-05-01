@@ -1,43 +1,45 @@
 // Copyright (c) 2026 CharlesCNorton.  Licensed under the MIT License.
 //
-// Unit tests for the C++-side formula parser.
+// Runtime tests over the extracted Rocq formula parser.
 
-#include "formula.h"
 #include "rocqsheet.h"
 
 #include <cstdint>
 #include <cstdio>
-#include <string_view>
+#include <optional>
+#include <string>
 
 namespace {
 
 int failures = 0;
 
-void want_ok(const char* tag, std::string_view src) {
-  if (!formula::parse(src).has_value()) {
-    std::printf("FAIL parse(%s) [%s]\n", std::string(src).c_str(), tag);
+void want_ok(const char* tag, const std::string& src) {
+  if (!Parser::parse_formula(src).has_value()) {
+    std::printf("FAIL parse(%s) [%s]\n", src.c_str(), tag);
     ++failures;
   }
 }
-void want_fail(const char* tag, std::string_view src) {
-  if (formula::parse(src).has_value()) {
-    std::printf("FAIL reject(%s) [%s]\n", std::string(src).c_str(), tag);
+void want_fail(const char* tag, const std::string& src) {
+  if (Parser::parse_formula(src).has_value()) {
+    std::printf("FAIL reject(%s) [%s]\n", src.c_str(), tag);
     ++failures;
   }
 }
-void want_int(const char* tag, std::string_view src, int64_t expected) {
-  int64_t got;
-  if (!formula::parse_int_literal(src, got) || got != expected) {
-    std::printf("FAIL int(%s) [%s] got %lld want %lld\n",
-                std::string(src).c_str(), tag, (long long)got, (long long)expected);
+void want_int(const char* tag, const std::string& src, int64_t expected) {
+  auto got = Parser::parse_int_literal(src);
+  if (!got.has_value() || *got != expected) {
+    std::printf("FAIL int(%s) [%s] got %s want %lld\n",
+                src.c_str(), tag,
+                got ? std::to_string(*got).c_str() : "None",
+                (long long)expected);
     ++failures;
   }
 }
-void want_int_fail(const char* tag, std::string_view src) {
-  int64_t got;
-  if (formula::parse_int_literal(src, got)) {
+void want_int_fail(const char* tag, const std::string& src) {
+  auto got = Parser::parse_int_literal(src);
+  if (got.has_value()) {
     std::printf("FAIL int_reject(%s) [%s] got %lld\n",
-                std::string(src).c_str(), tag, (long long)got);
+                src.c_str(), tag, (long long)*got);
     ++failures;
   }
 }
@@ -89,7 +91,6 @@ int main() {
   want_int_fail("mixed", "12 abc");
   want_int_fail("over", "9999999999999999999");
 
-  // IF function and comparison operators.
   want_ok("eq",          "A1=B1");
   want_ok("lt",          "A1<B1");
   want_ok("gt",          "A1>B1");

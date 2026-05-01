@@ -9,6 +9,7 @@ From Crane Require Import Mapping.NatIntStd Mapping.ZInt.
 From Crane Require Import Monads.ITree.
 From Rocqsheet Require Import Rocqsheet.
 From Rocqsheet Require Import ImGuiE.
+From Rocqsheet Require Import Parser.
 Import ListNotations.
 Import Rocqsheet.
 
@@ -220,6 +221,8 @@ CoFixpoint run_app (ls : loop_state) : itree imguiE c_int :=
 Definition rocqsheet_run : itree imguiE c_int :=
   run_app initial_loop_state.
 
-(* [smoke] and [eval_cell] are extracted for the kernel tests; the
-   runtime path itself reaches [eval_expr] directly. *)
-Crane Extraction "rocqsheet" rocqsheet_run smoke eval_cell.
+(* Extract the runtime entry point alongside [smoke], [eval_cell],
+   [parse_formula], and [parse_int_literal] so the test targets and
+   the future C++ commit path can see them. *)
+Crane Extraction "rocqsheet" rocqsheet_run smoke eval_cell
+  parse_formula parse_int_literal.
