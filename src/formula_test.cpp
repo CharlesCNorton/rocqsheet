@@ -98,6 +98,15 @@ int main() {
   want_fail("mod-trail", "10%");
   want_fail("pow-trail", "2^");
 
+  want_ok("not",         "NOT(0)");
+  want_ok("not-lower",   "not(A1)");
+  want_ok("and",         "AND(A1,B1)");
+  want_ok("or",          "OR(A1,B1)");
+  want_ok("not-nested",  "NOT(AND(A1,B1))");
+  want_fail("not-bare",  "NOT");
+  want_fail("not-noargs","NOT()");
+  want_fail("and-1arg",  "AND(A1)");
+
   want_ok("eq",          "A1=B1");
   want_ok("lt",          "A1<B1");
   want_ok("gt",          "A1>B1");

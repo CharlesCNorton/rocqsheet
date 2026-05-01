@@ -163,6 +163,15 @@ Fixpoint show_expr (e : Expr) : PrimString.string :=
                    (PrimString.cat "(" (show_expr a))
                    ")^(")
                  (PrimString.cat (show_expr b) ")")
+  | ENot a => PrimString.cat "NOT(" (PrimString.cat (show_expr a) ")")
+  | EAnd a b => PrimString.cat "AND("
+                 (PrimString.cat (show_expr a)
+                   (PrimString.cat ","
+                     (PrimString.cat (show_expr b) ")")))
+  | EOr a b => PrimString.cat "OR("
+                (PrimString.cat (show_expr a)
+                  (PrimString.cat ","
+                    (PrimString.cat (show_expr b) ")")))
   end.
 
 Definition show_cell (c : Cell) : PrimString.string :=

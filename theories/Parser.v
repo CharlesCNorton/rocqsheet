@@ -75,7 +75,10 @@ Inductive token : Type :=
   | TComma
   | TIf
   | TMod
-  | TPow.
+  | TPow
+  | TNot
+  | TAnd
+  | TOr.
 
 (* INT64_MAX / 10 = 922337203685477580; one extra digit must not
    exceed (INT64_MAX mod 10) = 7. *)
@@ -211,32 +214,45 @@ Fixpoint tokenize_aux
         | Some (v, i') => tokenize_aux fuel' s len i' (TInt v :: acc)
         end
       else if is_alpha c then
-        (* Detect "IF" / "if" before treating as a ref. *)
         let c0 := to_upper_int (char_to_int c) in
         let i1 := PrimInt63.add i 1 in
-        if PrimInt63.ltb i1 len then
-          let c1u := to_upper_int (char_to_int (PrimString.get s i1)) in
-          let i2 := PrimInt63.add i1 1 in
-          (* IF must be followed by '(' to be a function call;
-             otherwise it might be the column letters. *)
-          let next_is_lparen :=
-            PrimInt63.ltb i2 len &&
-            PrimInt63.eqb (char_to_int (PrimString.get s i2)) 40 in
-          if PrimInt63.eqb c0 73 && PrimInt63.eqb c1u 70 && next_is_lparen
+        let i2 := PrimInt63.add i 2 in
+        let i3 := PrimInt63.add i 3 in
+        let i4 := PrimInt63.add i 4 in
+        let chr j :=
+          if PrimInt63.ltb j len then to_upper_int (char_to_int (PrimString.get s j))
+          else 0 in
+        let lparen j :=
+          PrimInt63.ltb j len &&
+          PrimInt63.eqb (char_to_int (PrimString.get s j)) 40 in
+        (* Three-letter function keywords: NOT(, AND(. *)
+        let c1u := chr i1 in
+        let c2u := chr i2 in
+        let three_letter_kw_lp := lparen i3 in
+        if PrimInt63.eqb c0 78 && PrimInt63.eqb c1u 79 &&
+           PrimInt63.eqb c2u 84 && three_letter_kw_lp
+        then
+          (* "NOT(" *)
+          tokenize_aux fuel' s len i4 (TNot :: acc)
+        else if PrimInt63.eqb c0 65 && PrimInt63.eqb c1u 78 &&
+                PrimInt63.eqb c2u 68 && three_letter_kw_lp
+        then
+          (* "AND(" *)
+          tokenize_aux fuel' s len i4 (TAnd :: acc)
+        else
+          (* Two-letter function keywords: IF(, OR(. *)
+          let two_letter_kw_lp := lparen i2 in
+          if PrimInt63.eqb c0 73 && PrimInt63.eqb c1u 70 && two_letter_kw_lp
           then
-            (* Consume "IF(" together so the parser doesn't read the
-               opening paren as a parenthesised expression. *)
-            tokenize_aux fuel' s len (PrimInt63.add i2 1) (TIf :: acc)
+            tokenize_aux fuel' s len i3 (TIf :: acc)
+          else if PrimInt63.eqb c0 79 && PrimInt63.eqb c1u 82 && two_letter_kw_lp
+          then
+            tokenize_aux fuel' s len i3 (TOr :: acc)
           else
             match read_ref fuel s len i with
             | None => None
             | Some (r, i') => tokenize_aux fuel' s len i' (TRef r :: acc)
             end
-        else
-          match read_ref fuel s len i with
-          | None => None
-          | Some (r, i') => tokenize_aux fuel' s len i' (TRef r :: acc)
-          end
       else None
   end.
 
@@ -378,6 +394,29 @@ with parse_factor (fuel : nat) (toks : list token)
           | Some (el, TRParen :: rest3) => Some (EIf cnd th el, rest3)
           | _ => None
           end
+        | _ => None
+        end
+      | _ => None
+      end
+    | TNot :: rest =>
+      match parse_top fuel' rest with
+      | Some (a, TRParen :: rest') => Some (ENot a, rest')
+      | _ => None
+      end
+    | TAnd :: rest =>
+      match parse_top fuel' rest with
+      | Some (a, TComma :: rest1) =>
+        match parse_top fuel' rest1 with
+        | Some (b, TRParen :: rest2) => Some (EAnd a b, rest2)
+        | _ => None
+        end
+      | _ => None
+      end
+    | TOr :: rest =>
+      match parse_top fuel' rest with
+      | Some (a, TComma :: rest1) =>
+        match parse_top fuel' rest1 with
+        | Some (b, TRParen :: rest2) => Some (EOr a b, rest2)
         | _ => None
         end
       | _ => None

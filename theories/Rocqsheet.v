@@ -74,7 +74,10 @@ Inductive Expr : Type :=
   | EGt  : Expr -> Expr -> Expr
   | EIf  : Expr -> Expr -> Expr -> Expr
   | EMod : Expr -> Expr -> Expr
-  | EPow : Expr -> Expr -> Expr.
+  | EPow : Expr -> Expr -> Expr
+  | ENot : Expr -> Expr
+  | EAnd : Expr -> Expr -> Expr
+  | EOr  : Expr -> Expr -> Expr.
 
 Inductive Cell : Type :=
   | CEmpty : Cell
@@ -175,6 +178,25 @@ Fixpoint eval_expr (fuel : nat) (visited : list CellRef) (s : Sheet)
       match eval_expr fuel' visited s a, eval_expr fuel' visited s b with
       | Some va, Some vb =>
         if Z.ltb vb 0%Z then None else Some (Z.pow va vb)
+      | _, _ => None
+      end
+    | ENot a =>
+      match eval_expr fuel' visited s a with
+      | Some v => Some (if Z.eqb v 0%Z then 1%Z else 0%Z)
+      | None => None
+      end
+    | EAnd a b =>
+      match eval_expr fuel' visited s a, eval_expr fuel' visited s b with
+      | Some va, Some vb =>
+        Some (if andb (negb (Z.eqb va 0%Z)) (negb (Z.eqb vb 0%Z))
+              then 1%Z else 0%Z)
+      | _, _ => None
+      end
+    | EOr a b =>
+      match eval_expr fuel' visited s a, eval_expr fuel' visited s b with
+      | Some va, Some vb =>
+        Some (if orb (negb (Z.eqb va 0%Z)) (negb (Z.eqb vb 0%Z))
+              then 1%Z else 0%Z)
       | _, _ => None
       end
     end
@@ -510,7 +532,7 @@ Proof.
   - destruct fuel' as [|fuel']; [lia|].
     assert (Hle' : fuel <= fuel') by lia.
     simpl in Hev. simpl.
-    destruct e as [n|r|a b|a b|a b|a b|a b|a b|a b|cnd th el|a b|a b].
+    destruct e as [n|r|a b|a b|a b|a b|a b|a b|a b|cnd th el|a b|a b|a|a b|a b].
     + exact Hev.
     + destruct (mem_cellref r visited); [discriminate|].
       destruct (get_cell s r) as [|n|e'].
@@ -565,6 +587,22 @@ Proof.
       rewrite (IH _ _ _ _ _ Hle' Eb).
       exact Hev.
     + (* EPow *)
+      destruct (eval_expr fuel visited s a) as [va|] eqn:Ea; [|discriminate].
+      destruct (eval_expr fuel visited s b) as [vb|] eqn:Eb; [|discriminate].
+      rewrite (IH _ _ _ _ _ Hle' Ea).
+      rewrite (IH _ _ _ _ _ Hle' Eb).
+      exact Hev.
+    + (* ENot *)
+      destruct (eval_expr fuel visited s a) as [va|] eqn:Ea; [|discriminate].
+      rewrite (IH _ _ _ _ _ Hle' Ea).
+      exact Hev.
+    + (* EAnd *)
+      destruct (eval_expr fuel visited s a) as [va|] eqn:Ea; [|discriminate].
+      destruct (eval_expr fuel visited s b) as [vb|] eqn:Eb; [|discriminate].
+      rewrite (IH _ _ _ _ _ Hle' Ea).
+      rewrite (IH _ _ _ _ _ Hle' Eb).
+      exact Hev.
+    + (* EOr *)
       destruct (eval_expr fuel visited s a) as [va|] eqn:Ea; [|discriminate].
       destruct (eval_expr fuel visited s b) as [vb|] eqn:Eb; [|discriminate].
       rewrite (IH _ _ _ _ _ Hle' Ea).
