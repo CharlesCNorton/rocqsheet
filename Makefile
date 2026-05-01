@@ -23,7 +23,7 @@ CMAKE_TAG  := $(CMAKE_DIR)/CMakeCache.txt
 
 CXX_SOURCES := $(wildcard src/*.cpp src/*.h tests/*.cpp) src/CMakeLists.txt
 
-.PHONY: all extract check-crane configure build run test clean
+.PHONY: all extract check-crane configure build run test clean update-crane
 
 all: build
 
@@ -64,3 +64,12 @@ test: build
 clean:
 	dune clean
 	rm -rf $(GEN_DIR) $(CMAKE_DIR)
+
+# Pull the latest Crane HEAD on the tracked branch into the submodule.
+# After this you typically need to re-pin opam: `opam pin add rocq-crane ./crane`.
+update-crane:
+	git submodule update --remote crane
+	@echo
+	@echo "Submodule moved to: $$(cd crane && git rev-parse HEAD)"
+	@echo "Re-pin opam if the Crane API moved:"
+	@echo "  opam pin add -y rocq-crane ./crane"
