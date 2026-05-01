@@ -73,3 +73,57 @@ Theorem persist_restore_then_eval_smoke :
   eval_cell DEFAULT_FUEL s (mkRef 0 0)
   = eval_cell DEFAULT_FUEL s' (mkRef 0 0).
 Proof. vm_compute. reflexivity. Qed.
+
+(* --- Extended persistence covering bool and float cells ------- *)
+
+Inductive PCell : Type :=
+  | PEmpty
+  | PInt   : Z -> PCell
+  | PFloat : PrimFloat.float -> PCell
+  | PBool  : bool -> PCell.
+
+Definition cell_to_pcell (c : Cell) : option PCell :=
+  match c with
+  | CEmpty   => Some PEmpty
+  | CLit n   => Some (PInt n)
+  | CFloat f => Some (PFloat f)
+  | CBool b  => Some (PBool b)
+  | CStr _   => None
+  | CForm _  => None
+  end.
+
+Definition pcell_to_cell (p : PCell) : Cell :=
+  match p with
+  | PEmpty   => CEmpty
+  | PInt n   => CLit n
+  | PFloat f => CFloat f
+  | PBool b  => CBool b
+  end.
+
+Theorem pcell_round_trip_lit : forall n,
+  match cell_to_pcell (CLit n) with
+  | Some p => pcell_to_cell p = CLit n
+  | None => False
+  end.
+Proof. reflexivity. Qed.
+
+Theorem pcell_round_trip_float : forall f,
+  match cell_to_pcell (CFloat f) with
+  | Some p => pcell_to_cell p = CFloat f
+  | None => False
+  end.
+Proof. reflexivity. Qed.
+
+Theorem pcell_round_trip_bool : forall b,
+  match cell_to_pcell (CBool b) with
+  | Some p => pcell_to_cell p = CBool b
+  | None => False
+  end.
+Proof. reflexivity. Qed.
+
+Theorem pcell_round_trip_empty :
+  match cell_to_pcell CEmpty with
+  | Some p => pcell_to_cell p = CEmpty
+  | None => False
+  end.
+Proof. reflexivity. Qed.
