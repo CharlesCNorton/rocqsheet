@@ -546,6 +546,58 @@ Proof.
       * apply (IH _ _ _ _ _ Hle' Hev).
 Qed.
 
+(* --- Algebraic lifts from Z --------------------------------------- *)
+
+Theorem eval_add_lit : forall a b fuel visited s,
+  eval_expr (S (S fuel)) visited s (EAdd (EInt a) (EInt b)) =
+    Some (Z.add a b).
+Proof. reflexivity. Qed.
+
+Theorem eval_sub_lit : forall a b fuel visited s,
+  eval_expr (S (S fuel)) visited s (ESub (EInt a) (EInt b)) =
+    Some (Z.sub a b).
+Proof. reflexivity. Qed.
+
+Theorem eval_mul_lit : forall a b fuel visited s,
+  eval_expr (S (S fuel)) visited s (EMul (EInt a) (EInt b)) =
+    Some (Z.mul a b).
+Proof. reflexivity. Qed.
+
+Theorem eval_add_comm : forall a b fuel visited s,
+  eval_expr (S (S fuel)) visited s (EAdd (EInt a) (EInt b)) =
+  eval_expr (S (S fuel)) visited s (EAdd (EInt b) (EInt a)).
+Proof.
+  intros. rewrite !eval_add_lit. f_equal. apply Z.add_comm.
+Qed.
+
+Theorem eval_mul_comm : forall a b fuel visited s,
+  eval_expr (S (S fuel)) visited s (EMul (EInt a) (EInt b)) =
+  eval_expr (S (S fuel)) visited s (EMul (EInt b) (EInt a)).
+Proof.
+  intros. rewrite !eval_mul_lit. f_equal. apply Z.mul_comm.
+Qed.
+
+Theorem eval_add_zero_l : forall a fuel visited s,
+  eval_expr (S (S fuel)) visited s (EAdd (EInt 0%Z) (EInt a)) = Some a.
+Proof. reflexivity. Qed.
+
+Theorem eval_mul_one_l : forall a fuel visited s,
+  eval_expr (S (S fuel)) visited s (EMul (EInt 1%Z) (EInt a)) = Some a.
+Proof.
+  intros. rewrite eval_mul_lit. rewrite Z.mul_1_l. reflexivity.
+Qed.
+
+(* Comparison results with literal arguments. *)
+Theorem eval_eq_lit : forall a b fuel visited s,
+  eval_expr (S (S fuel)) visited s (EEq (EInt a) (EInt b)) =
+    Some (if Z.eqb a b then 1%Z else 0%Z).
+Proof. reflexivity. Qed.
+
+Theorem eval_lt_lit : forall a b fuel visited s,
+  eval_expr (S (S fuel)) visited s (ELt (EInt a) (EInt b)) =
+    Some (if Z.ltb a b then 1%Z else 0%Z).
+Proof. reflexivity. Qed.
+
 End Rocqsheet.
 
 (* Extraction is driven from theories/RocqsheetMain.v. *)
