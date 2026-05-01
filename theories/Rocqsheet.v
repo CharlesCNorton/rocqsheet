@@ -364,4 +364,4 @@ Qed.
 
 End Rocqsheet.
 
-Crane Extraction "rocqsheet" Rocqsheet.
+(* Extraction is driven from theories/RocqsheetMain.v. *)

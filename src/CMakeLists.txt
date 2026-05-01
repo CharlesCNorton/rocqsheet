@@ -49,10 +49,11 @@ target_link_libraries(imgui PUBLIC PkgConfig::GLFW OpenGL::GL)
 
 # --- Rocqsheet binary --------------------------------------------------------
 
+# formula.cpp and eval_iter.cpp are no longer linked into the
+# runtime binary; they remain in the source tree to support the
+# parser and kernel test targets below.
 add_executable(rocqsheet
   main.cpp
-  formula.cpp
-  eval_iter.cpp
   ${GEN_DIR}/rocqsheet.cpp)
 target_include_directories(rocqsheet PRIVATE
   ${GEN_DIR}
@@ -66,6 +67,8 @@ target_compile_options(rocqsheet PRIVATE
 
 enable_testing()
 
+# Tests link against imgui to inherit its include path: the
+# generated rocqsheet.h pulls in imgui_helpers.h transitively.
 add_executable(formula_test
   formula_test.cpp
   formula.cpp
@@ -74,6 +77,7 @@ target_include_directories(formula_test PRIVATE
   ${GEN_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CRANE_THEORIES_CPP})
+target_link_libraries(formula_test PRIVATE imgui)
 target_compile_options(formula_test PRIVATE
   -Wall -Wextra)
 add_test(NAME formula_test COMMAND formula_test)
@@ -86,6 +90,7 @@ target_include_directories(kernel_test PRIVATE
   ${GEN_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CRANE_THEORIES_CPP})
+target_link_libraries(kernel_test PRIVATE imgui)
 target_compile_options(kernel_test PRIVATE
   -Wall -Wextra)
 add_test(NAME kernel_test COMMAND kernel_test)

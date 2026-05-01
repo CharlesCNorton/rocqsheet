@@ -1,25 +1,8 @@
 (* Copyright (c) 2026 CharlesCNorton.  Licensed under the MIT License. *)
-(**
-   Coinductive evaluator for the Rocqsheet kernel.
-
-   The Fixpoint [Rocqsheet.eval_expr] is total via a [fuel] parameter
-   (a Coq-termination artefact, not a real concept of the evaluator).
-   This file expresses the same evaluator as a [CoFixpoint] step
-   machine: an explicit [State] with continuation stack, a regular
-   [trans] function that advances state by one move, and a single
-   trampoline-style cofix that wraps each transition in [Tau].
-
-   Cycles are caught by the visited-set check inside [trans], not by
-   fuel.  Termination is by coinductive productivity: every Tau is a
-   real step, and reaching a Ret means evaluation finished.  A
-   [run_n] driver lets closed examples be checked by [vm_compute].
-
-   The C++ front-end uses the hand-coded [formula::eval_iter] for
-   runtime, which mirrors this state machine step-for-step.  The
-   cofix here is the Rocq-side spec; nothing in this file is
-   extracted (the [Crane Extraction "rocqsheet" Rocqsheet] command
-   in Rocqsheet.v targets the [Rocqsheet] module only).
-*)
+(* Coinductive evaluator for the Rocqsheet kernel.  Cycles are
+   caught by the visited-set check inside [trans], not by fuel.
+   Theorems use a bounded [run_n] driver so [vm_compute] can
+   discharge closed cases.  Not extracted. *)
 
 From Stdlib Require Import List BinInt.
 From Corelib Require Import PrimInt63.
@@ -31,7 +14,6 @@ Import Rocqsheet.
 
 Open Scope int63.
 
-(* No real effects: the evaluator is pure. *)
 Definition NoE : Type -> Type := fun _ => Empty_set.
 
 Inductive Cont : Type :=
@@ -60,9 +42,7 @@ Record State : Type := mkSt
   ; st_pc    : PC
   ; st_stack : list Cont }.
 
-(* One step of the evaluator: returns a new state to run again, or a
-   final value (option Z).  Total: just structural recursion on PC
-   and on the head of the stack. *)
+(* One transition: either a successor state or a terminal value. *)
 Definition trans (st : State) : State + option Z :=
   match st_pc st with
   | PCEval visited (EInt n) =>
@@ -102,7 +82,6 @@ Definition trans (st : State) : State + option Z :=
       inl (mkSt (st_sheet st) (PCEval visited c)
                (KIf visited t e :: st_stack st))
   | PCApply None =>
-      (* Failure: drop continuations, return None overall. *)
       inr None
   | PCApply (Some v) =>
       match st_stack st with
@@ -147,8 +126,7 @@ Definition trans (st : State) : State + option Z :=
       end
   end.
 
-(* Trampoline cofix.  Each recursive call sits directly under [Tau]
-   so the guardedness checker accepts it.  No fuel parameter. *)
+(* The recursive call sits directly under [Tau] for guardedness. *)
 CoFixpoint step (st : State) : itree NoE (option Z) :=
   match trans st with
   | inl st' => Tau (step st')
@@ -166,9 +144,8 @@ Definition eval_cell_co (s : Sheet) (r : CellRef) : itree NoE (option Z) :=
   | CForm e => eval_co (r :: nil) s e
   end.
 
-(* Bounded driver for closed-term theorems.  [run_n n t] takes up to
-   [n] Tau steps; returns [Some v] if a Ret is reached and [None] if
-   the budget expires.  Vis is unreachable because [NoE] is empty. *)
+(* Bounded driver: takes up to [n] Tau steps.  [Vis] is unreachable
+   because [NoE] is empty. *)
 Fixpoint run_n (n : nat) (t : itree NoE (option Z)) : option (option Z) :=
   match n with
   | O => None
@@ -180,10 +157,8 @@ Fixpoint run_n (n : nat) (t : itree NoE (option Z)) : option (option Z) :=
     end
   end.
 
-(* --- Theorems via the cofix evaluator --- *)
+(* --- Closed-term theorems --- *)
 
-(* Smoke: A1=2, B1=3, C1 = (A1+B1)*7 evaluates to 35 within a step
-   budget that comfortably covers the closed expression. *)
 Theorem co_smoke :
   let a1 := mkRef 0 0 in
   let b1 := mkRef 1 0 in

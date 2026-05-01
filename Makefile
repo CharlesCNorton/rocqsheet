@@ -46,7 +46,7 @@ extract: $(GEN_FILES)
 
 # Reconfigure cmake when CMakeLists or generated files change.
 $(CMAKE_TAG): src/CMakeLists.txt $(GEN_FILES)
-	cmake -S src -B $(CMAKE_DIR) -G "Unix Makefiles"
+	cmake -S src -B $(CMAKE_DIR) -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
 
 configure: $(CMAKE_TAG)
 
