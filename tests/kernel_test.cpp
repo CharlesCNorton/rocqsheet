@@ -1,10 +1,12 @@
 // Copyright (c) 2026 CharlesCNorton.  Licensed under the MIT License.
 //
-// Runtime tests over the Crane-extracted Rocqsheet kernel.  These
-// complement the Rocq-side theorems by exercising the actual C++
-// extraction at runtime.
+// Runtime tests over the Rocqsheet kernel.  These complement the
+// Rocq-side theorems by exercising the actual C++ extraction at
+// runtime, including a deep-chain stress test that the recursive
+// extracted [eval_cell] cannot survive.
 
 #include "rocqsheet.h"
+#include "../src/eval_iter.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -45,7 +47,7 @@ int main() {
 
   auto eval_with = [&](S::Expr e) {
     auto local = S::set_cell(sh, c1, S::Cell::cform(std::move(e)));
-    return S::eval_cell(S::DEFAULT_FUEL, local, c1);
+    return formula::eval_iter(local, c1);
   };
 
   check("add", eval_with(S::Expr::eadd(S::Expr::eref(a1), S::Expr::eref(b1))), 13);
@@ -56,7 +58,7 @@ int main() {
       eval_with(S::Expr::ediv(S::Expr::eref(a1), S::Expr::eint(0))));
 
   // Empty cell evaluates as 0.
-  check("empty-cell", S::eval_cell(S::DEFAULT_FUEL, S::new_sheet, S::CellRef{5, 5}), 0);
+  check("empty-cell", formula::eval_iter(S::new_sheet, S::CellRef{5, 5}), 0);
 
   // Multi-letter columns: AA = 26, BA = 52, CZ = 103.
   {
@@ -70,12 +72,10 @@ int main() {
         S::Expr::eadd(S::Expr::eref(aa1), S::Expr::eref(ba1)),
         S::Expr::eref(cz1));
     wide = S::set_cell(wide, c1, S::Cell::cform(std::move(sum_expr)));
-    check("multi-letter sum",
-        S::eval_cell(S::DEFAULT_FUEL, wide, c1), 1000);
+    check("multi-letter sum", formula::eval_iter(wide, c1), 1000);
   }
 
-  // Dependency chain: A1=1, A2=A1+1, ..., A50=A49+1.  The visited-set
-  // distinguishes this legitimate chain from a cycle.
+  // Dependency chain: A1=1, A2=A1+1, ..., A50=A49+1.
   {
     auto chain = S::set_cell(S::new_sheet, S::CellRef{0, 0}, S::Cell::clit(1));
     for (int r = 1; r < 50; ++r) {
@@ -85,9 +85,7 @@ int main() {
       chain = S::set_cell(chain, S::CellRef{0, r},
                           S::Cell::cform(std::move(e)));
     }
-    check("50-chain", S::eval_cell(S::DEFAULT_FUEL, chain, S::CellRef{0, 49}), 50);
-    check_none("low-fuel",
-        S::eval_cell(5, chain, S::CellRef{0, 49}));
+    check("50-chain", formula::eval_iter(chain, S::CellRef{0, 49}), 50);
   }
 
   // Two-cell cycle: A1 <-> B1 returns None on either entry point.
@@ -95,8 +93,33 @@ int main() {
     auto cyc = S::set_cell(S::new_sheet, a1,
         S::Cell::cform(S::Expr::eref(b1)));
     cyc = S::set_cell(cyc, b1, S::Cell::cform(S::Expr::eref(a1)));
-    check_none("cycle@A1", S::eval_cell(S::DEFAULT_FUEL, cyc, a1));
-    check_none("cycle@B1", S::eval_cell(S::DEFAULT_FUEL, cyc, b1));
+    check_none("cycle@A1", formula::eval_iter(cyc, a1));
+    check_none("cycle@B1", formula::eval_iter(cyc, b1));
+  }
+
+  // Stress: a 9000-deep ref chain that the recursive extracted
+  // eval_cell would segfault on (each call burns C++ stack), but
+  // eval_iter handles via its heap continuation stack.
+  {
+    auto big = S::set_cell(S::new_sheet, S::CellRef{0, 0}, S::Cell::clit(1));
+    int prev_c = 0, prev_r = 0;
+    int last_c = 0, last_r = 0;
+    int total = 1;
+    for (int i = 1; i < 9000; ++i) {
+      int r = i % 100;
+      int c = i / 100;
+      if (c >= 104) break;
+      auto e = S::Expr::eadd(
+          S::Expr::eref(S::CellRef{prev_c, prev_r}),
+          S::Expr::eint(1));
+      big = S::set_cell(big, S::CellRef{c, r},
+                        S::Cell::cform(std::move(e)));
+      prev_c = c; prev_r = r;
+      last_c = c; last_r = r;
+      total = i + 1;
+    }
+    auto v = formula::eval_iter(big, S::CellRef{last_c, last_r});
+    check("9000-deep chain", v, total);
   }
 
   if (failures == 0) std::printf("OK (all kernel cases pass)\n");

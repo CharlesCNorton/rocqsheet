@@ -6,6 +6,7 @@
 
 #include "rocqsheet.h"
 #include "formula.h"
+#include "eval_iter.h"
 
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
@@ -252,7 +253,7 @@ class App {
     Rocqsheet::CellRef ref{static_cast<int64_t>(c), static_cast<int64_t>(r)};
     auto cell = Rocqsheet::get_cell(sheet_, ref);
     if (std::holds_alternative<Rocqsheet::Cell::CEmpty>(cell.v())) return std::nullopt;
-    auto val = Rocqsheet::eval_cell(Rocqsheet::DEFAULT_FUEL, sheet_, ref);
+    auto val = formula::eval_iter(sheet_, ref);
     if (!val) return std::string("#ERR");
     return std::to_string(*val);
   }

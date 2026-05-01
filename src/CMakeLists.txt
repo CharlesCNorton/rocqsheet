@@ -52,6 +52,7 @@ target_link_libraries(imgui PUBLIC PkgConfig::GLFW OpenGL::GL)
 add_executable(rocqsheet
   main.cpp
   formula.cpp
+  eval_iter.cpp
   ${GEN_DIR}/rocqsheet.cpp)
 target_include_directories(rocqsheet PRIVATE
   ${GEN_DIR}
@@ -79,9 +80,11 @@ add_test(NAME formula_test COMMAND formula_test)
 
 add_executable(kernel_test
   ${REPO_ROOT}/tests/kernel_test.cpp
+  eval_iter.cpp
   ${GEN_DIR}/rocqsheet.cpp)
 target_include_directories(kernel_test PRIVATE
   ${GEN_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}
   ${CRANE_THEORIES_CPP})
 target_compile_options(kernel_test PRIVATE
   -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable)
