@@ -51,3 +51,37 @@ Theorem define_then_undefine_smoke :
   let nm'' := remove_name nm' "x" in
   lookup_name nm'' "x" = None.
 Proof. vm_compute. reflexivity. Qed.
+
+(* Named-cell evaluator: resolve a name, then evaluate the cell.
+   When the name is unbound, evaluation is an error. *)
+Definition eval_named (nm : NameMap) (fuel : nat) (s : Sheet)
+                      (n : PrimString.string) : EvalResult :=
+  match lookup_name nm n with
+  | Some r => eval_at_ref fuel nil s r
+  | None => EErr
+  end.
+
+Theorem eval_named_eq :
+  forall nm n r fuel s,
+    lookup_name nm n = Some r ->
+    eval_named nm fuel s n = eval_at_ref fuel nil s r.
+Proof.
+  intros nm n r fuel s Hlk.
+  unfold eval_named. rewrite Hlk. reflexivity.
+Qed.
+
+Theorem eval_named_unbound :
+  forall nm n fuel s,
+    lookup_name nm n = None ->
+    eval_named nm fuel s n = EErr.
+Proof.
+  intros. unfold eval_named. rewrite H. reflexivity.
+Qed.
+
+(* Smoke: defining a name and then evaluating through it returns
+   the same result as evaluating the named cell directly. *)
+Theorem eval_named_after_define_smoke :
+  let nm := define_name nil "x" (mkRef 0 0) in
+  let s := set_cell new_sheet (mkRef 0 0) (CLit 99%Z) in
+  eval_named nm DEFAULT_FUEL s "x" = EVal 99%Z.
+Proof. vm_compute. reflexivity. Qed.
