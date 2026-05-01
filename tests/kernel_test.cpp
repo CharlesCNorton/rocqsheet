@@ -122,6 +122,73 @@ int main() {
     check("9000-deep chain", v, total);
   }
 
+  // Empirical correspondence between the Rocq-extracted eval_cell
+  // (recursive, fuel-bounded; the spec) and formula::eval_iter
+  // (iterative, hand-coded; the implementation).  For every input
+  // where the recursive version terminates within fuel, the
+  // iterative version must produce the same answer.
+  {
+    auto agree = [&](const char* tag, const S::Sheet& sh, const S::CellRef& r) {
+      auto spec = S::eval_cell(S::DEFAULT_FUEL, sh, r);
+      auto impl = formula::eval_iter(sh, r);
+      // Where the spec returns Some, the impl must agree.
+      // Where the spec returns None, the impl is allowed to return
+      // either Some (if eval_cell ran out of fuel rather than
+      // hitting a cycle/divzero) or the same None.  The kernel test
+      // above already covers the cases where both should be None.
+      if (spec.has_value()) {
+        if (!impl.has_value() || *impl != *spec) {
+          std::printf("FAIL correspondence/%s: spec=%lld impl=%s\n", tag,
+                      (long long)*spec,
+                      impl ? std::to_string(*impl).c_str() : "None");
+          ++failures;
+        }
+      }
+    };
+
+    // Empty / literal / formula in all three positions.
+    agree("empty", S::new_sheet, S::CellRef{0, 0});
+    auto sh = S::set_cell(S::new_sheet, S::CellRef{0, 0}, S::Cell::clit(42));
+    agree("lit", sh, S::CellRef{0, 0});
+    sh = S::set_cell(sh, S::CellRef{1, 0},
+        S::Cell::cform(S::Expr::eint(7)));
+    agree("eint-form", sh, S::CellRef{1, 0});
+
+    // All four operators on a few literal pairs.
+    auto with = [&](S::Expr e) {
+      auto local = S::set_cell(sh, S::CellRef{2, 0}, S::Cell::cform(std::move(e)));
+      agree("op", local, S::CellRef{2, 0});
+    };
+    with(S::Expr::eadd(S::Expr::eint(11), S::Expr::eint(31)));
+    with(S::Expr::esub(S::Expr::eint(99), S::Expr::eint(40)));
+    with(S::Expr::emul(S::Expr::eint(7), S::Expr::eint(13)));
+    with(S::Expr::ediv(S::Expr::eint(50), S::Expr::eint(3)));
+
+    // A short reference chain that fits in DEFAULT_FUEL.
+    {
+      auto chain = S::set_cell(S::new_sheet, S::CellRef{0, 0}, S::Cell::clit(1));
+      for (int r = 1; r < 30; ++r) {
+        chain = S::set_cell(chain, S::CellRef{0, r}, S::Cell::cform(
+            S::Expr::eadd(S::Expr::eref(S::CellRef{0, r - 1}),
+                          S::Expr::eint(1))));
+      }
+      agree("chain-29", chain, S::CellRef{0, 29});
+    }
+
+    // Mixed operators with refs.
+    {
+      auto m = S::set_cell(S::new_sheet, S::CellRef{0, 0}, S::Cell::clit(10));
+      m = S::set_cell(m, S::CellRef{1, 0}, S::Cell::clit(3));
+      m = S::set_cell(m, S::CellRef{2, 0}, S::Cell::cform(
+          S::Expr::emul(
+              S::Expr::eadd(S::Expr::eref(S::CellRef{0, 0}),
+                            S::Expr::eref(S::CellRef{1, 0})),
+              S::Expr::esub(S::Expr::eref(S::CellRef{0, 0}),
+                            S::Expr::eref(S::CellRef{1, 0})))));
+      agree("(A+B)*(A-B)", m, S::CellRef{2, 0});
+    }
+  }
+
   if (failures == 0) std::printf("OK (all kernel cases pass)\n");
   else std::printf("FAILED (%d)\n", failures);
   return failures;
