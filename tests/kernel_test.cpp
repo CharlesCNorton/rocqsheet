@@ -156,9 +156,9 @@ int main() {
     int last_c = 0, last_r = 0;
     int total = 1;
     for (int i = 1; i < 9000; ++i) {
-      int r = i % 100;
-      int c = i / 100;
-      if (c >= 104) break;
+      int r = i % static_cast<int>(S::NUM_ROWS);
+      int c = i / static_cast<int>(S::NUM_ROWS);
+      if (c >= static_cast<int>(S::NUM_COLS)) break;
       auto e = S::Expr::eadd(
           S::Expr::eref(S::CellRef{prev_c, prev_r}),
           S::Expr::eint(1));
@@ -237,6 +237,30 @@ int main() {
                             S::Expr::eref(S::CellRef{1, 0})))));
       agree("(A+B)*(A-B)", m, S::CellRef{2, 0});
     }
+
+    // IF / comparison correspondence.
+    auto sh3 = S::set_cell(S::new_sheet, S::CellRef{0, 0}, S::Cell::clit(7));
+    sh3 = S::set_cell(sh3, S::CellRef{1, 0}, S::Cell::clit(3));
+    auto put_form = [&](S::Expr e) {
+      auto local = S::set_cell(sh3, S::CellRef{2, 0},
+          S::Cell::cform(std::move(e)));
+      agree("if-cmp", local, S::CellRef{2, 0});
+    };
+    put_form(S::Expr::eeq(S::Expr::eint(7), S::Expr::eint(7)));
+    put_form(S::Expr::eeq(S::Expr::eref(S::CellRef{0, 0}),
+                            S::Expr::eref(S::CellRef{1, 0})));
+    put_form(S::Expr::elt(S::Expr::eref(S::CellRef{1, 0}),
+                            S::Expr::eref(S::CellRef{0, 0})));
+    put_form(S::Expr::egt(S::Expr::eref(S::CellRef{1, 0}),
+                            S::Expr::eref(S::CellRef{0, 0})));
+    put_form(S::Expr::eif(
+        S::Expr::elt(S::Expr::eref(S::CellRef{1, 0}),
+                     S::Expr::eref(S::CellRef{0, 0})),
+        S::Expr::eref(S::CellRef{0, 0}),
+        S::Expr::eref(S::CellRef{1, 0})));
+    put_form(S::Expr::eif(S::Expr::eint(0),
+                            S::Expr::eint(99),
+                            S::Expr::eint(-1)));
   }
 
   if (failures == 0) std::printf("OK (all kernel cases pass)\n");

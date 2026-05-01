@@ -88,6 +88,10 @@ class App {
     put(3, 6, "=A7=B7");
     put(0, 8, "10");
     put(2, 8, "=IF(A9<5, A9*2, A9-5)");
+    // Error states for demonstration.
+    put(0, 10, "8");       put(2, 10, "=A11/0");        // -> #ERR (divzero)
+    put(0, 12, "=A13");    put(1, 12, "=A13");          // -> #ERR (self-cycle)
+    put(2, 14, "=foo");                                  // -> #PARSE
     selected_ = static_cast<int>(idx(0, 0));
   }
 
