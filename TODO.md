@@ -137,21 +137,27 @@ Functionality gaps to close and the theorems each one brings.
 
 ## Verification gaps within current functionality
 
-21. **Universal theorems for arithmetic.** Closed-input lifts are in
-    place (`eval_add_lit`, `eval_sub_lit`, `eval_mul_lit`,
-    `eval_eq_lit`, `eval_lt_lit`, commutativity, identity).  The
-    universal forall-eval statement remains.
-    *Theorems:* `forall a b, eval_expr (EAdd (EInt a) (EInt b)) ≈
-    Z.add a b` (with sufficient fuel), `eval_expr_compositional`,
-    plus algebraic laws (associativity, distributivity) lifted from
-    `Z`.
+21. **Compositional arithmetic theorems.** Closed-input lifts and
+    fuel monotonicity are in place (`eval_add_lit` ... `eval_lt_lit`,
+    `eval_add_comm`, `eval_mul_comm`, `eval_fuel_monotone` and
+    siblings).  The compositional and algebraic forms over arbitrary
+    subexpressions remain.
+    *Theorems:* `eval_expr_compositional` (`forall fuel a b va vb,
+    eval a = Some va -> eval b = Some vb -> eval (S fuel) (EAdd a b)
+    = Some (va + vb)` and analogous for sub/mul/div with the divisor
+    side-conditions), plus associativity and distributivity lifted
+    from `Z` to compound `EAdd`/`EMul`/`ESub` trees.
 
-22. **Saturation correctness.** The C++ `sat_add` / `sat_sub` /
-    `sat_mul` correspond to overrides on `Z.add` / `Z.sub` / `Z.mul`,
-    but no proof.
+22. **Extraction-time override correctness.** The C++ side overrides
+    `Z.add` / `Z.sub` / `Z.mul` with saturating arithmetic and
+    `Z.div` / `Z.modulo` with UB guards (divide-by-zero,
+    `INT64_MIN / -1`).  The proofs that these match the spec
+    semantics are not in place.
     *Theorems:* `sat_add_correct: sat_add a b = a + b OR
     (a + b > MAX AND result = MAX) OR (a + b < MIN AND result =
-    MIN)`, similar for sub/mul.
+    MIN)`, similar for sub/mul; `div_guard_correct: div a b =
+    Z.div a b` whenever `b <> 0` and not `(a = INT64_MIN AND b =
+    -1)`, with the C++ side defined on the corner cases.
 
 ---
 
