@@ -3,7 +3,7 @@
    point invoked by [src/main.cpp] after GLFW + ImGui setup. *)
 
 From Corelib Require Import PrimString PrimInt63.
-From Stdlib Require Import List BinInt.
+From Stdlib Require Import List BinInt Lia.
 From Stdlib.Numbers.Cyclic.Int63 Require Import Uint63.
 From Crane Require Extraction.
 From Crane Require Import Mapping.NatIntStd Mapping.ZInt.
@@ -982,6 +982,29 @@ Theorem do_right_unselected_noop : forall ls,
 Proof.
   intros ls Hns. unfold do_right, move_selection.
   rewrite Hns. reflexivity.
+Qed.
+
+(* cell_col_of always returns a value below NUM_COLS via the int63
+   modulo, so any reference produced by move_selection is in
+   bounds at the column. *)
+Theorem cell_col_of_lt_NUM_COLS : forall r,
+  PrimInt63.ltb (cell_col_of r) NUM_COLS = true.
+Proof.
+  intros r. unfold cell_col_of.
+  apply ltb_spec.
+  rewrite mod_spec.
+  pose proof (to_Z_bounded (cell_index r)).
+  pose proof (to_Z_bounded NUM_COLS).
+  assert (HE : to_Z NUM_COLS = 260%Z) by reflexivity.
+  apply Z.mod_pos_bound. lia.
+Qed.
+
+Theorem move_selection_col_in_bounds :
+  forall dc dr ls r',
+    ls_selected (move_selection dc dr ls) = Some r' ->
+    PrimInt63.ltb (cell_col_of r') NUM_COLS = true.
+Proof.
+  intros dc dr ls r' Hsel. apply cell_col_of_lt_NUM_COLS.
 Qed.
 
 (* Well-formedness of a loop_state: the underlying sheet stays
