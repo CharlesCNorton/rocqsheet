@@ -239,13 +239,57 @@ Proof.
   apply (@length_set Cell s (cell_index r) c).
 Qed.
 
-(* The cell_index bound for valid refs.  Stated but not yet
-   discharged: the proof would require [lia]/[nia] to handle a
-   multiplication of a bounded variable by a constant under int63
-   arithmetic mod wB, which isn't going through cleanly with the
-   current Stdlib int63 lemma set.  Once this lands, callers can
-   chain [length_new_sheet] + [length_set_cell] + this bound +
-   [get_set_eq] to prove set/get coherence from [valid_ref] alone. *)
+(* The cell_index bound for valid refs.  Move int63 inequalities
+   into Z via [ltb_spec], compute the literal Z constants by
+   [reflexivity], and discharge the modular reduction by showing the
+   product / sum stays well below wB. *)
+Lemma cell_index_in_grid : forall r,
+  valid_ref r = true ->
+  PrimInt63.ltb (cell_index r) GRID_SIZE = true.
+Proof.
+  intros r Hv.
+  unfold valid_ref in Hv.
+  apply Bool.andb_true_iff in Hv as [Hcol Hrow].
+  rewrite ltb_spec in Hcol, Hrow.
+  apply ltb_spec.
+  pose proof (to_Z_bounded (ref_col r)).
+  pose proof (to_Z_bounded (ref_row r)).
+  unfold cell_index.
+  rewrite add_spec, mul_spec.
+  assert (E1 : to_Z NUM_COLS = 104%Z) by reflexivity.
+  assert (E2 : to_Z NUM_ROWS = 100%Z) by reflexivity.
+  assert (E3 : to_Z GRID_SIZE = 10400%Z) by reflexivity.
+  assert (EwB : wB = 9223372036854775808%Z) by reflexivity.
+  rewrite E1 in *. rewrite E2 in *. rewrite E3. rewrite EwB in *.
+  rewrite Z.mod_small.
+  - rewrite Z.mod_small.
+    + assert (HM : (to_Z (ref_row r) * 104 + to_Z (ref_col r)
+                    <= 99 * 104 + 103)%Z) by nia.
+      lia.
+    + split; nia.
+  - split.
+    + apply Z.add_nonneg_nonneg;
+        [ apply Z.mod_pos_bound; lia | lia ].
+    + assert (HM : ((to_Z (ref_row r) * 104) mod 9223372036854775808
+                    < 10400)%Z).
+      { rewrite Z.mod_small by nia. nia. }
+      lia.
+Qed.
+
+(* User-friendly variant: callers prove [valid_ref r] (a closed boolean
+   check on the input) and a length invariant on the sheet (preserved
+   by [set_cell] and starting at [GRID_SIZE] for [new_sheet]) instead
+   of the raw int63 [ltb (cell_index r) (length s)] precondition. *)
+Theorem get_set_eq_valid : forall s r c,
+  PrimArray.length s = GRID_SIZE ->
+  valid_ref r = true ->
+  get_cell (set_cell s r c) r = c.
+Proof.
+  intros s r c Hlen Hv.
+  apply get_set_eq.
+  rewrite Hlen.
+  apply cell_index_in_grid; assumption.
+Qed.
 
 End Rocqsheet.
 
