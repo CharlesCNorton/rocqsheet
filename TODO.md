@@ -40,13 +40,7 @@ Functionality gaps to close and the theorems each one brings.
    `eval_and_short_circuit`, `eval_or_short_circuit`, full truth
    tables.
 
-6. **Modulo and power (`mod`, `^`).**
-   *Theorems:* `(a / b) * b + (a mod b) = a` when `b ≠ 0`,
-   `mod_lt b: a mod b < b`, `pow_zero x = 1`, `pow_one x = x`,
-   `pow_add x a b: x^(a+b) = x^a * x^b` (with overflow side
-   condition).
-
-7. **IFERROR / error-handling functions.** Let formulas trap `None`.
+6. **IFERROR / error-handling functions.** Let formulas trap `None`.
    *Theorems:* `eval_iferror_some_eq_first`,
    `eval_iferror_none_eq_fallback`, idempotence on already-non-None
    values.
@@ -55,13 +49,13 @@ Functionality gaps to close and the theorems each one brings.
 
 ## Ranges and aggregation
 
-8. **Range references (`A1:A10`).** Add `Expr::ERange (CellRef ×
+7. **Range references (`A1:A10`).** Add `Expr::ERange (CellRef ×
    CellRef)`.
    *Theorems:* `range_singleton (r, r) = [r]`,
    `range_inverted = nil`, `length_range = (cols × rows)`,
    `mem_range_iff_in_rectangle`.
 
-9. **Aggregations (SUM, AVG, MIN, MAX, COUNT).** Operate on ranges.
+8. **Aggregations (SUM, AVG, MIN, MAX, COUNT).** Operate on ranges.
    *Theorems:* `sum_empty = 0`, `sum_singleton = cell_value`,
    `sum_split (concat a b) = sum a + sum b`,
    `avg = sum / count`, `min_in_range`, `max_ge_min`,
@@ -71,23 +65,23 @@ Functionality gaps to close and the theorems each one brings.
 
 ## Sheet structure
 
-10. **Multiple sheets / workbooks.** `CellRef` gains a sheet id.
-    *Theorems:* `set_on_sheet_a_doesnt_change_sheet_b`,
-    `cross_sheet_eval_factors_through`, sheet-scoped name lookup.
+9. **Multiple sheets / workbooks.** `CellRef` gains a sheet id.
+   *Theorems:* `set_on_sheet_a_doesnt_change_sheet_b`,
+   `cross_sheet_eval_factors_through`, sheet-scoped name lookup.
 
-11. **Insert / delete row or column.** Shifts cell refs across
+10. **Insert / delete row or column.** Shifts cell refs across
     formulas.
     *Theorems:* `insert_row r preserves rows < r`, `insert_row r
     shifts refs ≥ r by +1`, `delete_row r drops r and shifts > r
     by -1`, `formulas updated consistently with shifts`,
     `insert ∘ delete = id` on the inverse position.
 
-12. **Merge cells.** Visually one cell, internally many.
+11. **Merge cells.** Visually one cell, internally many.
     *Theorems:* `eval_merged_region_at_top_left = eval_underlying`,
     `unmerge ∘ merge = id`, set on a merged region writes only the
     top-left.
 
-13. **Larger / parameterised grid.** Currently 260×200; the
+12. **Larger / parameterised grid.** Currently 260×200; the
     `cell_index_in_grid` proof uses literal constants.
     *Theorems:* Generalise the bound proof so it holds for any
     chosen `NUM_COLS`/`NUM_ROWS` without re-proving.
@@ -96,34 +90,34 @@ Functionality gaps to close and the theorems each one brings.
 
 ## Editing
 
-14. **Sort by column.** Reorders rows.
+13. **Sort by column.** Reorders rows.
     *Theorems:* `sort_is_permutation`, `sorted_after_sort` (column
     monotonic), `formulas_with_relative_refs_track_sort` (or fail
     loudly).
 
-15. **Filter.** UI-only hide; cells still eval.
+14. **Filter.** UI-only hide; cells still eval.
     *Theorems:* `filter_preserves_underlying`,
     `unfilter ∘ filter = id`.
 
-16. **Find / replace.** Bulk rewrite over cell sources.
+15. **Find / replace.** Bulk rewrite over cell sources.
     *Theorems:* `replace_idempotent_on_no_match`, `replace_then_replace`
     composition, `count_after_replace = 0` for the searched pattern.
 
-17. **Auto-fill (drag a formula across a range).** Adjusts refs by
+16. **Auto-fill (drag a formula across a range).** Adjusts refs by
     offset.
     *Theorems:* `fill (r1..r2) e shifts refs in e by (r' - r1) for
     each r'`, `fill_singleton = set_cell`, `fill ∘ fill_inverse =
     id`.
 
-18. **Named ranges.** Alias for a `CellRef` or range.
+17. **Named ranges.** Alias for a `CellRef` or range.
     *Theorems:* `eval_named_ref = eval_underlying_ref`,
     `lookup_after_define = Some`, `define_then_undefine = original`.
 
-19. **Cell comments / metadata.** Non-evaluating annotation.
+18. **Cell comments / metadata.** Non-evaluating annotation.
     *Theorems:* `eval_with_comment = eval_without`,
     `comment_round_trip_through_save_load`.
 
-20. **Multi-cell selection + copy/paste with relative ref shift.**
+19. **Multi-cell selection + copy/paste with relative ref shift.**
     Current copy/paste is single-cell.
     *Theorems:* `paste_at_offset (dx, dy) shifts refs by (dx, dy)`,
     `copy then paste at original location = identity`,
@@ -133,13 +127,13 @@ Functionality gaps to close and the theorems each one brings.
 
 ## Persistence and export
 
-21. **Save / load round-trip on the kernel state.** Currently
+20. **Save / load round-trip on the kernel state.** Currently
     serialises edit-buffer text, not the `Sheet`.
     *Theorems:* `load (save s) ≈ s` up to non-edit-buffer fields,
     idempotence on no-change, `save_then_load_then_eval = eval
     directly`.
 
-22. **CSV / PDF export.** String formatting layer.
+21. **CSV / PDF export.** String formatting layer.
     *Theorems:* `csv_round_trip` (`parse_csv (to_csv s) = s` on
     representable subsets), `cell_value_appears_in_csv_at_correct_
     position`.
@@ -148,7 +142,7 @@ Functionality gaps to close and the theorems each one brings.
 
 ## Verification gaps within current functionality
 
-23. **Universal theorems for arithmetic.** Closed-input lifts are in
+22. **Universal theorems for arithmetic.** Closed-input lifts are in
     place (`eval_add_lit`, `eval_sub_lit`, `eval_mul_lit`,
     `eval_eq_lit`, `eval_lt_lit`, commutativity, identity).  The
     universal forall-eval statement remains.
@@ -157,7 +151,7 @@ Functionality gaps to close and the theorems each one brings.
     plus algebraic laws (associativity, distributivity) lifted from
     `Z`.
 
-24. **Saturation correctness.** The C++ `sat_add` / `sat_sub` /
+23. **Saturation correctness.** The C++ `sat_add` / `sat_sub` /
     `sat_mul` correspond to overrides on `Z.add` / `Z.sub` / `Z.mul`,
     but no proof.
     *Theorems:* `sat_add_correct: sat_add a b = a + b OR
@@ -168,13 +162,13 @@ Functionality gaps to close and the theorems each one brings.
 
 ## Performance and runtime
 
-25. **Dirty-tracking dependency graph.** Currently every visible
+24. **Dirty-tracking dependency graph.** Currently every visible
     cell re-evaluates every frame.
     *Theorems:* `dirty_set_after_set s r c = closure_of_dependents
     r`, `eval_only_dirty = eval_all` on the dirty cells,
     `clean_after_eval`.
 
-26. **`set_cell` on a shared sheet copies the whole vector.**  At
+25. **`set_cell` on a shared sheet copies the whole vector.**  At
     grid sizes above 50k cells the latency becomes visible.
     *Theorems:* would shift to a tree-shaped persistent structure
     (e.g. Hash Array Mapped Trie) with `get_set_eq` and `get_set_neq`
@@ -184,18 +178,18 @@ Functionality gaps to close and the theorems each one brings.
 
 ## Effectful additions
 
-27. **TODAY, NOW, RAND.** Non-deterministic / time-dependent.
+26. **TODAY, NOW, RAND.** Non-deterministic / time-dependent.
     *Theorems:* requires an effect type (`clockE`, `randE` as ITree
     events) and lemmas about determinism modulo the effect
     interpreter; `TODAY ≤ NOW` after epoch, `RAND in [0, 1)`.
 
-28. **Macros / embedded scripting.** Adds a sublanguage to the
+27. **Macros / embedded scripting.** Adds a sublanguage to the
     kernel.
     *Theorems:* macro semantics deterministic given input state,
     soundness with respect to direct user actions, sandbox boundary
     (no escape to host).
 
-29. **Concurrent edits / collaboration.** Multi-user.
+28. **Concurrent edits / collaboration.** Multi-user.
     *Theorems:* serialisability of operations, conflict resolution
     (CRDT lemmas), monotonicity of merge.
 
@@ -203,10 +197,10 @@ Functionality gaps to close and the theorems each one brings.
 
 ## UI-only (no kernel theorems)
 
-30. Keyboard navigation between cells.
-31. Cell formatting (bold, color, borders, alignment).
-32. Number formatting (decimals, currency, percent) — display layer
+29. Keyboard navigation between cells.
+30. Cell formatting (bold, color, borders, alignment).
+31. Number formatting (decimals, currency, percent) — display layer
     only; the `format_then_parse = original` round-trip lemma would
     apply if a parser is added.
-33. Charts.
-34. Conditional formatting.
+32. Charts.
+33. Conditional formatting.
