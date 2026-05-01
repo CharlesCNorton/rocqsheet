@@ -97,6 +97,56 @@ int main() {
     check_none("cycle@B1", formula::eval_iter(cyc, b1));
   }
 
+  // IF / comparison operators.
+  {
+    auto sh2 = S::set_cell(S::new_sheet, S::CellRef{0, 0}, S::Cell::clit(7));
+    sh2 = S::set_cell(sh2, S::CellRef{1, 0}, S::Cell::clit(7));
+    sh2 = S::set_cell(sh2, S::CellRef{2, 0}, S::Cell::clit(3));
+    auto eA = S::CellRef{4, 0};
+
+    auto with_if = [&](S::Expr e) {
+      auto local = S::set_cell(sh2, eA, S::Cell::cform(std::move(e)));
+      return formula::eval_iter(local, eA);
+    };
+
+    auto refA = S::CellRef{0, 0}, refB = S::CellRef{1, 0}, refC = S::CellRef{2, 0};
+    // A==B (7==7) is true: IF picks the then-branch (1).
+    check("if-true",
+          with_if(S::Expr::eif(
+              S::Expr::eeq(S::Expr::eref(refA), S::Expr::eref(refB)),
+              S::Expr::eint(1),
+              S::Expr::eint(0))),
+          1);
+    // A==C (7==3) is false: IF picks else (0).
+    check("if-false",
+          with_if(S::Expr::eif(
+              S::Expr::eeq(S::Expr::eref(refA), S::Expr::eref(refC)),
+              S::Expr::eint(1),
+              S::Expr::eint(0))),
+          0);
+    // C<A (3<7) is true: pick then.
+    check("lt-true",
+          with_if(S::Expr::eif(
+              S::Expr::elt(S::Expr::eref(refC), S::Expr::eref(refA)),
+              S::Expr::eint(99),
+              S::Expr::eint(-1))),
+          99);
+    // A>C (7>3) is true.
+    check("gt-true",
+          with_if(S::Expr::eif(
+              S::Expr::egt(S::Expr::eref(refA), S::Expr::eref(refC)),
+              S::Expr::eint(11),
+              S::Expr::eint(22))),
+          11);
+    // Comparison alone returns 1/0.
+    check("eq-as-value",
+          with_if(S::Expr::eeq(S::Expr::eref(refA), S::Expr::eref(refB))),
+          1);
+    check("lt-as-value",
+          with_if(S::Expr::elt(S::Expr::eref(refA), S::Expr::eref(refC))),
+          0);
+  }
+
   // Stress: a 9000-deep ref chain that the recursive extracted
   // eval_cell would segfault on (each call burns C++ stack), but
   // eval_iter handles via its heap continuation stack.

@@ -89,6 +89,21 @@ int main() {
   want_int_fail("mixed", "12 abc");
   want_int_fail("over", "9999999999999999999");
 
+  // IF function and comparison operators.
+  want_ok("eq",          "A1=B1");
+  want_ok("lt",          "A1<B1");
+  want_ok("gt",          "A1>B1");
+  want_ok("eq-num",      "5=5");
+  want_ok("if-simple",   "IF(A1=B1,A1,B1)");
+  want_ok("if-lower",    "if(A1=B1,A1,B1)");
+  want_ok("if-arith",    "IF(A1+1=B1*2,1,0)");
+  want_ok("if-nested",   "IF(A1<B1,IF(B1<C1,1,2),3)");
+  want_ok("eq-then-arith", "1+(A1=B1)");
+  want_fail("if-too-few",  "IF(A1,B1)");
+  want_fail("if-no-paren", "IF A1,B1,C1");
+  want_fail("if-bare",     "IF");
+  want_fail("eq-trailing", "A1=");
+
   if (failures == 0) std::printf("OK (all parser cases pass)\n");
   else std::printf("FAILED (%d)\n", failures);
   return failures;

@@ -62,7 +62,8 @@ OpenGL ships with the OS as a framework; nothing extra to install.
 * Click a cell to select; double-click to edit.
 * Type a number to set a literal; type `=A1+B2` (or `=(A1+B1)*7`,
   `=A1/0`) for a formula.
-* Operators: `+ - * /` with parentheses.  Cell refs are
+* Operators: `+ - * /`, parentheses, comparison `=`/`<`/`>` (return
+  `1` or `0`), and `IF(cond, then, else)`.  Cell refs are
   `<column><1-based row>` where columns run `A..CZ`.
 * `#PARSE` indicates a malformed formula.  `#ERR` indicates a
   cycle, divide-by-zero, or out-of-fuel evaluation.

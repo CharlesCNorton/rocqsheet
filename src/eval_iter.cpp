@@ -51,14 +51,16 @@ int64_t sat_mul(int64_t a, int64_t b) {
   return r;
 }
 
-enum class Op { Add, Sub, Mul, Div };
+enum class Op { Add, Sub, Mul, Div, Eq, Lt, Gt };
 
 struct Cont {
-  enum class Kind { EvalRight, CombineLeft };
+  enum class Kind { EvalRight, CombineLeft, IfChoose };
   Kind kind;
   Op op;
   VisitedSet visited;
+  // Used by EvalRight (right_expr) and IfChoose (then_expr/else_expr).
   const Expr* right_expr = nullptr;
+  const Expr* else_expr = nullptr;
   int64_t val_left = 0;
 };
 
@@ -112,6 +114,15 @@ std::optional<int64_t> eval_iter(const Sheet& sheet, const CellRef& root_ref) {
             cur_e = &std::get<Cell::CForm>(owned.back()->v()).d_a0;
           }
         }
+      } else if (std::holds_alternative<Expr::EIf>(v)) {
+        const auto& [c_p, t_p, e_p] = std::get<Expr::EIf>(v);
+        Cont k;
+        k.kind = Cont::Kind::IfChoose;
+        k.visited = visited;
+        k.right_expr = t_p.get();    // "then" branch
+        k.else_expr = e_p.get();
+        stack.push_back(std::move(k));
+        cur_e = c_p.get();
       } else {
         Op op;
         const Expr* a;
@@ -128,10 +139,22 @@ std::optional<int64_t> eval_iter(const Sheet& sheet, const CellRef& root_ref) {
           op = Op::Mul;
           a = std::get<Expr::EMul>(v).d_a0.get();
           b = std::get<Expr::EMul>(v).d_a1.get();
-        } else {
+        } else if (std::holds_alternative<Expr::EDiv>(v)) {
           op = Op::Div;
           a = std::get<Expr::EDiv>(v).d_a0.get();
           b = std::get<Expr::EDiv>(v).d_a1.get();
+        } else if (std::holds_alternative<Expr::EEq>(v)) {
+          op = Op::Eq;
+          a = std::get<Expr::EEq>(v).d_a0.get();
+          b = std::get<Expr::EEq>(v).d_a1.get();
+        } else if (std::holds_alternative<Expr::ELt>(v)) {
+          op = Op::Lt;
+          a = std::get<Expr::ELt>(v).d_a0.get();
+          b = std::get<Expr::ELt>(v).d_a1.get();
+        } else {
+          op = Op::Gt;
+          a = std::get<Expr::EGt>(v).d_a0.get();
+          b = std::get<Expr::EGt>(v).d_a1.get();
         }
         Cont k;
         k.kind = Cont::Kind::EvalRight;
@@ -159,6 +182,11 @@ std::optional<int64_t> eval_iter(const Sheet& sheet, const CellRef& root_ref) {
         visited = std::move(top.visited);
         cur_e = top.right_expr;
         have_val = false;
+      } else if (top.kind == Cont::Kind::IfChoose) {
+        // cur_val is the cond.  Nonzero -> then; zero -> else.
+        cur_e = (*cur_val != 0) ? top.right_expr : top.else_expr;
+        visited = std::move(top.visited);
+        have_val = false;
       } else {
         int64_t l = top.val_left;
         int64_t r = *cur_val;
@@ -173,6 +201,9 @@ std::optional<int64_t> eval_iter(const Sheet& sheet, const CellRef& root_ref) {
               cur_val = l / r;
             }
             break;
+          case Op::Eq: cur_val = (l == r) ? int64_t(1) : int64_t(0); break;
+          case Op::Lt: cur_val = (l <  r) ? int64_t(1) : int64_t(0); break;
+          case Op::Gt: cur_val = (l >  r) ? int64_t(1) : int64_t(0); break;
         }
       }
     }

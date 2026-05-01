@@ -195,7 +195,9 @@ class App {
           "A small spreadsheet driven by a Rocq-extracted kernel.\n\n"
           "Click a cell to select; double-click to edit.\n"
           "Type a number for a literal, =A1+B2 for a formula.\n"
-          "Operators: + - * /, parentheses, A..CZ refs.\n\n"
+          "Operators: + - * /, parentheses, comparison = < >\n"
+          "(return 1 or 0), and IF(cond, then, else).\n"
+          "Cell refs run A..CZ over rows 1..100.\n\n"
           "Errors:\n"
           "  #PARSE  - the formula didn't parse.\n"
           "  #ERR    - cycle, divide-by-zero, or out of fuel.");

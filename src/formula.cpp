@@ -42,9 +42,28 @@ struct Parser {
     return false;
   }
 
+  // top    = expr (('='|'<'|'>') expr)?
   // expr   = term (('+'|'-') term)*
   // term   = factor (('*'|'/') factor)*
-  // factor = '-' factor | '(' expr ')' | INT | REF
+  // factor = '-' factor | '(' top ')' | INT | REF
+  //        | 'IF' '(' top ',' top ',' top ')'
+  std::optional<Rocqsheet::Expr> top_expr() {
+    auto lhs = expr();
+    if (!lhs) return std::nullopt;
+    char c = peek();
+    if (c == '=' || c == '<' || c == '>') {
+      ++pos;
+      auto rhs = expr();
+      if (!rhs) return std::nullopt;
+      if (c == '=')
+        return Rocqsheet::Expr::eeq(std::move(*lhs), std::move(*rhs));
+      if (c == '<')
+        return Rocqsheet::Expr::elt(std::move(*lhs), std::move(*rhs));
+      return Rocqsheet::Expr::egt(std::move(*lhs), std::move(*rhs));
+    }
+    return lhs;
+  }
+
   std::optional<Rocqsheet::Expr> expr() {
     auto lhs = term();
     if (!lhs) return std::nullopt;
@@ -100,12 +119,29 @@ struct Parser {
     }
     if (c == '(') {
       ++pos;
-      auto e = expr();
+      auto e = top_expr();
       if (!e || !consume(')')) return std::nullopt;
       return e;
     }
     if (std::isdigit(static_cast<unsigned char>(c))) return parse_int();
-    if (is_alpha(c)) return parse_ref();
+    if (is_alpha(c)) {
+      // IF(cond, then, else) is a function call.
+      skip_ws();
+      if (pos + 2 < src.size() &&
+          upper(src[pos]) == 'I' && upper(src[pos + 1]) == 'F' &&
+          src[pos + 2] == '(') {
+        pos += 3;
+        auto cond = top_expr();
+        if (!cond || !consume(',')) return std::nullopt;
+        auto then_e = top_expr();
+        if (!then_e || !consume(',')) return std::nullopt;
+        auto else_e = top_expr();
+        if (!else_e || !consume(')')) return std::nullopt;
+        return Rocqsheet::Expr::eif(
+            std::move(*cond), std::move(*then_e), std::move(*else_e));
+      }
+      return parse_ref();
+    }
     return std::nullopt;
   }
 
@@ -155,7 +191,7 @@ struct Parser {
 
 std::optional<Rocqsheet::Expr> parse(std::string_view src) {
   Parser p{src};
-  auto e = p.expr();
+  auto e = p.top_expr();
   if (!e) return std::nullopt;
   if (!p.eof()) return std::nullopt;
   return e;

@@ -60,7 +60,11 @@ Inductive Expr : Type :=
   | EAdd : Expr -> Expr -> Expr
   | ESub : Expr -> Expr -> Expr
   | EMul : Expr -> Expr -> Expr
-  | EDiv : Expr -> Expr -> Expr.
+  | EDiv : Expr -> Expr -> Expr
+  | EEq  : Expr -> Expr -> Expr
+  | ELt  : Expr -> Expr -> Expr
+  | EGt  : Expr -> Expr -> Expr
+  | EIf  : Expr -> Expr -> Expr -> Expr.
 
 Inductive Cell : Type :=
   | CEmpty : Cell
@@ -129,6 +133,27 @@ Fixpoint eval_expr (fuel : nat) (visited : list CellRef) (s : Sheet)
       | Some va, Some vb =>
         if Z.eqb vb 0%Z then None else Some (Z.div va vb)
       | _, _ => None
+      end
+    | EEq a b =>
+      match eval_expr fuel' visited s a, eval_expr fuel' visited s b with
+      | Some va, Some vb => Some (if Z.eqb va vb then 1%Z else 0%Z)
+      | _, _ => None
+      end
+    | ELt a b =>
+      match eval_expr fuel' visited s a, eval_expr fuel' visited s b with
+      | Some va, Some vb => Some (if Z.ltb va vb then 1%Z else 0%Z)
+      | _, _ => None
+      end
+    | EGt a b =>
+      match eval_expr fuel' visited s a, eval_expr fuel' visited s b with
+      | Some va, Some vb => Some (if Z.gtb va vb then 1%Z else 0%Z)
+      | _, _ => None
+      end
+    | EIf c t e =>
+      match eval_expr fuel' visited s c with
+      | Some 0%Z => eval_expr fuel' visited s e
+      | Some _ => eval_expr fuel' visited s t
+      | None => None
       end
     end
   end.
