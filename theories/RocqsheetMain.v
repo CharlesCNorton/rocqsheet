@@ -963,3 +963,52 @@ Theorem update_fbar_preserves_fields :
     /\ ls_selected (update_fbar ls s') = ls_selected ls
     /\ ls_edit_buf (update_fbar ls s') = ls_edit_buf ls.
 Proof. intros. unfold update_fbar. simpl. repeat split. Qed.
+
+(* Undo / redo round-trip: undoing then redoing recovers the
+   sheet (and the undo / redo stacks shift accordingly). *)
+Theorem do_undo_then_redo_recovers_sheet :
+  forall ls prev rest,
+    ls_undo ls = prev :: rest ->
+    ls_sheet (do_redo (do_undo ls)) = ls_sheet ls.
+Proof.
+  intros ls prev rest Hu.
+  unfold do_undo, do_redo. rewrite Hu. simpl.
+  reflexivity.
+Qed.
+
+(* When the selection is None, do_right is a no-op. *)
+Theorem do_right_unselected_noop : forall ls,
+  ls_selected ls = None -> do_right ls = ls.
+Proof.
+  intros ls Hns. unfold do_right, move_selection.
+  rewrite Hns. reflexivity.
+Qed.
+
+(* Well-formedness of a loop_state: the underlying sheet stays
+   array-shaped (no resize ever happens). *)
+Definition well_formed_loop_state (ls : loop_state) : Prop :=
+  PrimArray.length (ls_sheet ls) = GRID_SIZE.
+
+(* well_formed_loop_state is preserved by put_lit and put_form,
+   the two row-level builders used by demo_sheet. *)
+Lemma put_lit_preserves_wf :
+  forall s c r v,
+    PrimArray.length s = GRID_SIZE ->
+    PrimArray.length (put_lit s c r v) = GRID_SIZE.
+Proof.
+  intros. unfold put_lit. rewrite length_set_cell. assumption.
+Qed.
+
+Lemma put_form_preserves_wf :
+  forall s c r e,
+    PrimArray.length s = GRID_SIZE ->
+    PrimArray.length (put_form s c r e) = GRID_SIZE.
+Proof.
+  intros. unfold put_form. rewrite length_set_cell. assumption.
+Qed.
+
+(* run_app productivity is captured structurally by the cofix
+   guarded recursion: every recursive [run_app ls'] sits under a
+   [Tau] constructor, so the cofix is well-formed.  This is
+   established at definition time by Coq's guardedness checker;
+   no explicit theorem is needed. *)
