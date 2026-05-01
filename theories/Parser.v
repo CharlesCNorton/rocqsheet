@@ -81,7 +81,11 @@ Inductive token : Type :=
   | TOr
   | TIfErr
   | TAvg
-  | TCount.
+  | TCount
+  | TSum
+  | TMin
+  | TMax
+  | TColon.
 
 (* INT64_MAX / 10 = 922337203685477580; one extra digit must not
    exceed (INT64_MAX mod 10) = 7. *)
@@ -211,6 +215,8 @@ Fixpoint tokenize_aux
         tokenize_aux fuel' s len (PrimInt63.add i 1) (TMod :: acc)
       else if PrimInt63.eqb n 94 then
         tokenize_aux fuel' s len (PrimInt63.add i 1) (TPow :: acc)
+      else if PrimInt63.eqb n 58 then
+        tokenize_aux fuel' s len (PrimInt63.add i 1) (TColon :: acc)
       else if is_digit c then
         match read_int fuel s len i with
         | None => None
@@ -267,6 +273,21 @@ Fixpoint tokenize_aux
         then
           (* "AVG(" *)
           tokenize_aux fuel' s len i4 (TAvg :: acc)
+        else if PrimInt63.eqb c0 83 && PrimInt63.eqb c1u 85 &&
+                PrimInt63.eqb c2u 77 && three_letter_kw_lp
+        then
+          (* "SUM(" *)
+          tokenize_aux fuel' s len i4 (TSum :: acc)
+        else if PrimInt63.eqb c0 77 && PrimInt63.eqb c1u 73 &&
+                PrimInt63.eqb c2u 78 && three_letter_kw_lp
+        then
+          (* "MIN(" *)
+          tokenize_aux fuel' s len i4 (TMin :: acc)
+        else if PrimInt63.eqb c0 77 && PrimInt63.eqb c1u 65 &&
+                PrimInt63.eqb c2u 88 && three_letter_kw_lp
+        then
+          (* "MAX(" *)
+          tokenize_aux fuel' s len i4 (TMax :: acc)
         else
           let two_letter_kw_lp := lparen i2 in
           if PrimInt63.eqb c0 73 && PrimInt63.eqb c1u 70 && two_letter_kw_lp
@@ -457,6 +478,16 @@ with parse_factor (fuel : nat) (toks : list token)
         end
       | _ => None
       end
+    | TSum :: TRef r1 :: TColon :: TRef r2 :: TRParen :: rest' =>
+      Some (ESum r1 r2, rest')
+    | TAvg :: TRef r1 :: TColon :: TRef r2 :: TRParen :: rest' =>
+      Some (EAvg r1 r2, rest')
+    | TCount :: TRef r1 :: TColon :: TRef r2 :: TRParen :: rest' =>
+      Some (ECount r1 r2, rest')
+    | TMin :: TRef r1 :: TColon :: TRef r2 :: TRParen :: rest' =>
+      Some (EMin r1 r2, rest')
+    | TMax :: TRef r1 :: TColon :: TRef r2 :: TRParen :: rest' =>
+      Some (EMax r1 r2, rest')
     | _ => None
     end
   end.

@@ -43,6 +43,8 @@ Fixpoint replace_int_in_expr (from to : Z) (e : Expr) : Expr :=
   | EBNot a => EBNot (replace_int_in_expr from to a)
   | EBAnd a b => EBAnd (replace_int_in_expr from to a) (replace_int_in_expr from to b)
   | EBOr a b => EBOr (replace_int_in_expr from to a) (replace_int_in_expr from to b)
+  | EMin tl br => EMin tl br
+  | EMax tl br => EMax tl br
   end.
 
 Theorem replace_idempotent_when_equal :

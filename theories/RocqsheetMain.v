@@ -270,6 +270,16 @@ Fixpoint show_expr (e : Expr) : PrimString.string :=
                  (PrimString.cat (show_expr a)
                    (PrimString.cat ","
                      (PrimString.cat (show_expr b) ")")))
+  | EMin tl br =>
+    PrimString.cat "MIN("
+      (PrimString.cat (cell_label tl)
+        (PrimString.cat ":"
+          (PrimString.cat (cell_label br) ")")))
+  | EMax tl br =>
+    PrimString.cat "MAX("
+      (PrimString.cat (cell_label tl)
+        (PrimString.cat ":"
+          (PrimString.cat (cell_label br) ")")))
   end.
 
 Definition show_cell (c : Cell) : PrimString.string :=

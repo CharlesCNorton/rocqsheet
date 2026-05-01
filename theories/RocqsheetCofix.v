@@ -144,6 +144,8 @@ Definition trans (st : State) : State + option Z :=
   | PCEval _ (EBNot _) => inr None
   | PCEval _ (EBAnd _ _) => inr None
   | PCEval _ (EBOr _ _) => inr None
+  | PCEval _ (EMin _ _) => inr None
+  | PCEval _ (EMax _ _) => inr None
   | PCSumStep visited lc hc col row hr acc =>
       if PrimInt63.ltb hr row then
         inl (mkSt (st_sheet st) (PCApply (Some acc)) (st_stack st))

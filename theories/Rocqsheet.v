@@ -91,7 +91,9 @@ Inductive Expr : Type :=
   | EBool  : bool -> Expr
   | EBNot  : Expr -> Expr
   | EBAnd  : Expr -> Expr -> Expr
-  | EBOr   : Expr -> Expr -> Expr.
+  | EBOr   : Expr -> Expr -> Expr
+  | EMin   : CellRef -> CellRef -> Expr
+  | EMax   : CellRef -> CellRef -> Expr.
 
 Inductive Cell : Type :=
   | CEmpty : Cell
@@ -358,6 +360,30 @@ Fixpoint eval_expr (fuel : nat) (visited : list CellRef) (s : Sheet)
       | EValB ba, EValB bb => EValB (orb ba bb)
       | _, _ => EErr
       end
+    | EMin tl br =>
+      let lc := cell_col_of tl in
+      let hc := cell_col_of br in
+      let lr := cell_row_of tl in
+      let hr := cell_row_of br in
+      if orb (PrimInt63.ltb hc lc) (PrimInt63.ltb hr lr) then EErr
+      else
+        match eval_at_ref fuel' visited s (mkRef lc lr) with
+        | EVal seed => min_rows fuel' visited s lc hc lr hr seed
+        | EFuel => EFuel
+        | _ => EErr
+        end
+    | EMax tl br =>
+      let lc := cell_col_of tl in
+      let hc := cell_col_of br in
+      let lr := cell_row_of tl in
+      let hr := cell_row_of br in
+      if orb (PrimInt63.ltb hc lc) (PrimInt63.ltb hr lr) then EErr
+      else
+        match eval_at_ref fuel' visited s (mkRef lc lr) with
+        | EVal seed => max_rows fuel' visited s lc hc lr hr seed
+        | EFuel => EFuel
+        | _ => EErr
+        end
     end
   end
 
@@ -405,6 +431,78 @@ with sum_rows (fuel : nat) (visited : list CellRef) (s : Sheet)
     else
       match sum_cols fuel' visited s lc hc row acc with
       | EVal acc' => sum_rows fuel' visited s lc hc
+                       (PrimInt63.add row 1) hr acc'
+      | EFVal _   => EErr
+      | EValS _   => EErr
+      | EValB _   => EErr
+      | EErr      => EErr
+      | EFuel     => EFuel
+      end
+  end
+
+with min_cols (fuel : nat) (visited : list CellRef) (s : Sheet)
+              (col hc : int) (row : int) (acc : Z) : EvalResult :=
+  match fuel with
+  | O => EFuel
+  | S fuel' =>
+    if PrimInt63.ltb hc col then EVal acc
+    else
+      match eval_at_ref fuel' visited s (mkRef col row) with
+      | EVal v  => min_cols fuel' visited s
+                     (PrimInt63.add col 1) hc row (Z.min acc v)
+      | EFVal _ => EErr
+      | EValS _ => EErr
+      | EValB _ => EErr
+      | EErr    => EErr
+      | EFuel   => EFuel
+      end
+  end
+
+with min_rows (fuel : nat) (visited : list CellRef) (s : Sheet)
+              (lc hc : int) (row hr : int) (acc : Z) : EvalResult :=
+  match fuel with
+  | O => EFuel
+  | S fuel' =>
+    if PrimInt63.ltb hr row then EVal acc
+    else
+      match min_cols fuel' visited s lc hc row acc with
+      | EVal acc' => min_rows fuel' visited s lc hc
+                       (PrimInt63.add row 1) hr acc'
+      | EFVal _   => EErr
+      | EValS _   => EErr
+      | EValB _   => EErr
+      | EErr      => EErr
+      | EFuel     => EFuel
+      end
+  end
+
+with max_cols (fuel : nat) (visited : list CellRef) (s : Sheet)
+              (col hc : int) (row : int) (acc : Z) : EvalResult :=
+  match fuel with
+  | O => EFuel
+  | S fuel' =>
+    if PrimInt63.ltb hc col then EVal acc
+    else
+      match eval_at_ref fuel' visited s (mkRef col row) with
+      | EVal v  => max_cols fuel' visited s
+                     (PrimInt63.add col 1) hc row (Z.max acc v)
+      | EFVal _ => EErr
+      | EValS _ => EErr
+      | EValB _ => EErr
+      | EErr    => EErr
+      | EFuel   => EFuel
+      end
+  end
+
+with max_rows (fuel : nat) (visited : list CellRef) (s : Sheet)
+              (lc hc : int) (row hr : int) (acc : Z) : EvalResult :=
+  match fuel with
+  | O => EFuel
+  | S fuel' =>
+    if PrimInt63.ltb hr row then EVal acc
+    else
+      match max_cols fuel' visited s lc hc row acc with
+      | EVal acc' => max_rows fuel' visited s lc hc
                        (PrimInt63.add row 1) hr acc'
       | EFVal _   => EErr
       | EValS _   => EErr
@@ -776,13 +874,33 @@ Lemma fuel_monotone_all : forall fuel,
      fuel <= fuel' ->
      sum_rows fuel visited s lc hc row hr acc <> EFuel ->
      sum_rows fuel' visited s lc hc row hr acc =
-     sum_rows fuel visited s lc hc row hr acc).
+     sum_rows fuel visited s lc hc row hr acc) /\
+  (forall col hc row acc fuel' visited s,
+     fuel <= fuel' ->
+     min_cols fuel visited s col hc row acc <> EFuel ->
+     min_cols fuel' visited s col hc row acc =
+     min_cols fuel visited s col hc row acc) /\
+  (forall lc hc row hr acc fuel' visited s,
+     fuel <= fuel' ->
+     min_rows fuel visited s lc hc row hr acc <> EFuel ->
+     min_rows fuel' visited s lc hc row hr acc =
+     min_rows fuel visited s lc hc row hr acc) /\
+  (forall col hc row acc fuel' visited s,
+     fuel <= fuel' ->
+     max_cols fuel visited s col hc row acc <> EFuel ->
+     max_cols fuel' visited s col hc row acc =
+     max_cols fuel visited s col hc row acc) /\
+  (forall lc hc row hr acc fuel' visited s,
+     fuel <= fuel' ->
+     max_rows fuel visited s lc hc row hr acc <> EFuel ->
+     max_rows fuel' visited s lc hc row hr acc =
+     max_rows fuel visited s lc hc row hr acc).
 Proof.
   induction fuel as [|fuel IH].
-  - split; [|split; [|split]];
+  - split; [|split; [|split; [|split; [|split; [|split; [|split]]]]]];
       intros until s; intros _ Hnf; simpl in *; congruence.
-  - destruct IH as [IHe [IHr [IHc IHs]]].
-    split; [|split; [|split]].
+  - destruct IH as [IHe [IHr [IHc [IHs [IHmc [IHmr [IHxc IHxr]]]]]]].
+    split; [|split; [|split; [|split; [|split; [|split; [|split]]]]]].
     + (* eval_expr *)
       intros e fuel' visited s Hle Hnf.
       destruct fuel' as [|fuel']; [lia|].
@@ -896,6 +1014,28 @@ Proof.
         try (rewrite (IHe e1 fuel' visited s Hle') by congruence;
              rewrite (IHe e2 fuel' visited s Hle') by congruence;
              rewrite Ea, Eb; reflexivity).
+      * (* EMin *)
+        destruct (orb (PrimInt63.ltb (cell_col_of c0) (cell_col_of c))
+                      (PrimInt63.ltb (cell_row_of c0) (cell_row_of c)));
+          [reflexivity|].
+        destruct (eval_at_ref fuel visited s
+                              (mkRef (cell_col_of c) (cell_row_of c)))
+          eqn:Eat; try congruence;
+          rewrite (IHr _ fuel' visited s Hle') by congruence;
+          rewrite Eat;
+          try reflexivity.
+        apply IHmr; assumption.
+      * (* EMax *)
+        destruct (orb (PrimInt63.ltb (cell_col_of c0) (cell_col_of c))
+                      (PrimInt63.ltb (cell_row_of c0) (cell_row_of c)));
+          [reflexivity|].
+        destruct (eval_at_ref fuel visited s
+                              (mkRef (cell_col_of c) (cell_row_of c)))
+          eqn:Eat; try congruence;
+          rewrite (IHr _ fuel' visited s Hle') by congruence;
+          rewrite Eat;
+          try reflexivity.
+        apply IHxr; assumption.
     + (* eval_at_ref *)
       intros r fuel' visited s Hle Hnf.
       destruct fuel' as [|fuel']; [lia|].
@@ -948,6 +1088,54 @@ Proof.
          rewrite Esc. reflexivity.
       -- rewrite (IHc lc hc row acc fuel' visited s Hle') by congruence.
          rewrite Esc. reflexivity.
+    + (* min_cols *)
+      intros col hc row acc fuel' visited s Hle Hnf.
+      destruct fuel' as [|fuel']; [lia|].
+      assert (Hle' : fuel <= fuel') by lia.
+      simpl in Hnf. simpl.
+      destruct (PrimInt63.ltb hc col); [reflexivity|].
+      destruct (eval_at_ref fuel visited s (mkRef col row)) eqn:Eat;
+        try congruence;
+        rewrite (IHr (mkRef col row) fuel' visited s Hle') by congruence;
+        rewrite Eat;
+        try reflexivity.
+      apply IHmc; assumption.
+    + (* min_rows *)
+      intros lc hc row hr acc fuel' visited s Hle Hnf.
+      destruct fuel' as [|fuel']; [lia|].
+      assert (Hle' : fuel <= fuel') by lia.
+      simpl in Hnf. simpl.
+      destruct (PrimInt63.ltb hr row); [reflexivity|].
+      destruct (min_cols fuel visited s lc hc row acc) eqn:Esc;
+        try congruence;
+        rewrite (IHmc lc hc row acc fuel' visited s Hle') by congruence;
+        rewrite Esc;
+        try reflexivity.
+      apply IHmr; assumption.
+    + (* max_cols *)
+      intros col hc row acc fuel' visited s Hle Hnf.
+      destruct fuel' as [|fuel']; [lia|].
+      assert (Hle' : fuel <= fuel') by lia.
+      simpl in Hnf. simpl.
+      destruct (PrimInt63.ltb hc col); [reflexivity|].
+      destruct (eval_at_ref fuel visited s (mkRef col row)) eqn:Eat;
+        try congruence;
+        rewrite (IHr (mkRef col row) fuel' visited s Hle') by congruence;
+        rewrite Eat;
+        try reflexivity.
+      apply IHxc; assumption.
+    + (* max_rows *)
+      intros lc hc row hr acc fuel' visited s Hle Hnf.
+      destruct fuel' as [|fuel']; [lia|].
+      assert (Hle' : fuel <= fuel') by lia.
+      simpl in Hnf. simpl.
+      destruct (PrimInt63.ltb hr row); [reflexivity|].
+      destruct (max_cols fuel visited s lc hc row acc) eqn:Esc;
+        try congruence;
+        rewrite (IHxc lc hc row acc fuel' visited s Hle') by congruence;
+        rewrite Esc;
+        try reflexivity.
+      apply IHxr; assumption.
 Qed.
 
 Theorem eval_fuel_monotone :
@@ -1006,7 +1194,7 @@ Theorem sum_rows_fuel_monotone :
     sum_rows fuel' visited s lc hc row hr acc = EVal v.
 Proof.
   intros fuel lc hc row hr acc fuel' visited s v Hle Hev.
-  rewrite (proj2 (proj2 (proj2 (fuel_monotone_all fuel)))
+  rewrite (proj1 (proj2 (proj2 (proj2 (fuel_monotone_all fuel))))
              lc hc row hr acc fuel' visited s Hle)
     by (rewrite Hev; congruence).
   exact Hev.
@@ -1393,6 +1581,37 @@ Theorem eval_if_false_else : forall fuel visited s t e,
   eval_expr (S (S fuel)) visited s (EIf (EBool false) t e)
   = eval_expr (S fuel) visited s e.
 Proof. reflexivity. Qed.
+
+(* --- MIN / MAX theorems -------------------------------------------- *)
+
+(* min_in_range, smoke: min of a 1x4 row of 5/3/9/2 = 2. *)
+Theorem eval_min_in_range_smoke :
+  let s0 := new_sheet in
+  let s1 := set_cell s0 (mkRef 0 0) (CLit 5%Z) in
+  let s2 := set_cell s1 (mkRef 1 0) (CLit 3%Z) in
+  let s3 := set_cell s2 (mkRef 2 0) (CLit 9%Z) in
+  let s4 := set_cell s3 (mkRef 3 0) (CLit 2%Z) in
+  let r := mkRef 4 0 in
+  let s := set_cell s4 r (CForm (EMin (mkRef 0 0) (mkRef 3 0))) in
+  eval_cell DEFAULT_FUEL s r = EVal 2%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+(* max_ge_min, smoke: max >= min over the same 4 cells. *)
+Theorem eval_max_ge_min_smoke :
+  let s0 := new_sheet in
+  let s1 := set_cell s0 (mkRef 0 0) (CLit 5%Z) in
+  let s2 := set_cell s1 (mkRef 1 0) (CLit 3%Z) in
+  let s3 := set_cell s2 (mkRef 2 0) (CLit 9%Z) in
+  let s4 := set_cell s3 (mkRef 3 0) (CLit 2%Z) in
+  let r1 := mkRef 4 0 in
+  let r2 := mkRef 5 0 in
+  let s5 := set_cell s4 r1 (CForm (EMin (mkRef 0 0) (mkRef 3 0))) in
+  let s6 := set_cell s5 r2 (CForm (EMax (mkRef 0 0) (mkRef 3 0))) in
+  match eval_cell DEFAULT_FUEL s6 r1, eval_cell DEFAULT_FUEL s6 r2 with
+  | EVal mn, EVal mx => (mn <= mx)%Z
+  | _, _ => False
+  end.
+Proof. vm_compute. easy. Qed.
 
 End Rocqsheet.
 
