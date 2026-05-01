@@ -1,0 +1,4 @@
+[submodule "crane"]
+	path = crane
+	url = https://github.com/bloomberg/crane.git
+	branch = redesign

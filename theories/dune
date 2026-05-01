@@ -1,0 +1,11 @@
+; Rocqsheet theory.  The .v file contains the model, the theorems,
+; and the [Crane Extraction] call.  -output-directory points at the
+; repo root; the Crane plugin writes spreadsheet.{h,cpp} into the
+; theory-named subdir under there, which the Makefile then copies
+; into src/generated/.
+(coq.theory
+ (name Rocqsheet)
+ (package rocqsheet)
+ (synopsis "Rocqsheet spreadsheet kernel")
+ (theories Stdlib Crane ITree ExtLib Paco)
+ (flags (:standard -output-directory %{project_root})))

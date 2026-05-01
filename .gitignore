@@ -1,0 +1,27 @@
+_build/
+*.vo
+*.vok
+*.vos
+*.glob
+.*.aux
+*.cmi
+*.cmx
+*.cmxs
+*.cmxa
+*.cma
+*.cmo
+*.o
+*.a
+*.exe
+*.dSYM/
+.coq-native/
+
+# Hand-written C++ build artifacts
+build/
+visirocq
+
+# Editor / OS leftovers
+.vscode/
+*.swp
+*.swo
+.DS_Store

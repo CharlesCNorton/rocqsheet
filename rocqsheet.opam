@@ -1,0 +1,30 @@
+opam-version: "2.0"
+synopsis: "Verified spreadsheet in Rocq extracted to C++ with Crane"
+description: """
+Rocqsheet is a small spreadsheet whose evaluation kernel is written
+in Rocq and extracted to C++ with Crane.  A Dear ImGui front-end
+consumes the extracted kernel and provides the editable grid,
+formula bar, undo/redo, copy/paste, and save/load.
+"""
+homepage: "https://github.com/CharlesCNorton/rocqsheet"
+license: "MIT"
+bug-reports: "https://github.com/CharlesCNorton/rocqsheet/issues"
+depends: [
+  "ocaml"
+  "coq"            {>= "9.0~"}
+  "rocq-core"      {>= "9.0~"}
+  "rocq-stdlib"    {>= "9.0~"}
+  "rocq-crane"
+  "coq-itree"
+  "coq-ext-lib"
+  "coq-paco"
+]
+build: ["dune" "build" "-p" name "-j" jobs]
+maintainer: "CharlesCNorton <machineelv@gmail.com>"
+authors: "CharlesCNorton"
+tags: [
+  "category:Miscellaneous/Examples"
+  "keyword:extraction"
+  "keyword:spreadsheet"
+  "keyword:C++"
+]
