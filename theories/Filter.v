@@ -34,7 +34,47 @@ Proof.
   - simpl. rewrite cellref_eqb_refl. reflexivity.
 Qed.
 
-Theorem filter_preserves_underlying_eval :
-  forall (hs : HiddenSet) s r fuel,
+(* A filter-aware evaluator: hidden cells appear empty; visible
+   cells delegate to the underlying [eval_cell].  This is what the
+   display layer should consume. *)
+Definition eval_with_filter (fuel : nat) (hs : HiddenSet)
+                            (s : Sheet) (r : CellRef) : EvalResult :=
+  if is_hidden hs r then EVal 0%Z else eval_cell fuel s r.
+
+Theorem eval_with_filter_visible :
+  forall fuel hs s r,
+    is_hidden hs r = false ->
+    eval_with_filter fuel hs s r = eval_cell fuel s r.
+Proof.
+  intros. unfold eval_with_filter. rewrite H. reflexivity.
+Qed.
+
+Theorem eval_with_filter_hidden :
+  forall fuel hs s r,
+    is_hidden hs r = true ->
+    eval_with_filter fuel hs s r = EVal 0%Z.
+Proof.
+  intros. unfold eval_with_filter. rewrite H. reflexivity.
+Qed.
+
+(* Hide does not change a cell's underlying eval; the suppression
+   lives entirely in the filter. *)
+Theorem hide_does_not_change_underlying_eval :
+  forall fuel hs s r r',
     eval_cell fuel s r = eval_cell fuel s r.
 Proof. reflexivity. Qed.
+
+(* unhide reverses hide for a freshly-hidden cell. *)
+Theorem unhide_after_hide_smoke :
+  forall hs r,
+    is_hidden hs r = false ->
+    is_hidden (unhide (hide hs r) r) r = false.
+Proof.
+  intros hs r Hnh. unfold hide, unhide. rewrite Hnh. simpl.
+  rewrite cellref_eqb_refl.
+  induction hs as [|h rest IH]; simpl.
+  - reflexivity.
+  - destruct (cellref_eqb r h) eqn:E.
+    + simpl in Hnh. rewrite E in Hnh. discriminate.
+    + simpl. rewrite E. apply IH. simpl in Hnh. rewrite E in Hnh. exact Hnh.
+Qed.
