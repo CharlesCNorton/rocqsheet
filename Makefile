@@ -17,7 +17,8 @@ GEN_DIR    := src/generated
 CMAKE_DIR  := _build/cmake
 THEORY_DIR := _build/Rocqsheet
 
-THEORY_VO  := _build/default/theories/Rocqsheet.vo
+THEORY_VO  := _build/default/theories/RocqsheetMain.vo
+THEORY_SRC := $(wildcard theories/*.v)
 GEN_FILES  := $(GEN_DIR)/rocqsheet.h $(GEN_DIR)/rocqsheet.cpp
 CMAKE_TAG  := $(CMAKE_DIR)/CMakeCache.txt
 
@@ -33,9 +34,12 @@ check-crane:
 	   echo "Run: git submodule update --init"; \
 	   exit 1)
 
-# Theory rebuild only when .v or dune metadata changes.
-$(THEORY_VO): theories/Rocqsheet.v theories/dune dune-project | check-crane
-	dune build theories/Rocqsheet.vo
+# Theory rebuild only when .v or dune metadata changes.  The
+# [Crane Extraction] command lives in [theories/RocqsheetMain.v];
+# building that .vo also rebuilds the kernel, parser, and ImGuiE
+# theories it depends on.
+$(THEORY_VO): $(THEORY_SRC) theories/dune dune-project | check-crane
+	dune build theories/RocqsheetMain.vo
 
 # Generated header/source regen when the theory rebuilds.
 $(GEN_FILES): $(THEORY_VO)
