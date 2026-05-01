@@ -77,7 +77,8 @@ Inductive Expr : Type :=
   | EPow : Expr -> Expr -> Expr
   | ENot : Expr -> Expr
   | EAnd : Expr -> Expr -> Expr
-  | EOr  : Expr -> Expr -> Expr.
+  | EOr  : Expr -> Expr -> Expr
+  | ESum : CellRef -> CellRef -> Expr.
 
 Inductive Cell : Type :=
   | CEmpty : Cell
@@ -103,6 +104,14 @@ Fixpoint mem_cellref (r : CellRef) (xs : list CellRef) : bool :=
   | y :: ys => if cellref_eqb r y then true else mem_cellref r ys
   end.
 
+(* Recover (col, row) from a [CellRef] without a base-class-
+   qualified field projection in extracted C++. *)
+Definition cell_col_of (r : CellRef) : int :=
+  PrimInt63.mod (cell_index r) NUM_COLS.
+
+Definition cell_row_of (r : CellRef) : int :=
+  PrimInt63.div (cell_index r) NUM_COLS.
+
 (* Total evaluator with fuel and a visited-path.
 
    [visited] tracks which cells the current evaluation chain has
@@ -110,7 +119,12 @@ Fixpoint mem_cellref (r : CellRef) (xs : list CellRef) : bool :=
    [visited] means a cycle, so we return [None].  [fuel] is a
    generous total-termination cap; only adversarially deep
    expression trees should ever exhaust it.  Division by zero also
-   returns [None]. *)
+   returns [None].
+
+   [eval_at_ref] evaluates the value at a single cell, including
+   the cycle check for that cell.  [sum_cols] / [sum_rows] walk a
+   rectangle for [ESum], threading the visited path so cycles
+   through aggregations are also caught. *)
 Fixpoint eval_expr (fuel : nat) (visited : list CellRef) (s : Sheet)
                    (e : Expr) : option Z :=
   match fuel with
@@ -199,7 +213,55 @@ Fixpoint eval_expr (fuel : nat) (visited : list CellRef) (s : Sheet)
               then 1%Z else 0%Z)
       | _, _ => None
       end
+    | ESum tl br =>
+      sum_rows fuel' visited s
+        (cell_col_of tl) (cell_col_of br)
+        (cell_row_of tl) (cell_row_of br) 0%Z
     end
+  end
+
+with eval_at_ref (fuel : nat) (visited : list CellRef) (s : Sheet)
+                 (r : CellRef) : option Z :=
+  match fuel with
+  | O => None
+  | S fuel' =>
+    if mem_cellref r visited then None
+    else
+      match get_cell s r with
+      | CEmpty => Some 0%Z
+      | CLit n => Some n
+      | CForm e => eval_expr fuel' (r :: visited) s e
+      end
+  end
+
+with sum_cols (fuel : nat) (visited : list CellRef) (s : Sheet)
+              (col hc : int) (row : int) (acc : Z) : option Z :=
+  match fuel with
+  | O => None
+  | S fuel' =>
+    if PrimInt63.ltb hc col then Some acc
+    else
+      match eval_at_ref fuel' visited s (mkRef col row) with
+      | None => None
+      | Some v =>
+        sum_cols fuel' visited s
+          (PrimInt63.add col 1) hc row (Z.add acc v)
+      end
+  end
+
+with sum_rows (fuel : nat) (visited : list CellRef) (s : Sheet)
+              (lc hc : int) (row hr : int) (acc : Z) : option Z :=
+  match fuel with
+  | O => None
+  | S fuel' =>
+    if PrimInt63.ltb hr row then Some acc
+    else
+      match sum_cols fuel' visited s lc hc row acc with
+      | None => None
+      | Some acc' =>
+        sum_rows fuel' visited s lc hc
+          (PrimInt63.add row 1) hr acc'
+      end
   end.
 
 Definition eval_cell (fuel : nat) (s : Sheet) (r : CellRef) : option Z :=
@@ -519,96 +581,164 @@ Lemma eval_eadd_none_r : forall fuel visited s a b va,
   eval_expr (S fuel) visited s (EAdd a b) = None.
 Proof. intros. simpl. rewrite H, H0. reflexivity. Qed.
 
-(* --- Fuel monotonicity ------------------------------------------- *)
+(* --- Fuel monotonicity -------------------------------------------
+
+   [eval_expr], [eval_at_ref], [sum_cols], and [sum_rows] form a
+   mutual Fixpoint over [ESum].  Monotonicity for any one of them
+   needs the other three at the previous fuel level, so we prove
+   the conjunction in a single induction on [fuel] and then expose
+   each component as its own theorem. *)
+
+Lemma fuel_monotone_all : forall fuel,
+  (forall e fuel' visited s v,
+     fuel <= fuel' ->
+     eval_expr fuel visited s e = Some v ->
+     eval_expr fuel' visited s e = Some v) /\
+  (forall r fuel' visited s v,
+     fuel <= fuel' ->
+     eval_at_ref fuel visited s r = Some v ->
+     eval_at_ref fuel' visited s r = Some v) /\
+  (forall col hc row acc fuel' visited s v,
+     fuel <= fuel' ->
+     sum_cols fuel visited s col hc row acc = Some v ->
+     sum_cols fuel' visited s col hc row acc = Some v) /\
+  (forall lc hc row hr acc fuel' visited s v,
+     fuel <= fuel' ->
+     sum_rows fuel visited s lc hc row hr acc = Some v ->
+     sum_rows fuel' visited s lc hc row hr acc = Some v).
+Proof.
+  induction fuel as [|fuel IH].
+  - split; [|split; [|split]];
+      intros until v; intros _ Hev; simpl in Hev; discriminate.
+  - destruct IH as [IHe [IHr [IHc IHs]]].
+    split; [|split; [|split]].
+    + (* eval_expr *)
+      intros e fuel' visited s v Hle Hev.
+      destruct fuel' as [|fuel']; [lia|].
+      assert (Hle' : fuel <= fuel') by lia.
+      simpl in Hev. simpl.
+      destruct e as [n|r|a b|a b|a b|a b|a b|a b|a b|cnd th el|a b|a b|a|a b|a b|tl br].
+      * exact Hev.
+      * destruct (mem_cellref r visited); [discriminate|].
+        destruct (get_cell s r) as [|n|e'].
+        -- exact Hev.
+        -- exact Hev.
+        -- apply (IHe _ _ _ _ _ Hle' Hev).
+      * (* EAdd *)
+        destruct (eval_expr fuel visited s a) as [va|] eqn:Ea; [|discriminate].
+        destruct (eval_expr fuel visited s b) as [vb|] eqn:Eb; [|discriminate].
+        rewrite (IHe _ _ _ _ _ Hle' Ea), (IHe _ _ _ _ _ Hle' Eb). exact Hev.
+      * (* ESub *)
+        destruct (eval_expr fuel visited s a) as [va|] eqn:Ea; [|discriminate].
+        destruct (eval_expr fuel visited s b) as [vb|] eqn:Eb; [|discriminate].
+        rewrite (IHe _ _ _ _ _ Hle' Ea), (IHe _ _ _ _ _ Hle' Eb). exact Hev.
+      * (* EMul *)
+        destruct (eval_expr fuel visited s a) as [va|] eqn:Ea; [|discriminate].
+        destruct (eval_expr fuel visited s b) as [vb|] eqn:Eb; [|discriminate].
+        rewrite (IHe _ _ _ _ _ Hle' Ea), (IHe _ _ _ _ _ Hle' Eb). exact Hev.
+      * (* EDiv *)
+        destruct (eval_expr fuel visited s a) as [va|] eqn:Ea; [|discriminate].
+        destruct (eval_expr fuel visited s b) as [vb|] eqn:Eb; [|discriminate].
+        rewrite (IHe _ _ _ _ _ Hle' Ea), (IHe _ _ _ _ _ Hle' Eb). exact Hev.
+      * (* EEq *)
+        destruct (eval_expr fuel visited s a) as [va|] eqn:Ea; [|discriminate].
+        destruct (eval_expr fuel visited s b) as [vb|] eqn:Eb; [|discriminate].
+        rewrite (IHe _ _ _ _ _ Hle' Ea), (IHe _ _ _ _ _ Hle' Eb). exact Hev.
+      * (* ELt *)
+        destruct (eval_expr fuel visited s a) as [va|] eqn:Ea; [|discriminate].
+        destruct (eval_expr fuel visited s b) as [vb|] eqn:Eb; [|discriminate].
+        rewrite (IHe _ _ _ _ _ Hle' Ea), (IHe _ _ _ _ _ Hle' Eb). exact Hev.
+      * (* EGt *)
+        destruct (eval_expr fuel visited s a) as [va|] eqn:Ea; [|discriminate].
+        destruct (eval_expr fuel visited s b) as [vb|] eqn:Eb; [|discriminate].
+        rewrite (IHe _ _ _ _ _ Hle' Ea), (IHe _ _ _ _ _ Hle' Eb). exact Hev.
+      * (* EIf *)
+        destruct (eval_expr fuel visited s cnd) as [vc|] eqn:Ec; [|discriminate].
+        rewrite (IHe _ _ _ _ _ Hle' Ec).
+        destruct vc as [|p|p].
+        -- apply (IHe _ _ _ _ _ Hle' Hev).
+        -- apply (IHe _ _ _ _ _ Hle' Hev).
+        -- apply (IHe _ _ _ _ _ Hle' Hev).
+      * (* EMod *)
+        destruct (eval_expr fuel visited s a) as [va|] eqn:Ea; [|discriminate].
+        destruct (eval_expr fuel visited s b) as [vb|] eqn:Eb; [|discriminate].
+        rewrite (IHe _ _ _ _ _ Hle' Ea), (IHe _ _ _ _ _ Hle' Eb). exact Hev.
+      * (* EPow *)
+        destruct (eval_expr fuel visited s a) as [va|] eqn:Ea; [|discriminate].
+        destruct (eval_expr fuel visited s b) as [vb|] eqn:Eb; [|discriminate].
+        rewrite (IHe _ _ _ _ _ Hle' Ea), (IHe _ _ _ _ _ Hle' Eb). exact Hev.
+      * (* ENot *)
+        destruct (eval_expr fuel visited s a) as [va|] eqn:Ea; [|discriminate].
+        rewrite (IHe _ _ _ _ _ Hle' Ea). exact Hev.
+      * (* EAnd *)
+        destruct (eval_expr fuel visited s a) as [va|] eqn:Ea; [|discriminate].
+        destruct (eval_expr fuel visited s b) as [vb|] eqn:Eb; [|discriminate].
+        rewrite (IHe _ _ _ _ _ Hle' Ea), (IHe _ _ _ _ _ Hle' Eb). exact Hev.
+      * (* EOr *)
+        destruct (eval_expr fuel visited s a) as [va|] eqn:Ea; [|discriminate].
+        destruct (eval_expr fuel visited s b) as [vb|] eqn:Eb; [|discriminate].
+        rewrite (IHe _ _ _ _ _ Hle' Ea), (IHe _ _ _ _ _ Hle' Eb). exact Hev.
+      * (* ESum *)
+        eapply IHs; [exact Hle' | exact Hev].
+    + (* eval_at_ref *)
+      intros r fuel' visited s v Hle Hev.
+      destruct fuel' as [|fuel']; [lia|].
+      assert (Hle' : fuel <= fuel') by lia.
+      simpl in Hev. simpl.
+      destruct (mem_cellref r visited); [discriminate|].
+      destruct (get_cell s r) as [|n|e'].
+      * exact Hev.
+      * exact Hev.
+      * apply (IHe _ _ _ _ _ Hle' Hev).
+    + (* sum_cols *)
+      intros col hc row acc fuel' visited s v Hle Hev.
+      destruct fuel' as [|fuel']; [lia|].
+      assert (Hle' : fuel <= fuel') by lia.
+      simpl in Hev. simpl.
+      destruct (PrimInt63.ltb hc col); [exact Hev|].
+      destruct (eval_at_ref fuel visited s (mkRef col row))
+        as [v0|] eqn:Eat; [|discriminate].
+      rewrite (IHr _ _ _ _ _ Hle' Eat).
+      eapply IHc; [exact Hle' | exact Hev].
+    + (* sum_rows *)
+      intros lc hc row hr acc fuel' visited s v Hle Hev.
+      destruct fuel' as [|fuel']; [lia|].
+      assert (Hle' : fuel <= fuel') by lia.
+      simpl in Hev. simpl.
+      destruct (PrimInt63.ltb hr row); [exact Hev|].
+      destruct (sum_cols fuel visited s lc hc row acc)
+        as [acc'|] eqn:Esc; [|discriminate].
+      rewrite (IHc _ _ _ _ _ _ _ _ Hle' Esc).
+      eapply IHs; [exact Hle' | exact Hev].
+Qed.
 
 Theorem eval_fuel_monotone :
   forall fuel e fuel' visited s v,
     fuel <= fuel' ->
     eval_expr fuel visited s e = Some v ->
     eval_expr fuel' visited s e = Some v.
-Proof.
-  induction fuel as [|fuel IH]; intros e fuel' visited s v Hle Hev.
-  - simpl in Hev. discriminate.
-  - destruct fuel' as [|fuel']; [lia|].
-    assert (Hle' : fuel <= fuel') by lia.
-    simpl in Hev. simpl.
-    destruct e as [n|r|a b|a b|a b|a b|a b|a b|a b|cnd th el|a b|a b|a|a b|a b].
-    + exact Hev.
-    + destruct (mem_cellref r visited); [discriminate|].
-      destruct (get_cell s r) as [|n|e'].
-      * exact Hev.
-      * exact Hev.
-      * apply (IH _ _ _ _ _ Hle' Hev).
-    + destruct (eval_expr fuel visited s a) as [va|] eqn:Ea; [|discriminate].
-      destruct (eval_expr fuel visited s b) as [vb|] eqn:Eb; [|discriminate].
-      rewrite (IH _ _ _ _ _ Hle' Ea).
-      rewrite (IH _ _ _ _ _ Hle' Eb).
-      exact Hev.
-    + destruct (eval_expr fuel visited s a) as [va|] eqn:Ea; [|discriminate].
-      destruct (eval_expr fuel visited s b) as [vb|] eqn:Eb; [|discriminate].
-      rewrite (IH _ _ _ _ _ Hle' Ea).
-      rewrite (IH _ _ _ _ _ Hle' Eb).
-      exact Hev.
-    + destruct (eval_expr fuel visited s a) as [va|] eqn:Ea; [|discriminate].
-      destruct (eval_expr fuel visited s b) as [vb|] eqn:Eb; [|discriminate].
-      rewrite (IH _ _ _ _ _ Hle' Ea).
-      rewrite (IH _ _ _ _ _ Hle' Eb).
-      exact Hev.
-    + destruct (eval_expr fuel visited s a) as [va|] eqn:Ea; [|discriminate].
-      destruct (eval_expr fuel visited s b) as [vb|] eqn:Eb; [|discriminate].
-      rewrite (IH _ _ _ _ _ Hle' Ea).
-      rewrite (IH _ _ _ _ _ Hle' Eb).
-      exact Hev.
-    + destruct (eval_expr fuel visited s a) as [va|] eqn:Ea; [|discriminate].
-      destruct (eval_expr fuel visited s b) as [vb|] eqn:Eb; [|discriminate].
-      rewrite (IH _ _ _ _ _ Hle' Ea).
-      rewrite (IH _ _ _ _ _ Hle' Eb).
-      exact Hev.
-    + destruct (eval_expr fuel visited s a) as [va|] eqn:Ea; [|discriminate].
-      destruct (eval_expr fuel visited s b) as [vb|] eqn:Eb; [|discriminate].
-      rewrite (IH _ _ _ _ _ Hle' Ea).
-      rewrite (IH _ _ _ _ _ Hle' Eb).
-      exact Hev.
-    + destruct (eval_expr fuel visited s a) as [va|] eqn:Ea; [|discriminate].
-      destruct (eval_expr fuel visited s b) as [vb|] eqn:Eb; [|discriminate].
-      rewrite (IH _ _ _ _ _ Hle' Ea).
-      rewrite (IH _ _ _ _ _ Hle' Eb).
-      exact Hev.
-    + destruct (eval_expr fuel visited s cnd) as [vc|] eqn:Ec; [|discriminate].
-      rewrite (IH _ _ _ _ _ Hle' Ec).
-      destruct vc as [|p|p].
-      * apply (IH _ _ _ _ _ Hle' Hev).
-      * apply (IH _ _ _ _ _ Hle' Hev).
-      * apply (IH _ _ _ _ _ Hle' Hev).
-    + (* EMod *)
-      destruct (eval_expr fuel visited s a) as [va|] eqn:Ea; [|discriminate].
-      destruct (eval_expr fuel visited s b) as [vb|] eqn:Eb; [|discriminate].
-      rewrite (IH _ _ _ _ _ Hle' Ea).
-      rewrite (IH _ _ _ _ _ Hle' Eb).
-      exact Hev.
-    + (* EPow *)
-      destruct (eval_expr fuel visited s a) as [va|] eqn:Ea; [|discriminate].
-      destruct (eval_expr fuel visited s b) as [vb|] eqn:Eb; [|discriminate].
-      rewrite (IH _ _ _ _ _ Hle' Ea).
-      rewrite (IH _ _ _ _ _ Hle' Eb).
-      exact Hev.
-    + (* ENot *)
-      destruct (eval_expr fuel visited s a) as [va|] eqn:Ea; [|discriminate].
-      rewrite (IH _ _ _ _ _ Hle' Ea).
-      exact Hev.
-    + (* EAnd *)
-      destruct (eval_expr fuel visited s a) as [va|] eqn:Ea; [|discriminate].
-      destruct (eval_expr fuel visited s b) as [vb|] eqn:Eb; [|discriminate].
-      rewrite (IH _ _ _ _ _ Hle' Ea).
-      rewrite (IH _ _ _ _ _ Hle' Eb).
-      exact Hev.
-    + (* EOr *)
-      destruct (eval_expr fuel visited s a) as [va|] eqn:Ea; [|discriminate].
-      destruct (eval_expr fuel visited s b) as [vb|] eqn:Eb; [|discriminate].
-      rewrite (IH _ _ _ _ _ Hle' Ea).
-      rewrite (IH _ _ _ _ _ Hle' Eb).
-      exact Hev.
-Qed.
+Proof. intros fuel. exact (proj1 (fuel_monotone_all fuel)). Qed.
+
+Theorem eval_at_ref_fuel_monotone :
+  forall fuel r fuel' visited s v,
+    fuel <= fuel' ->
+    eval_at_ref fuel visited s r = Some v ->
+    eval_at_ref fuel' visited s r = Some v.
+Proof. intros fuel. exact (proj1 (proj2 (fuel_monotone_all fuel))). Qed.
+
+Theorem sum_cols_fuel_monotone :
+  forall fuel col hc row acc fuel' visited s v,
+    fuel <= fuel' ->
+    sum_cols fuel visited s col hc row acc = Some v ->
+    sum_cols fuel' visited s col hc row acc = Some v.
+Proof. intros fuel. exact (proj1 (proj2 (proj2 (fuel_monotone_all fuel)))). Qed.
+
+Theorem sum_rows_fuel_monotone :
+  forall fuel lc hc row hr acc fuel' visited s v,
+    fuel <= fuel' ->
+    sum_rows fuel visited s lc hc row hr acc = Some v ->
+    sum_rows fuel' visited s lc hc row hr acc = Some v.
+Proof. intros fuel. exact (proj2 (proj2 (proj2 (fuel_monotone_all fuel)))). Qed.
 
 (* --- Algebraic lifts from Z --------------------------------------- *)
 

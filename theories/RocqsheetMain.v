@@ -172,6 +172,11 @@ Fixpoint show_expr (e : Expr) : PrimString.string :=
                 (PrimString.cat (show_expr a)
                   (PrimString.cat ","
                     (PrimString.cat (show_expr b) ")")))
+  | ESum tl br =>
+    PrimString.cat "SUM("
+      (PrimString.cat (cell_label tl)
+        (PrimString.cat ":"
+          (PrimString.cat (cell_label br) ")")))
   end.
 
 Definition show_cell (c : Cell) : PrimString.string :=

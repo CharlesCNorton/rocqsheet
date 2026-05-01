@@ -81,6 +81,16 @@ Definition trans (st : State) : State + option Z :=
   | PCEval visited (EIf c t e) =>
       inl (mkSt (st_sheet st) (PCEval visited c)
                (KIf visited t e :: st_stack st))
+  (* The cofix machine pre-dates EMod/EPow/ENot/EAnd/EOr/ESum.
+     Cofix support for those constructors would mean new
+     continuations and (for ESum) a separate sum-walking sub-state.
+     They terminate the trampoline with [None] for now; the five
+     closed-term theorems below are all in the original
+     sub-language and remain provable. *)
+  | PCEval _ (EMod _ _) | PCEval _ (EPow _ _)
+  | PCEval _ (ENot _)   | PCEval _ (EAnd _ _)
+  | PCEval _ (EOr  _ _) | PCEval _ (ESum _ _) =>
+      inr None
   | PCApply None =>
       inr None
   | PCApply (Some v) =>
