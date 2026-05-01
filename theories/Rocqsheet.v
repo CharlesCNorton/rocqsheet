@@ -114,6 +114,37 @@ Definition get_cell (s : Sheet) (r : CellRef) : Cell :=
 Definition set_cell (s : Sheet) (r : CellRef) (c : Cell) : Sheet :=
   PrimArray.set s (cell_index r) c.
 
+(* --- Workbook layer ----------------------------------------------- *)
+
+Record WorkbookRef : Type := mkWbRef
+  { wb_sheet : int
+  ; wb_cell  : CellRef }.
+
+Definition Workbook : Type := PrimArray.array Sheet.
+
+Definition NUM_SHEETS : int := 16.
+
+Definition new_workbook : Workbook :=
+  PrimArray.make NUM_SHEETS new_sheet.
+
+Definition wb_get_cell (wb : Workbook) (r : WorkbookRef) : Cell :=
+  get_cell (PrimArray.get wb (wb_sheet r)) (wb_cell r).
+
+Definition wb_set_cell (wb : Workbook) (r : WorkbookRef) (c : Cell) : Workbook :=
+  let s := PrimArray.get wb (wb_sheet r) in
+  PrimArray.set wb (wb_sheet r) (set_cell s (wb_cell r) c).
+
+Theorem wb_set_other_sheet_unchanged :
+  forall wb r1 r2 c,
+    wb_sheet r1 <> wb_sheet r2 ->
+    wb_get_cell (wb_set_cell wb r1 c) r2 = wb_get_cell wb r2.
+Proof.
+  intros wb r1 r2 c Hneq.
+  unfold wb_get_cell, wb_set_cell.
+  rewrite (@get_set_other Sheet wb (wb_sheet r1) (wb_sheet r2) _ Hneq).
+  reflexivity.
+Qed.
+
 Fixpoint mem_cellref (r : CellRef) (xs : list CellRef) : bool :=
   match xs with
   | nil => false
