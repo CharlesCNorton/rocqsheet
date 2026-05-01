@@ -64,7 +64,8 @@ OpenGL ships with the OS as a framework; nothing extra to install.
   `=A1/0`) for a formula.
 * Operators: `+ - * /`, parentheses, comparison `=`/`<`/`>` (return
   `1` or `0`), and `IF(cond, then, else)`.  Cell refs are
-  `<column><1-based row>` where columns run `A..CZ`.
+  `<column><1-based row>` where columns run `A..IZ` over rows
+  `1..200`.
 * `#PARSE` indicates a malformed formula.  `#ERR` indicates a
   cycle, divide-by-zero, or out-of-fuel evaluation.
 * Ctrl+Z / Ctrl+Y for undo / redo (64 levels).

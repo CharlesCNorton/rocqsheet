@@ -62,8 +62,8 @@ int main() {
   want_ok("unary-mid", "1+-1");
   want_ok("ws", "  A1  +  B2  ");
 
-  want_fail("row-oob", "A101");
-  want_fail("col-oob", "DA1");
+  want_fail("row-oob", "A201");
+  want_fail("col-oob", "JA1");
   want_fail("col-far-oob", "ZZ1");
   want_fail("row-zero", "A0");
   want_fail("empty", "");

@@ -83,6 +83,11 @@ class App {
     put(0, 2, "12");       put(1, 2, "5");        put(2, 2, "=A3*B3");
     put(3, 2, "=A3/B3");
     put(0, 4, "100");      put(1, 4, "50");       put(2, 4, "=A5-B5");
+    put(0, 6, "7");        put(1, 6, "3");
+    put(2, 6, "=IF(A7>B7,A7,B7)");
+    put(3, 6, "=A7=B7");
+    put(0, 8, "10");
+    put(2, 8, "=IF(A9<5, A9*2, A9-5)");
     selected_ = static_cast<int>(idx(0, 0));
   }
 
@@ -197,7 +202,7 @@ class App {
           "Type a number for a literal, =A1+B2 for a formula.\n"
           "Operators: + - * /, parentheses, comparison = < >\n"
           "(return 1 or 0), and IF(cond, then, else).\n"
-          "Cell refs run A..CZ over rows 1..100.\n\n"
+          "Cell refs run A..IZ over rows 1..200.\n\n"
           "Errors:\n"
           "  #PARSE  - the formula didn't parse.\n"
           "  #ERR    - cycle, divide-by-zero, or out of fuel.");

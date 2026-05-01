@@ -23,7 +23,7 @@ CMAKE_TAG  := $(CMAKE_DIR)/CMakeCache.txt
 
 CXX_SOURCES := $(wildcard src/*.cpp src/*.h tests/*.cpp) src/CMakeLists.txt
 
-.PHONY: all extract check-crane configure build run test clean update-crane
+.PHONY: all extract check-crane configure build run test clean update-crane install-deps
 
 all: build
 
@@ -64,6 +64,24 @@ test: build
 clean:
 	dune clean
 	rm -rf $(GEN_DIR) $(CMAKE_DIR)
+
+# One-shot dependency setup.  Pins Crane via opam and installs the
+# system packages (apt on Linux, brew on macOS).  Re-runnable; opam pin
+# is idempotent.
+install-deps: check-crane
+	@uname_s=$$(uname -s); \
+	if [ "$$uname_s" = "Linux" ]; then \
+	  echo "==> apt-get install"; \
+	  sudo apt-get update -y && \
+	  sudo apt-get install -y clang pkg-config cmake libglfw3-dev libgl-dev; \
+	elif [ "$$uname_s" = "Darwin" ]; then \
+	  echo "==> brew install"; \
+	  brew install glfw cmake pkg-config; \
+	else \
+	  echo "Unsupported platform: $$uname_s"; \
+	  exit 1; \
+	fi
+	opam pin add -y rocq-crane ./crane
 
 # Pull the latest Crane HEAD on the tracked branch into the submodule.
 # After this you typically need to re-pin opam: `opam pin add rocq-crane ./crane`.

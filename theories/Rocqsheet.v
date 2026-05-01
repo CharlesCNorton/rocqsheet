@@ -37,10 +37,10 @@ Module Rocqsheet.
 
 Open Scope int63.
 
-(* Grid dimensions: 104 columns (A..CZ) by 100 rows.  The 104 limit
-   keeps the eventual ImGui table under its hard column cap. *)
-Definition NUM_COLS : int := 104.
-Definition NUM_ROWS : int := 100.
+(* Grid dimensions: 260 columns (A..IZ) by 200 rows.  260 leaves
+   plenty of headroom under ImGui's 511-column hard cap. *)
+Definition NUM_COLS : int := 260.
+Definition NUM_ROWS : int := 200.
 Definition GRID_SIZE : int := PrimInt63.mul NUM_COLS NUM_ROWS.
 
 Record CellRef : Type := mkRef
@@ -234,6 +234,52 @@ Theorem eval_divzero :
   eval_cell DEFAULT_FUEL s r = None.
 Proof. vm_compute. reflexivity. Qed.
 
+(* IF picks the then-branch when the condition evaluates to non-zero. *)
+Theorem eval_if_then :
+  let r := mkRef 0 0 in
+  let s := set_cell new_sheet r
+    (CForm (EIf (EInt 1%Z) (EInt 7%Z) (EInt 99%Z))) in
+  eval_cell DEFAULT_FUEL s r = Some 7%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+(* IF picks the else-branch when the condition evaluates to zero. *)
+Theorem eval_if_else :
+  let r := mkRef 0 0 in
+  let s := set_cell new_sheet r
+    (CForm (EIf (EInt 0%Z) (EInt 7%Z) (EInt 99%Z))) in
+  eval_cell DEFAULT_FUEL s r = Some 99%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+(* Equality on identical literals returns 1; on distinct literals, 0. *)
+Theorem eval_eq_refl :
+  let r := mkRef 0 0 in
+  let s := set_cell new_sheet r
+    (CForm (EEq (EInt 42%Z) (EInt 42%Z))) in
+  eval_cell DEFAULT_FUEL s r = Some 1%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem eval_eq_distinct :
+  let r := mkRef 0 0 in
+  let s := set_cell new_sheet r
+    (CForm (EEq (EInt 1%Z) (EInt 2%Z))) in
+  eval_cell DEFAULT_FUEL s r = Some 0%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+(* Less-than and greater-than on closed literals. *)
+Theorem eval_lt_true :
+  let r := mkRef 0 0 in
+  let s := set_cell new_sheet r
+    (CForm (ELt (EInt 1%Z) (EInt 2%Z))) in
+  eval_cell DEFAULT_FUEL s r = Some 1%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem eval_gt_false :
+  let r := mkRef 0 0 in
+  let s := set_cell new_sheet r
+    (CForm (EGt (EInt 1%Z) (EInt 2%Z))) in
+  eval_cell DEFAULT_FUEL s r = Some 0%Z.
+Proof. vm_compute. reflexivity. Qed.
+
 (* Visited-set catches cycles in general: if a ref is already on the
    evaluation path and the expression is just that ref, [eval_expr]
    returns [None] for any positive fuel. *)
@@ -281,22 +327,22 @@ Proof.
   pose proof (to_Z_bounded (ref_row r)).
   unfold cell_index.
   rewrite add_spec, mul_spec.
-  assert (E1 : to_Z NUM_COLS = 104%Z) by reflexivity.
-  assert (E2 : to_Z NUM_ROWS = 100%Z) by reflexivity.
-  assert (E3 : to_Z GRID_SIZE = 10400%Z) by reflexivity.
+  assert (E1 : to_Z NUM_COLS = 260%Z) by reflexivity.
+  assert (E2 : to_Z NUM_ROWS = 200%Z) by reflexivity.
+  assert (E3 : to_Z GRID_SIZE = 52000%Z) by reflexivity.
   assert (EwB : wB = 9223372036854775808%Z) by reflexivity.
   rewrite E1 in *. rewrite E2 in *. rewrite E3. rewrite EwB in *.
   rewrite Z.mod_small.
   - rewrite Z.mod_small.
-    + assert (HM : (to_Z (ref_row r) * 104 + to_Z (ref_col r)
-                    <= 99 * 104 + 103)%Z) by nia.
+    + assert (HM : (to_Z (ref_row r) * 260 + to_Z (ref_col r)
+                    <= 199 * 260 + 259)%Z) by nia.
       lia.
     + split; nia.
   - split.
     + apply Z.add_nonneg_nonneg;
         [ apply Z.mod_pos_bound; lia | lia ].
-    + assert (HM : ((to_Z (ref_row r) * 104) mod 9223372036854775808
-                    < 10400)%Z).
+    + assert (HM : ((to_Z (ref_row r) * 260) mod 9223372036854775808
+                    < 52000)%Z).
       { rewrite Z.mod_small by nia. nia. }
       lia.
 Qed.
