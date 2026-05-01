@@ -434,3 +434,31 @@ Theorem co_iferror_traps_cycle :
     (CForm (EIfErr (ERef r0) (EInt 7%Z))) in
   run_n 50 (eval_cell_co s r1) = Some (Some 7%Z).
 Proof. vm_compute. reflexivity. Qed.
+
+(* --- Correspondence smoke between cofix and fuel evaluators --- *)
+
+(* For closed integer expressions both evaluators agree on the value. *)
+Theorem co_eval_correspondence_lit_smoke :
+  let r := mkRef 0 0 in
+  let s := set_cell new_sheet r (CForm (EAdd (EInt 2%Z) (EInt 3%Z))) in
+  run_n 50 (eval_cell_co s r) = Some (Some 5%Z)
+  /\ eval_cell DEFAULT_FUEL s r = EVal 5%Z.
+Proof. vm_compute. split; reflexivity. Qed.
+
+Theorem co_eval_correspondence_compound_smoke :
+  let a := mkRef 0 0 in
+  let b := mkRef 1 0 in
+  let dst := mkRef 2 0 in
+  let s := set_cell new_sheet a (CLit 4%Z) in
+  let s := set_cell s b (CLit 9%Z) in
+  let s := set_cell s dst (CForm (EMul (ERef a) (ERef b))) in
+  run_n 100 (eval_cell_co s dst) = Some (Some 36%Z)
+  /\ eval_cell DEFAULT_FUEL s dst = EVal 36%Z.
+Proof. vm_compute. split; reflexivity. Qed.
+
+Theorem co_eval_correspondence_cycle_smoke :
+  let r := mkRef 0 0 in
+  let s := set_cell new_sheet r (CForm (ERef r)) in
+  run_n 50 (eval_cell_co s r) = Some None
+  /\ eval_cell DEFAULT_FUEL s r = EErr.
+Proof. vm_compute. split; reflexivity. Qed.
