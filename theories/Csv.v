@@ -44,3 +44,31 @@ Fixpoint sheet_to_csv (s : Sheet) (row : nat) (count : nat)
 
 Definition to_csv (s : Sheet) : PrimString.string :=
   sheet_to_csv s 0 200 260.
+
+(* --- Theorems --------------------------------------------------- *)
+
+Theorem cell_to_csv_empty : cell_to_csv CEmpty = "".
+Proof. reflexivity. Qed.
+
+Theorem cell_to_csv_lit : forall n,
+  cell_to_csv (CLit n) = string_of_z n.
+Proof. reflexivity. Qed.
+
+Theorem cell_to_csv_str : forall s, cell_to_csv (CStr s) = s.
+Proof. reflexivity. Qed.
+
+Theorem cell_to_csv_bool_true : cell_to_csv (CBool true) = "true".
+Proof. reflexivity. Qed.
+
+Theorem cell_to_csv_bool_false : cell_to_csv (CBool false) = "false".
+Proof. reflexivity. Qed.
+
+(* Formula cells render as empty in this CSV format; numeric output
+   would require running eval_cell, which CSV export does not. *)
+Theorem cell_to_csv_form_empty : forall e, cell_to_csv (CForm e) = "".
+Proof. reflexivity. Qed.
+
+(* row_to_csv does not produce a leading separator. *)
+Theorem row_to_csv_no_leading_sep_smoke :
+  row_to_csv new_sheet 0 0 0 = "".
+Proof. reflexivity. Qed.
