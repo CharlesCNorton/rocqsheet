@@ -62,6 +62,7 @@ Definition trans (st : State) : State + option Z :=
         | CLit n   => inl (mkSt (st_sheet st) (PCApply (Some n)) (st_stack st))
         | CFloat _ => inr None  (* cofix evaluator covers Z only *)
         | CStr _   => inr None
+        | CBool _  => inr None
         | CForm e' => inl (mkSt (st_sheet st)
                                 (PCEval (r :: visited) e') (st_stack st))
         end
@@ -139,6 +140,10 @@ Definition trans (st : State) : State + option Z :=
   | PCEval _ (EConcat _ _) => inr None
   | PCEval _ (ELen _) => inr None
   | PCEval _ (ESubstr _ _ _) => inr None
+  | PCEval _ (EBool _) => inr None
+  | PCEval _ (EBNot _) => inr None
+  | PCEval _ (EBAnd _ _) => inr None
+  | PCEval _ (EBOr _ _) => inr None
   | PCSumStep visited lc hc col row hr acc =>
       if PrimInt63.ltb hr row then
         inl (mkSt (st_sheet st) (PCApply (Some acc)) (st_stack st))
@@ -254,6 +259,7 @@ Definition eval_cell_co (s : Sheet) (r : CellRef) : itree NoE (option Z) :=
   | CLit n   => Ret (Some n)
   | CFloat _ => Ret None  (* cofix evaluator covers Z only *)
   | CStr _   => Ret None
+  | CBool _  => Ret None
   | CForm e  => eval_co (r :: nil) s e
   end.
 

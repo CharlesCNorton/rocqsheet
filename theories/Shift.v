@@ -42,6 +42,10 @@ Fixpoint shift_refs (dc dr : int) (e : Expr) : Expr :=
   | EConcat a b => EConcat (shift_refs dc dr a) (shift_refs dc dr b)
   | ELen a => ELen (shift_refs dc dr a)
   | ESubstr a b c => ESubstr (shift_refs dc dr a) (shift_refs dc dr b) (shift_refs dc dr c)
+  | EBool b => EBool b
+  | EBNot a => EBNot (shift_refs dc dr a)
+  | EBAnd a b => EBAnd (shift_refs dc dr a) (shift_refs dc dr b)
+  | EBOr a b => EBOr (shift_refs dc dr a) (shift_refs dc dr b)
   end.
 
 Theorem shift_ref_zero : forall r, shift_ref 0 0 r = r.

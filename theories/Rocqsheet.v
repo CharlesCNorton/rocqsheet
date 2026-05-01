@@ -87,13 +87,18 @@ Inductive Expr : Type :=
   | EStr   : PrimString.string -> Expr
   | EConcat: Expr -> Expr -> Expr
   | ELen   : Expr -> Expr
-  | ESubstr: Expr -> Expr -> Expr -> Expr.
+  | ESubstr: Expr -> Expr -> Expr -> Expr
+  | EBool  : bool -> Expr
+  | EBNot  : Expr -> Expr
+  | EBAnd  : Expr -> Expr -> Expr
+  | EBOr   : Expr -> Expr -> Expr.
 
 Inductive Cell : Type :=
   | CEmpty : Cell
   | CLit   : Z -> Cell
   | CFloat : PrimFloat.float -> Cell
   | CStr   : PrimString.string -> Cell
+  | CBool  : bool -> Cell
   | CForm  : Expr -> Cell.
 
 Definition Sheet : Type := PrimArray.array Cell.
@@ -128,6 +133,7 @@ Inductive EvalResult : Type :=
   | EVal  : Z -> EvalResult
   | EFVal : PrimFloat.float -> EvalResult
   | EValS : PrimString.string -> EvalResult
+  | EValB : bool -> EvalResult
   | EErr  : EvalResult
   | EFuel : EvalResult.
 
@@ -187,6 +193,7 @@ Fixpoint eval_expr (fuel : nat) (visited : list CellRef) (s : Sheet)
         | CLit n   => EVal n
         | CFloat f => EFVal f
         | CStr s'  => EValS s'
+        | CBool b  => EValB b
         | CForm e' => eval_expr fuel' (r :: visited) s e'
         end
     | EAdd a b =>
@@ -221,6 +228,8 @@ Fixpoint eval_expr (fuel : nat) (visited : list CellRef) (s : Sheet)
       | EVal _   => eval_expr fuel' visited s t
       | EFVal _  => eval_expr fuel' visited s t
       | EValS _  => eval_expr fuel' visited s t
+      | EValB true  => eval_expr fuel' visited s t
+      | EValB false => eval_expr fuel' visited s e
       | EErr     => EErr
       | EFuel    => EFuel
       end
@@ -286,6 +295,7 @@ Fixpoint eval_expr (fuel : nat) (visited : list CellRef) (s : Sheet)
       | EVal v  => EVal v
       | EFVal f => EFVal f
       | EValS s' => EValS s'
+      | EValB b => EValB b
       | EErr    => eval_expr fuel' visited s fb
       | EFuel   => EFuel
       end
@@ -326,6 +336,28 @@ Fixpoint eval_expr (fuel : nat) (visited : list CellRef) (s : Sheet)
           EValS (PrimString.sub sv (Uint63.of_Z startv) (Uint63.of_Z lenv))
       | _, _, _ => EErr
       end
+    | EBool b => EValB b
+    | EBNot a =>
+      match eval_expr fuel' visited s a with
+      | EValB b => EValB (negb b)
+      | EErr    => EErr
+      | EFuel   => EFuel
+      | _       => EErr
+      end
+    | EBAnd a b =>
+      match eval_expr fuel' visited s a, eval_expr fuel' visited s b with
+      | EFuel, _ | _, EFuel => EFuel
+      | EErr, _ | _, EErr => EErr
+      | EValB ba, EValB bb => EValB (andb ba bb)
+      | _, _ => EErr
+      end
+    | EBOr a b =>
+      match eval_expr fuel' visited s a, eval_expr fuel' visited s b with
+      | EFuel, _ | _, EFuel => EFuel
+      | EErr, _ | _, EErr => EErr
+      | EValB ba, EValB bb => EValB (orb ba bb)
+      | _, _ => EErr
+      end
     end
   end
 
@@ -341,6 +373,7 @@ with eval_at_ref (fuel : nat) (visited : list CellRef) (s : Sheet)
       | CLit n   => EVal n
       | CFloat f => EFVal f
       | CStr s'  => EValS s'
+      | CBool b  => EValB b
       | CForm e  => eval_expr fuel' (r :: visited) s e
       end
   end
@@ -357,6 +390,7 @@ with sum_cols (fuel : nat) (visited : list CellRef) (s : Sheet)
                      (PrimInt63.add col 1) hc row (Z.add acc v)
       | EFVal _ => EErr
       | EValS _ => EErr
+      | EValB _ => EErr
       | EErr    => EErr
       | EFuel   => EFuel
       end
@@ -374,6 +408,7 @@ with sum_rows (fuel : nat) (visited : list CellRef) (s : Sheet)
                        (PrimInt63.add row 1) hr acc'
       | EFVal _   => EErr
       | EValS _   => EErr
+      | EValB _   => EErr
       | EErr      => EErr
       | EFuel     => EFuel
       end
@@ -385,6 +420,7 @@ Definition eval_cell (fuel : nat) (s : Sheet) (r : CellRef) : EvalResult :=
   | CLit n   => EVal n
   | CFloat f => EFVal f
   | CStr s'  => EValS s'
+  | CBool b  => EValB b
   | CForm e  => eval_expr fuel (r :: nil) s e
   end.
 
@@ -776,6 +812,10 @@ Proof.
            rewrite (IHe e1 fuel' visited s Hle') by congruence.
            rewrite Ec.
            apply IHe; assumption.
+        -- (* EValB: dispatch on the literal bool. *)
+           rewrite (IHe e1 fuel' visited s Hle') by congruence.
+           rewrite Ec.
+           destruct b; apply IHe; assumption.
         -- rewrite (IHe e1 fuel' visited s Hle') by congruence.
            rewrite Ec. reflexivity.
       * (* ENot *)
@@ -798,6 +838,9 @@ Proof.
            ++ (* EValS *)
               rewrite (IHs _ _ _ _ _ _ _ _ Hle') by congruence.
               rewrite Esr. reflexivity.
+           ++ (* EValB *)
+              rewrite (IHs _ _ _ _ _ _ _ _ Hle') by congruence.
+              rewrite Esr. reflexivity.
            ++ rewrite (IHs _ _ _ _ _ _ _ _ Hle') by congruence.
               rewrite Esr. reflexivity.
       * (* ECount *)
@@ -810,6 +853,9 @@ Proof.
            rewrite (IHe e1 fuel' visited s Hle') by congruence.
            rewrite Ea. reflexivity.
         -- (* EValS: passthrough *)
+           rewrite (IHe e1 fuel' visited s Hle') by congruence.
+           rewrite Ea. reflexivity.
+        -- (* EValB: passthrough *)
            rewrite (IHe e1 fuel' visited s Hle') by congruence.
            rewrite Ea. reflexivity.
         -- rewrite (IHe e1 fuel' visited s Hle') by congruence.
@@ -831,6 +877,25 @@ Proof.
              rewrite (IHe e2 fuel' visited s Hle') by congruence;
              rewrite (IHe e3 fuel' visited s Hle') by congruence;
              rewrite Es, Estart, Elen; reflexivity).
+      * (* EBool *) reflexivity.
+      * (* EBNot *)
+        destruct (eval_expr fuel visited s e) eqn:Ea; try congruence;
+          rewrite (IHe e fuel' visited s Hle') by congruence;
+          rewrite Ea; reflexivity.
+      * (* EBAnd *)
+        destruct (eval_expr fuel visited s e1) eqn:Ea;
+        destruct (eval_expr fuel visited s e2) eqn:Eb;
+        try congruence;
+        try (rewrite (IHe e1 fuel' visited s Hle') by congruence;
+             rewrite (IHe e2 fuel' visited s Hle') by congruence;
+             rewrite Ea, Eb; reflexivity).
+      * (* EBOr *)
+        destruct (eval_expr fuel visited s e1) eqn:Ea;
+        destruct (eval_expr fuel visited s e2) eqn:Eb;
+        try congruence;
+        try (rewrite (IHe e1 fuel' visited s Hle') by congruence;
+             rewrite (IHe e2 fuel' visited s Hle') by congruence;
+             rewrite Ea, Eb; reflexivity).
     + (* eval_at_ref *)
       intros r fuel' visited s Hle Hnf.
       destruct fuel' as [|fuel']; [lia|].
@@ -856,6 +921,9 @@ Proof.
       -- (* EValS *)
          rewrite (IHr (mkRef col row) fuel' visited s Hle') by congruence.
          rewrite Eat. reflexivity.
+      -- (* EValB *)
+         rewrite (IHr (mkRef col row) fuel' visited s Hle') by congruence.
+         rewrite Eat. reflexivity.
       -- rewrite (IHr (mkRef col row) fuel' visited s Hle') by congruence.
          rewrite Eat. reflexivity.
     + (* sum_rows *)
@@ -873,6 +941,9 @@ Proof.
          rewrite (IHc lc hc row acc fuel' visited s Hle') by congruence.
          rewrite Esc. reflexivity.
       -- (* EValS *)
+         rewrite (IHc lc hc row acc fuel' visited s Hle') by congruence.
+         rewrite Esc. reflexivity.
+      -- (* EValB *)
          rewrite (IHc lc hc row acc fuel' visited s Hle') by congruence.
          rewrite Esc. reflexivity.
       -- rewrite (IHc lc hc row acc fuel' visited s Hle') by congruence.
@@ -1279,6 +1350,49 @@ Theorem eval_len_substr_le_len_smoke :
                                                   1%uint63 3%uint63))
    <= Uint63.to_Z (PrimString.length "hello"%pstring))%Z.
 Proof. vm_compute. easy. Qed.
+
+(* --- Boolean theorems ---------------------------------------------- *)
+
+Theorem eval_bool_lit : forall fuel visited s b,
+  eval_expr (S fuel) visited s (EBool b) = EValB b.
+Proof. reflexivity. Qed.
+
+(* not_not b = b *)
+Theorem eval_bnot_not : forall fuel visited s b,
+  eval_expr (S (S (S fuel))) visited s (EBNot (EBNot (EBool b)))
+  = EValB b.
+Proof. intros. simpl. rewrite Bool.negb_involutive. reflexivity. Qed.
+
+(* and_comm *)
+Theorem eval_band_comm : forall fuel visited s a b,
+  eval_expr (S (S fuel)) visited s (EBAnd (EBool a) (EBool b))
+  = eval_expr (S (S fuel)) visited s (EBAnd (EBool b) (EBool a)).
+Proof. intros. simpl. rewrite Bool.andb_comm. reflexivity. Qed.
+
+(* or_comm *)
+Theorem eval_bor_comm : forall fuel visited s a b,
+  eval_expr (S (S fuel)) visited s (EBOr (EBool a) (EBool b))
+  = eval_expr (S (S fuel)) visited s (EBOr (EBool b) (EBool a)).
+Proof. intros. simpl. rewrite Bool.orb_comm. reflexivity. Qed.
+
+(* De Morgan: NOT (a AND b) = (NOT a) OR (NOT b) *)
+Theorem eval_de_morgan : forall fuel visited s a b,
+  eval_expr (S (S (S fuel))) visited s (EBNot (EBAnd (EBool a) (EBool b)))
+  = eval_expr (S (S (S fuel))) visited s
+      (EBOr (EBNot (EBool a)) (EBNot (EBool b))).
+Proof. intros. simpl. rewrite Bool.negb_andb. reflexivity. Qed.
+
+(* if_true_then *)
+Theorem eval_if_true_then : forall fuel visited s t e,
+  eval_expr (S (S fuel)) visited s (EIf (EBool true) t e)
+  = eval_expr (S fuel) visited s t.
+Proof. reflexivity. Qed.
+
+(* if_false_else *)
+Theorem eval_if_false_else : forall fuel visited s t e,
+  eval_expr (S (S fuel)) visited s (EIf (EBool false) t e)
+  = eval_expr (S fuel) visited s e.
+Proof. reflexivity. Qed.
 
 End Rocqsheet.
 

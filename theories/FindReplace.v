@@ -39,6 +39,10 @@ Fixpoint replace_int_in_expr (from to : Z) (e : Expr) : Expr :=
   | ESubstr a b c => ESubstr (replace_int_in_expr from to a)
                              (replace_int_in_expr from to b)
                              (replace_int_in_expr from to c)
+  | EBool b => EBool b
+  | EBNot a => EBNot (replace_int_in_expr from to a)
+  | EBAnd a b => EBAnd (replace_int_in_expr from to a) (replace_int_in_expr from to b)
+  | EBOr a b => EBOr (replace_int_in_expr from to a) (replace_int_in_expr from to b)
   end.
 
 Theorem replace_idempotent_when_equal :

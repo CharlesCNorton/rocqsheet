@@ -260,6 +260,16 @@ Fixpoint show_expr (e : Expr) : PrimString.string :=
           (PrimString.cat (show_expr b)
             (PrimString.cat ","
               (PrimString.cat (show_expr c) ")")))))
+  | EBool b => if b then "TRUE" else "FALSE"
+  | EBNot a => PrimString.cat "BNOT(" (PrimString.cat (show_expr a) ")")
+  | EBAnd a b => PrimString.cat "BAND("
+                  (PrimString.cat (show_expr a)
+                    (PrimString.cat ","
+                      (PrimString.cat (show_expr b) ")")))
+  | EBOr a b => PrimString.cat "BOR("
+                 (PrimString.cat (show_expr a)
+                   (PrimString.cat ","
+                     (PrimString.cat (show_expr b) ")")))
   end.
 
 Definition show_cell (c : Cell) : PrimString.string :=
@@ -268,6 +278,7 @@ Definition show_cell (c : Cell) : PrimString.string :=
   | CLit n   => string_of_z n
   | CFloat _ => "<float>"
   | CStr s   => s
+  | CBool b  => if b then "TRUE" else "FALSE"
   | CForm e  => PrimString.cat "=" (show_expr e)
   end.
 
@@ -340,11 +351,13 @@ Definition cell_display (s : Sheet) (errs : list CellRef) (r : CellRef)
     | CLit n   => (string_of_z n, false)
     | CFloat _ => ("<float>", false)
     | CStr str => (str, false)
+    | CBool b  => ((if b then "TRUE" else "FALSE"), false)
     | CForm e =>
       match eval_expr DEFAULT_FUEL (cons r nil) s e with
       | EVal v   => (string_of_z v, false)
       | EFVal _  => ("<float>", false)
       | EValS sv => (sv, false)
+      | EValB b  => ((if b then "TRUE" else "FALSE"), false)
       | EErr     => (err_marker, true)
       | EFuel    => (err_marker, true)
       end
