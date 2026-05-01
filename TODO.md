@@ -9,9 +9,9 @@ The format for each item is:
 > **Feature.** What it adds.
 > *Theorems:* the proof obligations the addition would create.
 
-UI-only items (formatting, keyboard nav, frozen panes) carry no
-kernel theorems; they're called out so the list is honest about
-scope rather than complete.
+UI-only items (formatting, keyboard nav) carry no kernel theorems;
+they're called out so the list is honest about scope rather than
+complete.
 
 ---
 
@@ -156,12 +156,14 @@ scope rather than complete.
 
 ## Verification gaps within current functionality
 
-23. **Universal theorems for arithmetic.** Existing theorems are
-    closed examples (`smoke_computes`, `eval_lit`, ...).
+23. **Universal theorems for arithmetic.** Closed-input lifts are in
+    place (`eval_add_lit`, `eval_sub_lit`, `eval_mul_lit`,
+    `eval_eq_lit`, `eval_lt_lit`, commutativity, identity).  The
+    universal forall-eval statement remains.
     *Theorems:* `forall a b, eval_expr (EAdd (EInt a) (EInt b)) ≈
     Z.add a b` (with sufficient fuel), `eval_expr_compositional`,
-    plus algebraic laws (commutativity, associativity,
-    distributivity) lifted from `Z`.
+    plus algebraic laws (associativity, distributivity) lifted from
+    `Z`.
 
 24. **Saturation correctness.** The C++ `sat_add` / `sat_sub` /
     `sat_mul` correspond to overrides on `Z.add` / `Z.sub` / `Z.mul`,
@@ -170,22 +172,17 @@ scope rather than complete.
     (a + b > MAX AND result = MAX) OR (a + b < MIN AND result =
     MIN)`, similar for sub/mul.
 
-25. **`eval_iter` ↔ Rocq spec.** The empirical correspondence test
-    runs both on a corpus; no formal correspondence theorem.
-    *Theorems:* `forall s r, eval_iter s r = run_n large_N
-    (eval_cell_co s r)` modulo fuel exhaustion.
-
 ---
 
 ## Performance and runtime
 
-26. **Dirty-tracking dependency graph.** Currently every visible
+25. **Dirty-tracking dependency graph.** Currently every visible
     cell re-evaluates every frame.
     *Theorems:* `dirty_set_after_set s r c = closure_of_dependents
     r`, `eval_only_dirty = eval_all` on the dirty cells,
     `clean_after_eval`.
 
-27. **`set_cell` on a shared sheet copies the whole vector.**  At
+26. **`set_cell` on a shared sheet copies the whole vector.**  At
     grid sizes above 50k cells the latency becomes visible.
     *Theorems:* would shift to a tree-shaped persistent structure
     (e.g. Hash Array Mapped Trie) with `get_set_eq` and `get_set_neq`
@@ -195,18 +192,18 @@ scope rather than complete.
 
 ## Effectful additions
 
-28. **TODAY, NOW, RAND.** Non-deterministic / time-dependent.
+27. **TODAY, NOW, RAND.** Non-deterministic / time-dependent.
     *Theorems:* requires an effect type (`clockE`, `randE` as ITree
     events) and lemmas about determinism modulo the effect
     interpreter; `TODAY ≤ NOW` after epoch, `RAND in [0, 1)`.
 
-29. **Macros / embedded scripting.** Adds a sublanguage to the
+28. **Macros / embedded scripting.** Adds a sublanguage to the
     kernel.
     *Theorems:* macro semantics deterministic given input state,
     soundness with respect to direct user actions, sandbox boundary
     (no escape to host).
 
-30. **Concurrent edits / collaboration.** Multi-user.
+29. **Concurrent edits / collaboration.** Multi-user.
     *Theorems:* serialisability of operations, conflict resolution
     (CRDT lemmas), monotonicity of merge.
 
@@ -214,11 +211,10 @@ scope rather than complete.
 
 ## UI-only (no kernel theorems)
 
-31. Keyboard navigation between cells.
-32. Frozen panes / freeze rows/columns.
-33. Cell formatting (bold, color, borders, alignment).
-34. Number formatting (decimals, currency, percent) — display layer
+30. Keyboard navigation between cells.
+31. Cell formatting (bold, color, borders, alignment).
+32. Number formatting (decimals, currency, percent) — display layer
     only; the `format_then_parse = original` round-trip lemma would
     apply if a parser is added.
-35. Charts.
-36. Conditional formatting.
+33. Charts.
+34. Conditional formatting.
