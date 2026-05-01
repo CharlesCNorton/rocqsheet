@@ -12,9 +12,18 @@
 #include <cstdio>
 #include <string>
 
+using S = Rocqsheet;
+
 namespace {
 
 int failures = 0;
+
+std::optional<int64_t> to_opt(const S::EvalResult& r) {
+  if (std::holds_alternative<S::EvalResult::EVal>(r.v())) {
+    return std::get<S::EvalResult::EVal>(r.v()).d_a0;
+  }
+  return std::nullopt;
+}
 
 void check(const char* tag, std::optional<int64_t> got, int64_t want) {
   if (!got || *got != want) {
@@ -22,6 +31,9 @@ void check(const char* tag, std::optional<int64_t> got, int64_t want) {
         got ? std::to_string(*got).c_str() : "None", (long long)want);
     ++failures;
   }
+}
+void check(const char* tag, const S::EvalResult& got, int64_t want) {
+  check(tag, to_opt(got), want);
 }
 void check_none(const char* tag, std::optional<int64_t> got) {
   if (got) {
@@ -31,8 +43,6 @@ void check_none(const char* tag, std::optional<int64_t> got) {
 }
 
 }  // namespace
-
-using S = Rocqsheet;
 
 int main() {
   // The closed Rocq smoke value: A1=2, B1=3, C1=(A1+B1)*7 = 35.
@@ -179,13 +189,8 @@ int main() {
   // iterative version must produce the same answer.
   {
     auto agree = [&](const char* tag, const S::Sheet& sh, const S::CellRef& r) {
-      auto spec = S::eval_cell(S::DEFAULT_FUEL, sh, r);
+      auto spec = to_opt(S::eval_cell(S::DEFAULT_FUEL, sh, r));
       auto impl = formula::eval_iter(sh, r);
-      // Where the spec returns Some, the impl must agree.
-      // Where the spec returns None, the impl is allowed to return
-      // either Some (if eval_cell ran out of fuel rather than
-      // hitting a cycle/divzero) or the same None.  The kernel test
-      // above already covers the cases where both should be None.
       if (spec.has_value()) {
         if (!impl.has_value() || *impl != *spec) {
           std::printf("FAIL correspondence/%s: spec=%lld impl=%s\n", tag,

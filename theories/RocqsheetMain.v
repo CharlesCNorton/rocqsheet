@@ -103,6 +103,38 @@ Definition demo_sheet : Sheet :=
              (EDiv (ERef (ref_at 0 10)) (EInt 0%Z)) in
   let s := put_form s 0 12 (ERef (ref_at 0 12)) in
   let s := put_form s 1 12 (ERef (ref_at 0 12)) in
+
+  let s := put_lit s 0 15 4%Z in
+  let s := put_lit s 1 15 7%Z in
+  let s := put_lit s 2 15 12%Z in
+  let s := put_lit s 3 15 9%Z in
+  let s := put_form s 4 15 (ESum (ref_at 0 15) (ref_at 3 15)) in
+  let s := put_form s 5 15 (EAvg (ref_at 0 15) (ref_at 3 15)) in
+  let s := put_lit s 0 16 2%Z in
+  let s := put_lit s 1 16 8%Z in
+  let s := put_lit s 2 16 5%Z in
+  let s := put_lit s 3 16 11%Z in
+  let s := put_form s 4 16 (ESum (ref_at 0 16) (ref_at 3 16)) in
+  let s := put_lit s 0 17 3%Z in
+  let s := put_lit s 1 17 6%Z in
+  let s := put_lit s 2 17 9%Z in
+  let s := put_lit s 3 17 14%Z in
+  let s := put_form s 4 17 (ESum (ref_at 0 17) (ref_at 3 17)) in
+  let s := put_lit s 0 18 10%Z in
+  let s := put_lit s 1 18 3%Z in
+  let s := put_lit s 2 18 8%Z in
+  let s := put_lit s 3 18 7%Z in
+  let s := put_form s 4 18 (ESum (ref_at 0 18) (ref_at 3 18)) in
+  let s := put_form s 0 19 (ESum (ref_at 0 15) (ref_at 0 18)) in
+  let s := put_form s 1 19 (ESum (ref_at 1 15) (ref_at 1 18)) in
+  let s := put_form s 2 19 (ESum (ref_at 2 15) (ref_at 2 18)) in
+  let s := put_form s 3 19 (ESum (ref_at 3 15) (ref_at 3 18)) in
+  let s := put_form s 4 19 (ESum (ref_at 0 15) (ref_at 3 18)) in
+  let s := put_form s 6 19 (ECount (ref_at 0 15) (ref_at 3 18)) in
+
+  let s := put_form s 0 21
+             (EIfErr (EDiv (ERef (ref_at 0 10)) (EInt 0%Z))
+                     (EInt (-1)%Z)) in
   s.
 
 (* ----- Pretty printer (Cell -> source text) ----------------------- *)
@@ -177,13 +209,50 @@ Fixpoint show_expr (e : Expr) : PrimString.string :=
       (PrimString.cat (cell_label tl)
         (PrimString.cat ":"
           (PrimString.cat (cell_label br) ")")))
+  | EAvg tl br =>
+    PrimString.cat "AVG("
+      (PrimString.cat (cell_label tl)
+        (PrimString.cat ":"
+          (PrimString.cat (cell_label br) ")")))
+  | ECount tl br =>
+    PrimString.cat "COUNT("
+      (PrimString.cat (cell_label tl)
+        (PrimString.cat ":"
+          (PrimString.cat (cell_label br) ")")))
+  | EIfErr a fb =>
+    PrimString.cat "IFERROR("
+      (PrimString.cat (show_expr a)
+        (PrimString.cat ","
+          (PrimString.cat (show_expr fb) ")")))
+  | EFloat _ => "<float>"
+  | EFAdd a b => PrimString.cat
+                  (PrimString.cat
+                    (PrimString.cat "(" (show_expr a))
+                    ").+(")
+                  (PrimString.cat (show_expr b) ")")
+  | EFSub a b => PrimString.cat
+                  (PrimString.cat
+                    (PrimString.cat "(" (show_expr a))
+                    ").-(")
+                  (PrimString.cat (show_expr b) ")")
+  | EFMul a b => PrimString.cat
+                  (PrimString.cat
+                    (PrimString.cat "(" (show_expr a))
+                    ").*(")
+                  (PrimString.cat (show_expr b) ")")
+  | EFDiv a b => PrimString.cat
+                  (PrimString.cat
+                    (PrimString.cat "(" (show_expr a))
+                    ")./(")
+                  (PrimString.cat (show_expr b) ")")
   end.
 
 Definition show_cell (c : Cell) : PrimString.string :=
   match c with
-  | CEmpty => ""
-  | CLit n => string_of_z n
-  | CForm e => PrimString.cat "=" (show_expr e)
+  | CEmpty   => ""
+  | CLit n   => string_of_z n
+  | CFloat _ => "<float>"
+  | CForm e  => PrimString.cat "=" (show_expr e)
   end.
 
 (* ----- Loop state --------------------------------------------- *)
@@ -251,12 +320,15 @@ Definition cell_display (s : Sheet) (errs : list CellRef) (r : CellRef)
   if mem_ref errs r then (parse_marker, true)
   else
     match get_cell s r with
-    | CEmpty => ("", false)
-    | CLit n => (string_of_z n, false)
+    | CEmpty   => ("", false)
+    | CLit n   => (string_of_z n, false)
+    | CFloat _ => ("<float>", false)
     | CForm e =>
       match eval_expr DEFAULT_FUEL (cons r nil) s e with
-      | Some v => (string_of_z v, false)
-      | None => (err_marker, true)
+      | EVal v  => (string_of_z v, false)
+      | EFVal _ => ("<float>", false)
+      | EErr    => (err_marker, true)
+      | EFuel   => (err_marker, true)
       end
     end.
 

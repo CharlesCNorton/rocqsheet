@@ -78,7 +78,10 @@ Inductive token : Type :=
   | TPow
   | TNot
   | TAnd
-  | TOr.
+  | TOr
+  | TIfErr
+  | TAvg
+  | TCount.
 
 (* INT64_MAX / 10 = 922337203685477580; one extra digit must not
    exceed (INT64_MAX mod 10) = 7. *)
@@ -219,28 +222,52 @@ Fixpoint tokenize_aux
         let i2 := PrimInt63.add i 2 in
         let i3 := PrimInt63.add i 3 in
         let i4 := PrimInt63.add i 4 in
+        let i5 := PrimInt63.add i 5 in
+        let i6 := PrimInt63.add i 6 in
+        let i7 := PrimInt63.add i 7 in
+        let i8 := PrimInt63.add i 8 in
         let chr j :=
           if PrimInt63.ltb j len then to_upper_int (char_to_int (PrimString.get s j))
           else 0 in
         let lparen j :=
           PrimInt63.ltb j len &&
           PrimInt63.eqb (char_to_int (PrimString.get s j)) 40 in
-        (* Three-letter function keywords: NOT(, AND(. *)
         let c1u := chr i1 in
         let c2u := chr i2 in
+        let c3u := chr i3 in
+        let c4u := chr i4 in
+        let c5u := chr i5 in
+        let c6u := chr i6 in
+        let seven_letter_kw_lp := lparen i7 in
+        let five_letter_kw_lp := lparen i5 in
         let three_letter_kw_lp := lparen i3 in
-        if PrimInt63.eqb c0 78 && PrimInt63.eqb c1u 79 &&
-           PrimInt63.eqb c2u 84 && three_letter_kw_lp
+        if PrimInt63.eqb c0 73 && PrimInt63.eqb c1u 70 &&
+           PrimInt63.eqb c2u 69 && PrimInt63.eqb c3u 82 &&
+           PrimInt63.eqb c4u 82 && PrimInt63.eqb c5u 79 &&
+           PrimInt63.eqb c6u 82 && seven_letter_kw_lp
         then
-          (* "NOT(" *)
+          (* "IFERROR(" *)
+          tokenize_aux fuel' s len i8 (TIfErr :: acc)
+        else if PrimInt63.eqb c0 67 && PrimInt63.eqb c1u 79 &&
+                PrimInt63.eqb c2u 85 && PrimInt63.eqb c3u 78 &&
+                PrimInt63.eqb c4u 84 && five_letter_kw_lp
+        then
+          (* "COUNT(" *)
+          tokenize_aux fuel' s len i6 (TCount :: acc)
+        else if PrimInt63.eqb c0 78 && PrimInt63.eqb c1u 79 &&
+                PrimInt63.eqb c2u 84 && three_letter_kw_lp
+        then
           tokenize_aux fuel' s len i4 (TNot :: acc)
         else if PrimInt63.eqb c0 65 && PrimInt63.eqb c1u 78 &&
                 PrimInt63.eqb c2u 68 && three_letter_kw_lp
         then
-          (* "AND(" *)
           tokenize_aux fuel' s len i4 (TAnd :: acc)
+        else if PrimInt63.eqb c0 65 && PrimInt63.eqb c1u 86 &&
+                PrimInt63.eqb c2u 71 && three_letter_kw_lp
+        then
+          (* "AVG(" *)
+          tokenize_aux fuel' s len i4 (TAvg :: acc)
         else
-          (* Two-letter function keywords: IF(, OR(. *)
           let two_letter_kw_lp := lparen i2 in
           if PrimInt63.eqb c0 73 && PrimInt63.eqb c1u 70 && two_letter_kw_lp
           then
@@ -417,6 +444,15 @@ with parse_factor (fuel : nat) (toks : list token)
       | Some (a, TComma :: rest1) =>
         match parse_top fuel' rest1 with
         | Some (b, TRParen :: rest2) => Some (EOr a b, rest2)
+        | _ => None
+        end
+      | _ => None
+      end
+    | TIfErr :: rest =>
+      match parse_top fuel' rest with
+      | Some (a, TComma :: rest1) =>
+        match parse_top fuel' rest1 with
+        | Some (fb, TRParen :: rest2) => Some (EIfErr a fb, rest2)
         | _ => None
         end
       | _ => None
