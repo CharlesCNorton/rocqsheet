@@ -71,6 +71,21 @@ class App {
     edits_.resize(static_cast<size_t>(NUM_COLS) * NUM_ROWS);
   }
 
+  void load_demo() {
+    auto put = [&](int c, int r, const char* src) {
+      EditBuf& eb = edits_[idx(c, r)];
+      std::strncpy(eb.buf.data(), src, eb.buf.size() - 1);
+      eb.buf[eb.buf.size() - 1] = '\0';
+      commit(c, r);
+    };
+    put(0, 0, "2");        put(1, 0, "3");        put(2, 0, "=A1+B1");
+    put(3, 0, "=(A1+B1)*7");
+    put(0, 2, "12");       put(1, 2, "5");        put(2, 2, "=A3*B3");
+    put(3, 2, "=A3/B3");
+    put(0, 4, "100");      put(1, 4, "50");       put(2, 4, "=A5-B5");
+    selected_ = static_cast<int>(idx(0, 0));
+  }
+
   void render() {
     handle_shortcuts();
     if (ImGui::Begin("Rocqsheet", nullptr, ImGuiWindowFlags_MenuBar)) {
@@ -423,7 +438,12 @@ void glfw_error(int err, const char* desc) {
 
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
+  bool demo = false;
+  for (int i = 1; i < argc; ++i) {
+    if (std::strcmp(argv[i], "--demo") == 0) demo = true;
+  }
+
   glfwSetErrorCallback(glfw_error);
   if (!glfwInit()) return 1;
 
@@ -443,6 +463,7 @@ int main() {
   ImGui_ImplOpenGL3_Init("#version 330 core");
 
   App app;
+  if (demo) app.load_demo();
   while (!glfwWindowShouldClose(win)) {
     glfwPollEvents();
     ImGui_ImplOpenGL3_NewFrame();
