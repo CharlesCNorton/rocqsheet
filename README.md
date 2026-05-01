@@ -38,11 +38,24 @@ Requirements:
 * Rocq 9.0 or newer with `dune`
 * Crane installed via opam (`opam pin add rocq-crane ./crane`)
 * a C++23 compiler (clang 18 or newer, or recent gcc)
-* GLFW 3 development headers (`libglfw3-dev` on Debian/Ubuntu)
-* OpenGL development headers (`libgl-dev`)
-* `cmake`, `pkg-config`
+* GLFW 3 + OpenGL + `cmake` + `pkg-config`
 
 CMake's `FetchContent` pulls Dear ImGui (v1.91.5) at configure time.
+
+### Linux (Debian/Ubuntu)
+
+```bash
+sudo apt-get install -y clang pkg-config cmake \
+    libglfw3-dev libgl-dev
+```
+
+### macOS
+
+```bash
+brew install glfw cmake pkg-config
+```
+
+OpenGL ships with the OS as a framework; nothing extra to install.
 
 ## Usage
 
