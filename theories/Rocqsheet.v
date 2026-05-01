@@ -15,8 +15,9 @@
    under [src/].
 *)
 
-From Stdlib Require Import List BinInt PArray.
-From Corelib Require Import PrimInt63.
+From Stdlib Require Import List BinInt PArray Lia.
+From Stdlib.Numbers.Cyclic.Int63 Require Import Uint63.
+From Corelib Require Import PrimInt63 Uint63Axioms.
 From Crane Require Import Mapping.NatIntStd Mapping.ZInt.
 From Crane Require Extraction.
 Import ListNotations.
@@ -223,6 +224,33 @@ Proof.
   intros fuel visited s r H.
   simpl. rewrite H. reflexivity.
 Qed.
+
+(* --- Friendly preconditions for callers ----------------------------- *)
+
+(* Boolean predicate: a ref's column and row each fit in the grid. *)
+Definition valid_ref (r : CellRef) : bool :=
+  andb (PrimInt63.ltb (ref_col r) NUM_COLS)
+       (PrimInt63.ltb (ref_row r) NUM_ROWS).
+
+(* The fresh sheet has length GRID_SIZE.  Closed computation. *)
+Lemma length_new_sheet : PrimArray.length new_sheet = GRID_SIZE.
+Proof. vm_compute. reflexivity. Qed.
+
+(* set_cell preserves array length.  Direct from PArray.length_set. *)
+Lemma length_set_cell : forall s r c,
+  PrimArray.length (set_cell s r c) = PrimArray.length s.
+Proof.
+  intros s r c. unfold set_cell.
+  apply (@length_set Cell s (cell_index r) c).
+Qed.
+
+(* The cell_index bound for valid refs.  Stated but not yet
+   discharged: the proof would require [lia]/[nia] to handle a
+   multiplication of a bounded variable by a constant under int63
+   arithmetic mod wB, which isn't going through cleanly with the
+   current Stdlib int63 lemma set.  Once this lands, callers can
+   chain [length_new_sheet] + [length_set_cell] + this bound +
+   [get_set_eq] to prove set/get coherence from [valid_ref] alone. *)
 
 End Rocqsheet.
 
