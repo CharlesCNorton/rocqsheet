@@ -70,47 +70,42 @@
     *Theorems:* `HIST(r, current) = eval r`; `HIST(r, t)`
     factors through the `OpLog` prefix at `t`.
 
-14. **Dependency-graph latency bound.** Bound the propagation depth
-    after a single edit.
-    *Theorems:* `forall s r c, depth (dirty_set_after_set s r c) <= N`
-    when `s` satisfies a stated sparsity invariant.
-
-15. **Inline contract checking in the formula bar.** Each column
+14. **Inline contract checking in the formula bar.** Each column
     declares an invariant; on commit the kernel attempts to
     discharge the formula's obligation against it; failure is
     rendered as a red marker.
     *Theorems:* the discharge procedure is sound (no formula passes
     that invalidates the column invariant on any input).
 
-16. **Sheet-level dependent types.** Column `B` declared as
+15. **Sheet-level dependent types.** Column `B` declared as
     `Vector R (length A)` indexes `B` by `A`'s row count.
     *Theorems:* well-typedness preserved by every `pure_edit_step`.
 
-17. **Sandboxed scripting language.** Extend `Macros.v` to a typed
+16. **Sandboxed scripting language.** Extend `Macros.v` to a typed
     expression language whose effects appear only as documented
     event constructors.
     *Theorems:* `macro_pure` (no effect constructor reached) implies
     sheet-only effect; `sandbox_total` (every macro terminates).
 
-18. **Property-based regressions on save.** Per-column `Prop`s
+17. **Property-based regressions on save.** Per-column `Prop`s
     sampled across the sheet via QuickChick; counter-examples
     surface as marked cells.
     *Theorems:* every supported `Prop` is decidable on closed cell
     values.
 
-19. **Per-cell provenance hashes.** `value_hash r = H(formula,
+18. **Per-cell provenance hashes.** `value_hash r = H(formula,
     inputs_hashes)`.
     *Theorems:* identical workbooks under identical inputs produce
     identical hashes; collision-resistance reduction to the
     underlying digest.
 
-20. **Trade-ticket schema with round-trip.** Record `TradeTicket`
+19. **Trade-ticket schema with round-trip.** Record `TradeTicket`
     with field-level invariants (`notional > 0`, `maturity >
     value_date`, `currency` in a finite set).
     *Theorems:* `book_to_sheet_to_book = id`; schema invariants
     preserved by every `pure_edit_step`.
 
-21. **Static error-reachability analysis.** `analyze_workbook : Sheet
+20. **Static error-reachability analysis.** `analyze_workbook : Sheet
     -> list (CellRef * ErrorClass)` over `EErr` paths,
     divide-by-zero witnesses, and `NaN` producers.
     *Theorems:* `analysis_complete` (any cell that evaluates to
