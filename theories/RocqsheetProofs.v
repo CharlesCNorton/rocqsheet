@@ -70,19 +70,19 @@ Qed.
 (* IF on a positive literal takes the then-branch. *)
 Theorem eval_if_pos_lit_smoke :
   let s := new_sheet in
-  eval_expr 5 nil s (EIf (EInt 7%Z) (EInt 1%Z) (EInt 2%Z)) = EVal 1%Z.
+  eval_expr 5 empty_visited s (EIf (EInt 7%Z) (EInt 1%Z) (EInt 2%Z)) = EVal 1%Z.
 Proof. vm_compute. reflexivity. Qed.
 
 (* IF on a negative literal takes the then-branch. *)
 Theorem eval_if_neg_lit_smoke :
   let s := new_sheet in
-  eval_expr 5 nil s (EIf (EInt (-3)%Z) (EInt 1%Z) (EInt 2%Z)) = EVal 1%Z.
+  eval_expr 5 empty_visited s (EIf (EInt (-3)%Z) (EInt 1%Z) (EInt 2%Z)) = EVal 1%Z.
 Proof. vm_compute. reflexivity. Qed.
 
 (* IF on zero takes the else-branch. *)
 Theorem eval_if_zero_lit_smoke :
   let s := new_sheet in
-  eval_expr 5 nil s (EIf (EInt 0%Z) (EInt 1%Z) (EInt 2%Z)) = EVal 2%Z.
+  eval_expr 5 empty_visited s (EIf (EInt 0%Z) (EInt 1%Z) (EInt 2%Z)) = EVal 2%Z.
 Proof. vm_compute. reflexivity. Qed.
 
 (* Universal algebraic identities over arbitrary subexpressions whose

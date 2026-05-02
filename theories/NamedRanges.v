@@ -57,14 +57,14 @@ Proof. vm_compute. reflexivity. Qed.
 Definition eval_named (nm : NameMap) (fuel : nat) (s : Sheet)
                       (n : PrimString.string) : EvalResult :=
   match lookup_name nm n with
-  | Some r => eval_at_ref fuel nil s r
+  | Some r => eval_at_ref fuel empty_visited s r
   | None => EErr
   end.
 
 Theorem eval_named_eq :
   forall nm n r fuel s,
     lookup_name nm n = Some r ->
-    eval_named nm fuel s n = eval_at_ref fuel nil s r.
+    eval_named nm fuel s n = eval_at_ref fuel empty_visited s r.
 Proof.
   intros nm n r fuel s Hlk.
   unfold eval_named. rewrite Hlk. reflexivity.

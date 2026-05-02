@@ -79,8 +79,8 @@ Definition replace_int_in_result (from to : Z) (r : EvalResult)
 Theorem replace_eval_commute_lit_smoke :
   let s := new_sheet in
   let e := EInt 5%Z in
-  eval_expr 2 nil s (replace_int_in_expr 5%Z 99%Z e)
-  = replace_int_in_result 5%Z 99%Z (eval_expr 2 nil s e).
+  eval_expr 2 empty_visited s (replace_int_in_expr 5%Z 99%Z e)
+  = replace_int_in_result 5%Z 99%Z (eval_expr 2 empty_visited s e).
 Proof. vm_compute. reflexivity. Qed.
 
 (* Replacement is idempotent when from = to. *)
@@ -97,6 +97,6 @@ Proof. vm_compute. reflexivity. Qed.
 (* Replacement distributes through eval at a closed compound input. *)
 Theorem replace_eval_commute_compound_smoke :
   let e := EAdd (EInt 1%Z) (EMul (EInt 2%Z) (EInt 1%Z)) in
-  eval_expr 5 nil new_sheet (replace_int_in_expr 1%Z 10%Z e)
+  eval_expr 5 empty_visited new_sheet (replace_int_in_expr 1%Z 10%Z e)
   = EVal (Z.add 10%Z (Z.mul 2%Z 10%Z)).
 Proof. vm_compute. reflexivity. Qed.

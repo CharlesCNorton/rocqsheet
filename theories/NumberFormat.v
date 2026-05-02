@@ -4,7 +4,10 @@
 
 From Stdlib Require Import List BinInt Lia.
 From Corelib Require Import PrimInt63.
+From Corelib Require PrimFloat.
+From Corelib Require Import PrimString.
 From Crane Require Import Mapping.NatIntStd Mapping.ZInt.
+From Crane Require Extraction.
 From Rocqsheet Require Import Rocqsheet.
 Import ListNotations.
 Import Rocqsheet.
@@ -50,3 +53,18 @@ Definition percent_parse (display : Z) : Z :=
 Theorem percent_round_trip_smoke :
   percent_parse (percent_display 5%Z) = 5%Z.
 Proof. reflexivity. Qed.
+
+(* Display-layer rendering of a numeric cell value under a chosen
+   [NumberFormat].  The Coq side declares them as axioms; the C++
+   side instantiates a small inline template per call site (see
+   [src/number_format_helpers.h]) so the [Rocqsheet::NumberFormat]
+   nested type can stay opaque to the helper header. *)
+Axiom format_z : Z -> NumberFormat -> PrimString.string.
+Crane Extract Inlined Constant format_z =>
+  "::number_format_helpers::format_z(%a0, %a1)"
+  From "number_format_helpers.h".
+
+Axiom format_float : PrimFloat.float -> NumberFormat -> PrimString.string.
+Crane Extract Inlined Constant format_float =>
+  "::number_format_helpers::format_float(%a0, %a1)"
+  From "number_format_helpers.h".

@@ -82,6 +82,20 @@ inline bool g_next_window_menu_bar = false;
 
 inline void next_window_menu_bar() { g_next_window_menu_bar = true; }
 
+// Pins the next [begin_window] to a bottom strip on the first launch
+// so the floating "Charts" panel doesn't cover the upper rows of the
+// grid.  Subsequent frames respect any user drag/resize because of
+// [ImGuiCond_FirstUseEver].
+inline void next_window_initial_pos_size(int64_t x, int64_t y,
+                                         int64_t w, int64_t h) {
+  ImGui::SetNextWindowPos(
+      ImVec2(static_cast<float>(x), static_cast<float>(y)),
+      ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(
+      ImVec2(static_cast<float>(w), static_cast<float>(h)),
+      ImGuiCond_FirstUseEver);
+}
+
 inline void begin_window(const std::string& name) {
   ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse;
   if (g_next_window_menu_bar) {
@@ -265,30 +279,11 @@ inline std::pair<std::string, bool> input_text(const std::string& id,
 }
 
 // ----- Tab bar ----------------------------------------------------------
-// Renders a horizontal tab bar with [num_tabs] labelled "Sheet 1"..
-// "Sheet N".  Returns the index of the active tab this frame: ImGui
-// tracks the current selection internally, and the per-tab
-// BeginTabItem returns true only for the displayed tab, so we use
-// that branch to capture the active index.
-
-inline int64_t tab_bar_select(const std::string& id, int64_t num_tabs,
-                              int64_t /*current*/) {
-  int64_t result = 0;
-  if (ImGui::BeginTabBar(id.c_str(), ImGuiTabBarFlags_Reorderable)) {
-    for (int64_t i = 0; i < num_tabs; ++i) {
-      char label[24];
-      std::snprintf(label, sizeof(label), "Sheet %lld###t%lld",
-                    static_cast<long long>(i + 1),
-                    static_cast<long long>(i));
-      if (ImGui::BeginTabItem(label)) {
-        result = i;
-        ImGui::EndTabItem();
-      }
-    }
-    ImGui::EndTabBar();
-  }
-  return result;
-}
+// Forward declared here; the body lives in src/tab_bar_helpers.cpp
+// where the full [List<std::string>] template body is visible.
+int64_t tab_bar_select(const std::string& id,
+                       const List<std::string>& names,
+                       int64_t current);
 
 // ----- Menu bar ---------------------------------------------------------
 
@@ -341,6 +336,21 @@ inline void clipboard_set(const std::string& s) {
 
 inline bool ctrl_key_pressed(const std::string& k) {
   if (!ImGui::GetIO().KeyCtrl) return false;
+  if (ImGui::GetIO().KeyShift) return false;
+  if (k.size() == 1) {
+    char c = k[0];
+    if (c >= 'a' && c <= 'z') c -= 32;
+    if (c >= 'A' && c <= 'Z') {
+      ImGuiKey key = static_cast<ImGuiKey>(ImGuiKey_A + (c - 'A'));
+      return ImGui::IsKeyPressed(key);
+    }
+  }
+  return false;
+}
+
+inline bool ctrl_shift_key_pressed(const std::string& k) {
+  if (!ImGui::GetIO().KeyCtrl)  return false;
+  if (!ImGui::GetIO().KeyShift) return false;
   if (k.size() == 1) {
     char c = k[0];
     if (c >= 'a' && c <= 'z') c -= 32;

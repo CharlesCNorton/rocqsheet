@@ -12,6 +12,7 @@ From Rocqsheet Require Import Rocqsheet.
 From Rocqsheet Require Import ImGuiE.
 From Rocqsheet Require Import Parser.
 From Rocqsheet Require Import Formatting.
+From Rocqsheet Require Import NumberFormat.
 From Rocqsheet Require Import Charts.
 From Rocqsheet Require Import Shift.
 From Rocqsheet Require Import InsertDelete.
@@ -389,8 +390,37 @@ Record loop_state : Type := mkLoop {
   ls_other_sheets : list (int * Sheet);
   ls_active       : int;
   ls_charts       : list Chart;
-  ls_merges       : MergeList
+  ls_merges       : MergeList;
+  (* Per-tab labels: index N stores the name of sheet slot N.  Default
+     names "Sheet 1".."Sheet 16" are seeded by [default_sheet_names]
+     and persist across save/load. *)
+  ls_sheet_names  : list PrimString.string
 }.
+
+(* Helpers for the [ls_sheet_names] list. *)
+Fixpoint list_set_nth_string (xs : list PrimString.string) (n : nat)
+                             (v : PrimString.string)
+  : list PrimString.string :=
+  match xs, n with
+  | nil, _      => nil
+  | _ :: ys, O  => v :: ys
+  | y :: ys, S n' => y :: list_set_nth_string ys n' v
+  end.
+
+Fixpoint list_nth_string (xs : list PrimString.string) (n : nat)
+                         (default : PrimString.string)
+  : PrimString.string :=
+  match xs, n with
+  | nil, _ => default
+  | y :: _, O => y
+  | _ :: ys, S n' => list_nth_string ys n' default
+  end.
+
+Definition default_sheet_names : list PrimString.string :=
+  ["Sheet 1"; "Sheet 2"; "Sheet 3"; "Sheet 4";
+   "Sheet 5"; "Sheet 6"; "Sheet 7"; "Sheet 8";
+   "Sheet 9"; "Sheet 10"; "Sheet 11"; "Sheet 12";
+   "Sheet 13"; "Sheet 14"; "Sheet 15"; "Sheet 16"].
 
 (* Demo formats: the row of computed answers in [demo_sheet] gets
    bold dark blue with right alignment, the headers row gets a thin
@@ -398,14 +428,14 @@ Record loop_state : Type := mkLoop {
    bold/colour/border/align channels at startup. *)
 Definition demo_formats : FormatMap :=
   [ (ref_at 2 0, mkFormat true 16711680%Z (* 0xFF0000 red *)
-                          false AlignRight)
-  ; (ref_at 3 0, mkFormat true 16711680%Z false AlignRight)
+                          false AlignRight NFCurrency)
+  ; (ref_at 3 0, mkFormat true 16711680%Z false AlignRight (NFDecimal 2%Z))
   ; (ref_at 2 2, mkFormat false 32768%Z   (* 0x008000 green *)
-                          true  AlignRight)
+                          true  AlignRight NFInteger)
   ; (ref_at 3 2, mkFormat true 255%Z      (* 0x0000FF blue *)
-                          true  AlignCenter)
+                          true  AlignCenter NFPercent)
   ; (ref_at 2 4, mkFormat false 8388736%Z (* 0x800080 purple *)
-                          false AlignRight) ].
+                          false AlignRight NFInteger) ].
 
 (* A small "Sales" demo seeded into sheet slot 1 so the tab UI has
    something to switch to. *)
@@ -437,7 +467,8 @@ Definition initial_charts : list Chart :=
 
 Definition initial_loop_state : loop_state :=
   mkLoop demo_sheet None "" nil nil nil nil demo_formats
-         initial_other_sheets 0%uint63 initial_charts nil.
+         initial_other_sheets 0%uint63 initial_charts nil
+         default_sheet_names.
 
 (* ----- Edit-buffer / parse-error helpers -------------------- *)
 
@@ -487,21 +518,22 @@ Definition parse_marker : PrimString.string := "#PARSE".
    inside a merge region, the read resolves to the region's top-left
    so all cells in the merge display the anchor's value. *)
 Definition cell_display (s : Sheet) (ms : MergeList) (errs : list CellRef)
-                        (r : CellRef)
+                        (fm : FormatMap) (r : CellRef)
   : PrimString.string * bool :=
   if mem_ref errs r then (parse_marker, true)
   else
     let resolved := resolve ms r in
+    let nf := fmt_number (lookup_format fm resolved) in
     match get_cell s resolved with
     | CEmpty   => ("", false)
-    | CLit n   => (string_of_z n, false)
-    | CFloat f => (string_of_float f, false)
+    | CLit n   => (format_z n nf, false)
+    | CFloat f => (format_float f nf, false)
     | CStr str => (str, false)
     | CBool b  => ((if b then "TRUE" else "FALSE"), false)
     | CForm e =>
-      match eval_expr DEFAULT_FUEL (cons resolved nil) s e with
-      | EVal v   => (string_of_z v, false)
-      | EFVal f  => (string_of_float f, false)
+      match eval_expr DEFAULT_FUEL (mark_visited empty_visited resolved) s e with
+      | EVal v   => (format_z v nf, false)
+      | EFVal f  => (format_float f nf, false)
       | EValS sv => (sv, false)
       | EValB b  => ((if b then "TRUE" else "FALSE"), false)
       | EErr     => (err_marker, true)
@@ -524,20 +556,20 @@ Definition push_undo (ls : loop_state) (before : Sheet) : loop_state :=
   mkLoop (ls_sheet ls) (ls_selected ls) (ls_fbar_text ls)
          (ls_edit_buf ls) (ls_parse_errs ls)
          (before :: ls_undo ls) nil (ls_formats ls)
-         (ls_other_sheets ls) (ls_active ls) (ls_charts ls) (ls_merges ls).
+         (ls_other_sheets ls) (ls_active ls) (ls_charts ls) (ls_merges ls) (ls_sheet_names ls).
 
 Definition select_cell (ls : loop_state) (r : CellRef) : loop_state :=
   mkLoop (ls_sheet ls) (Some r)
          (fbar_for_cell (ls_edit_buf ls) (ls_sheet ls) r)
          (ls_edit_buf ls) (ls_parse_errs ls)
          (ls_undo ls) (ls_redo ls) (ls_formats ls)
-         (ls_other_sheets ls) (ls_active ls) (ls_charts ls) (ls_merges ls).
+         (ls_other_sheets ls) (ls_active ls) (ls_charts ls) (ls_merges ls) (ls_sheet_names ls).
 
 Definition update_fbar (ls : loop_state) (s : PrimString.string) : loop_state :=
   mkLoop (ls_sheet ls) (ls_selected ls) s
          (ls_edit_buf ls) (ls_parse_errs ls)
          (ls_undo ls) (ls_redo ls) (ls_formats ls)
-         (ls_other_sheets ls) (ls_active ls) (ls_charts ls) (ls_merges ls).
+         (ls_other_sheets ls) (ls_active ls) (ls_charts ls) (ls_merges ls) (ls_sheet_names ls).
 
 (* Inspect leading character.  Empty string returns 0. *)
 Definition first_char_int (s : PrimString.string) : int :=
@@ -603,7 +635,7 @@ Definition commit_to (ls : loop_state) (r : CellRef) (txt : PrimString.string)
     let new_pe := remove_ref (ls_parse_errs ls) r in
     mkLoop new_sheet (ls_selected ls) (ls_fbar_text ls)
            new_eb new_pe (before :: ls_undo ls) nil (ls_formats ls)
-           (ls_other_sheets ls) (ls_active ls) (ls_charts ls) (ls_merges ls)
+           (ls_other_sheets ls) (ls_active ls) (ls_charts ls) (ls_merges ls) (ls_sheet_names ls)
   else if starts_with_eq txt then
     let body := strip_leading_eq txt in
     match parse_formula body with
@@ -613,13 +645,13 @@ Definition commit_to (ls : loop_state) (r : CellRef) (txt : PrimString.string)
       let new_pe := remove_ref (ls_parse_errs ls) r in
       mkLoop new_sheet (ls_selected ls) (ls_fbar_text ls)
              new_eb new_pe (before :: ls_undo ls) nil (ls_formats ls)
-             (ls_other_sheets ls) (ls_active ls) (ls_charts ls) (ls_merges ls)
+             (ls_other_sheets ls) (ls_active ls) (ls_charts ls) (ls_merges ls) (ls_sheet_names ls)
     | None =>
       let new_eb := put_edit (ls_edit_buf ls) r txt in
       let new_pe := add_ref (ls_parse_errs ls) r in
       mkLoop before (ls_selected ls) (ls_fbar_text ls)
              new_eb new_pe (ls_undo ls) (ls_redo ls) (ls_formats ls)
-             (ls_other_sheets ls) (ls_active ls) (ls_charts ls) (ls_merges ls)
+             (ls_other_sheets ls) (ls_active ls) (ls_charts ls) (ls_merges ls) (ls_sheet_names ls)
     end
   else
     match parse_int_literal txt with
@@ -629,13 +661,13 @@ Definition commit_to (ls : loop_state) (r : CellRef) (txt : PrimString.string)
       let new_pe := remove_ref (ls_parse_errs ls) r in
       mkLoop new_sheet (ls_selected ls) (ls_fbar_text ls)
              new_eb new_pe (before :: ls_undo ls) nil (ls_formats ls)
-             (ls_other_sheets ls) (ls_active ls) (ls_charts ls) (ls_merges ls)
+             (ls_other_sheets ls) (ls_active ls) (ls_charts ls) (ls_merges ls) (ls_sheet_names ls)
     | None =>
       let new_eb := put_edit (ls_edit_buf ls) r txt in
       let new_pe := add_ref (ls_parse_errs ls) r in
       mkLoop before (ls_selected ls) (ls_fbar_text ls)
              new_eb new_pe (ls_undo ls) (ls_redo ls) (ls_formats ls)
-             (ls_other_sheets ls) (ls_active ls) (ls_charts ls) (ls_merges ls)
+             (ls_other_sheets ls) (ls_active ls) (ls_charts ls) (ls_merges ls) (ls_sheet_names ls)
     end.
 
 Definition do_commit (ls : loop_state) : loop_state :=
@@ -651,7 +683,7 @@ Definition do_undo (ls : loop_state) : loop_state :=
     mkLoop prev (ls_selected ls) (ls_fbar_text ls)
            (ls_edit_buf ls) (ls_parse_errs ls)
            rest (ls_sheet ls :: ls_redo ls) (ls_formats ls)
-           (ls_other_sheets ls) (ls_active ls) (ls_charts ls) (ls_merges ls)
+           (ls_other_sheets ls) (ls_active ls) (ls_charts ls) (ls_merges ls) (ls_sheet_names ls)
   end.
 
 Definition do_redo (ls : loop_state) : loop_state :=
@@ -661,13 +693,13 @@ Definition do_redo (ls : loop_state) : loop_state :=
     mkLoop next (ls_selected ls) (ls_fbar_text ls)
            (ls_edit_buf ls) (ls_parse_errs ls)
            (ls_sheet ls :: ls_undo ls) rest (ls_formats ls)
-           (ls_other_sheets ls) (ls_active ls) (ls_charts ls) (ls_merges ls)
+           (ls_other_sheets ls) (ls_active ls) (ls_charts ls) (ls_merges ls) (ls_sheet_names ls)
   end.
 
 Definition do_clear (ls : loop_state) : loop_state :=
   mkLoop new_sheet None "" nil nil
          (ls_sheet ls :: ls_undo ls) nil (ls_formats ls)
-         (ls_other_sheets ls) (ls_active ls) (ls_charts ls) (ls_merges ls).
+         (ls_other_sheets ls) (ls_active ls) (ls_charts ls) (ls_merges ls) (ls_sheet_names ls).
 
 (* Look up a sheet in the assoc workbook, falling back to a fresh
    empty sheet.  Wrapped in its own Definition so Crane extracts it
@@ -696,7 +728,7 @@ Definition switch_to_sheet (ls : loop_state) (new_idx : int) : loop_state :=
     let new_sh := lookup_sheet_or_new stored new_idx in
     let new_other := assoc_int_remove stored new_idx in
     mkLoop new_sh None "" nil nil nil nil (ls_formats ls)
-           new_other new_idx (ls_charts ls) (ls_merges ls).
+           new_other new_idx (ls_charts ls) (ls_merges ls) (ls_sheet_names ls).
 
 (* Conditional apply.  Used in handler chains to avoid extracting a
    declare-then-assign pattern that would require a default
@@ -718,7 +750,7 @@ Definition do_insert_row (ls : loop_state) : loop_state :=
     mkLoop new_sheet (ls_selected ls) (ls_fbar_text ls)
            (ls_edit_buf ls) (ls_parse_errs ls)
            (before :: ls_undo ls) nil (ls_formats ls)
-           (ls_other_sheets ls) (ls_active ls) (ls_charts ls) (ls_merges ls)
+           (ls_other_sheets ls) (ls_active ls) (ls_charts ls) (ls_merges ls) (ls_sheet_names ls)
   end.
 
 (* Delete the row of the selected cell, shifting everything below it
@@ -732,7 +764,7 @@ Definition do_delete_row (ls : loop_state) : loop_state :=
     mkLoop new_sheet (ls_selected ls) (ls_fbar_text ls)
            (ls_edit_buf ls) (ls_parse_errs ls)
            (before :: ls_undo ls) nil (ls_formats ls)
-           (ls_other_sheets ls) (ls_active ls) (ls_charts ls) (ls_merges ls)
+           (ls_other_sheets ls) (ls_active ls) (ls_charts ls) (ls_merges ls) (ls_sheet_names ls)
   end.
 
 (* Swap the selected row with the row immediately below.  No-op when
@@ -751,11 +783,19 @@ Definition do_swap_with_next_row (ls : loop_state) : loop_state :=
              (ls_edit_buf ls) (ls_parse_errs ls)
              (before :: ls_undo ls) nil (ls_formats ls)
              (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
-             (ls_merges ls)
+             (ls_merges ls) (ls_sheet_names ls)
   end.
 
 (* Walk every cell of the sheet by index, lifting [replace_int_in_expr]
-   through any [CForm] cell.  Non-formula cells are left intact. *)
+   through any [CForm] cell.  Non-formula cells are left intact.
+   The Coq Fixpoint is kept as the executable specification (so any
+   future proofs about find/replace can unfold it) but the C++
+   extraction is overridden below to call an iterative macro: the
+   Fixpoint extracts to a tail-recursive C++ function with fuel=60000,
+   which neither clang nor gcc TCO because the [persistent_array<Cell>]
+   parameter has a non-trivial destructor (shared_ptr release), and the
+   resulting frame stack overflows on sheets of even a few thousand
+   formula cells. *)
 Fixpoint replace_in_sheet_aux (from to : Z) (s : Sheet) (idx : int)
     (fuel : nat) : Sheet :=
   match fuel with
@@ -775,6 +815,10 @@ Fixpoint replace_in_sheet_aux (from to : Z) (s : Sheet) (idx : int)
 Definition replace_in_sheet (from to : Z) (s : Sheet) : Sheet :=
   replace_in_sheet_aux from to s 0 60000.
 
+Crane Extract Inlined Constant replace_in_sheet =>
+  "ROCQSHEET_REPLACE_IN_SHEET(%a0, %a1, %a2)"
+  From "find_replace_helpers.h".
+
 (* Demo find/replace bound to a fixed substitution: literal 0 → 1 in
    every formula.  Production code would prompt for from/to via the
    formula bar; the constants make the menu/keyboard wiring testable
@@ -786,7 +830,7 @@ Definition do_replace_zero_one (ls : loop_state) : loop_state :=
          (ls_edit_buf ls) (ls_parse_errs ls)
          (before :: ls_undo ls) nil (ls_formats ls)
          (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
-         (ls_merges ls).
+         (ls_merges ls) (ls_sheet_names ls).
 
 (* Append a 1-cell-wide merge region anchored at the selected cell
    and extending one column to the right.  No-op without a selection
@@ -803,7 +847,7 @@ Definition do_merge_right (ls : loop_state) : loop_state :=
              (ls_edit_buf ls) (ls_parse_errs ls)
              (ls_undo ls) (ls_redo ls) (ls_formats ls)
              (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
-             (add_merge (ls_merges ls) r br)
+             (add_merge (ls_merges ls) r br) (ls_sheet_names ls)
   end.
 
 (* ----- Save / load -------------------------------------------------
@@ -852,15 +896,124 @@ Fixpoint save_rows_aux (s : Sheet) (eb : list (CellRef * PrimString.string))
 
 Definition save_path : PrimString.string := "rocqsheet.txt".
 
+(* Resolve the [Sheet] for slot [idx]: the active slot lives in
+   [ls_sheet]; others sit in [ls_other_sheets]. *)
+Definition sheet_at_slot (ls : loop_state) (idx : int) : Sheet :=
+  if PrimInt63.eqb idx (ls_active ls) then ls_sheet ls
+  else lookup_sheet_or_new (ls_other_sheets ls) idx.
+
+(* True iff every cell of [s] is [CEmpty]. *)
+Fixpoint sheet_is_empty_aux (s : Sheet) (i : int) (fuel : nat) : bool :=
+  match fuel with
+  | O => true
+  | S fuel' =>
+    if PrimInt63.leb GRID_SIZE i then true
+    else
+      match PrimArray.get s i with
+      | CEmpty => sheet_is_empty_aux s (PrimInt63.add i 1) fuel'
+      | _ => false
+      end
+  end.
+
+Definition sheet_is_empty (s : Sheet) : bool :=
+  sheet_is_empty_aux s 0 60000.
+
+(* Emit a single sheet's block: [S=N\nN=<name>\n] followed by the
+   non-empty cell lines from [save_rows_aux]. *)
+Definition save_sheet_block (ls : loop_state) (idx : int)
+  : PrimString.string :=
+  let s := sheet_at_slot ls idx in
+  if sheet_is_empty s then ""
+  else
+    let header :=
+      PrimString.cat "S=" (
+      PrimString.cat (string_of_z (Uint63.to_Z idx)) newline) in
+    let name := list_nth_string (ls_sheet_names ls)
+                                (nat_of_int idx) "" in
+    let name_line :=
+      PrimString.cat "N=" (PrimString.cat name newline) in
+    let body :=
+      save_rows_aux s (ls_edit_buf ls) 0 200 260 "" in
+    PrimString.cat header (PrimString.cat name_line body).
+
+Fixpoint save_all_sheets_aux (ls : loop_state) (i : nat) (count : nat)
+                             (acc : PrimString.string)
+  : PrimString.string :=
+  match count with
+  | O => acc
+  | S count' =>
+    let acc' := PrimString.cat acc
+                  (save_sheet_block ls (int_of_nat i)) in
+    save_all_sheets_aux ls (S i) count' acc'
+  end.
+
 Definition build_save_string (ls : loop_state) : PrimString.string :=
   PrimString.cat "# Rocqsheet save file" (
-  PrimString.cat newline (
-  save_rows_aux (ls_sheet ls) (ls_edit_buf ls) 0 200 260 "")).
+  PrimString.cat newline
+  (save_all_sheets_aux ls 0 16 "")).
 
 Definition do_save (ls : loop_state) : itree imguiE loop_state :=
   let _ := tt in
   _ <- file_write save_path (build_save_string ls) ;;
   Ret ls.
+
+(* Save to the path currently in the formula bar.  Falls back to
+   the default path when the bar is empty / whitespace, so the menu
+   item still works without a path typed in. *)
+Definition do_save_as (ls : loop_state) : itree imguiE loop_state :=
+  let path :=
+    if all_whitespace (ls_fbar_text ls)
+    then save_path
+    else ls_fbar_text ls in
+  _ <- file_write path (build_save_string ls) ;;
+  Ret ls.
+
+(* Find/Replace driven by the formula bar.  Expects [ls_fbar_text] of
+   the form "FROM|TO" with integer literals on both sides; both are
+   passed to [replace_in_sheet].  Falls back to the [0 -> 1] demo
+   substitution when the bar is empty or malformed, preserving the
+   original Ctrl+H behaviour. *)
+Fixpoint split_pipe_aux (s : PrimString.string) (len i : int) (fuel : nat)
+  : option int :=
+  match fuel with
+  | O => None
+  | S fuel' =>
+    if PrimInt63.ltb i len then
+      if PrimInt63.eqb (char_to_int (PrimString.get s i)) 124 (* '|' *)
+      then Some i
+      else split_pipe_aux s len (PrimInt63.add i 1) fuel'
+    else None
+  end.
+
+Definition parse_replace_pair (s : PrimString.string)
+  : option (Z * Z) :=
+  let len := PrimString.length s in
+  match split_pipe_aux s len 0 (S (nat_of_int len)) with
+  | None => None
+  | Some pipe =>
+    let from_str := PrimString.sub s 0 pipe in
+    let to_str := PrimString.sub s
+                   (PrimInt63.add pipe 1)
+                   (PrimInt63.sub len (PrimInt63.add pipe 1)) in
+    match parse_int_literal from_str, parse_int_literal to_str with
+    | Some f, Some t => Some (f, t)
+    | _, _ => None
+    end
+  end.
+
+Definition do_replace_user (ls : loop_state) : loop_state :=
+  let before := ls_sheet ls in
+  let pair :=
+    match parse_replace_pair (ls_fbar_text ls) with
+    | Some (f, t) => (f, t)
+    | None => (0%Z, 1%Z)
+    end in
+  let new_sheet := replace_in_sheet (fst pair) (snd pair) before in
+  mkLoop new_sheet (ls_selected ls) (ls_fbar_text ls)
+         (ls_edit_buf ls) (ls_parse_errs ls)
+         (before :: ls_undo ls) nil (ls_formats ls)
+         (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
+         (ls_merges ls) (ls_sheet_names ls).
 
 (* Parse one save-file line: "c,r,text" -> Some (c, r, text). *)
 
@@ -881,8 +1034,74 @@ Fixpoint parse_uint_aux (fuel : nat) (s : PrimString.string) (len i : int)
       if any then Some (acc, i) else None
   end.
 
+(* Generic helper: walk forward from [i] until newline or EOF,
+   returning the position of the newline (or EOF). *)
+Fixpoint find_eol_aux (txt : PrimString.string) (len i : int) (fuel : nat)
+  : int :=
+  match fuel with
+  | O => i
+  | S fuel' =>
+    if PrimInt63.ltb i len then
+      if PrimInt63.eqb (char_to_int (PrimString.get txt i)) 10
+      then i else find_eol_aux txt len (PrimInt63.add i 1) fuel'
+    else i
+  end.
+
+(* Apply a sheet switch directive [S=N\n] starting at [i], where the
+   'S' has already been seen.  Returns the updated loop_state and the
+   next-line offset. *)
+Definition apply_sheet_switch
+    (ls : loop_state) (txt : PrimString.string) (len i : int) (fuel : nat)
+  : loop_state * int :=
+  (* i points at 'S'.  Expect '=' at i+1, digits at i+2.. *)
+  let eq_pos := PrimInt63.add i 1 in
+  if PrimInt63.leb len eq_pos then (ls, len)
+  else if negb (PrimInt63.eqb (char_to_int (PrimString.get txt eq_pos)) 61)
+  then (ls, PrimInt63.add (find_eol_aux txt len i fuel) 1)
+  else
+    let n_start := PrimInt63.add eq_pos 1 in
+    match parse_uint_aux fuel txt len n_start 0%Z false with
+    | None => (ls, PrimInt63.add (find_eol_aux txt len i fuel) 1)
+    | Some (idx_z, _) =>
+      let eol := find_eol_aux txt len n_start fuel in
+      let next_i := if PrimInt63.ltb eol len
+                    then PrimInt63.add eol 1 else eol in
+      let in_bounds :=
+        andb (Z.leb 0 idx_z) (Z.ltb idx_z 16) in
+      if in_bounds then
+        (switch_to_sheet ls (Uint63.of_Z idx_z), next_i)
+      else (ls, next_i)
+    end.
+
+(* Apply a sheet-rename directive [N=<name>\n] starting at [i]. *)
+Definition apply_sheet_rename
+    (ls : loop_state) (txt : PrimString.string) (len i : int) (fuel : nat)
+  : loop_state * int :=
+  (* i points at 'N'.  Expect '=' at i+1, name body until newline. *)
+  let eq_pos := PrimInt63.add i 1 in
+  if PrimInt63.leb len eq_pos then (ls, len)
+  else if negb (PrimInt63.eqb (char_to_int (PrimString.get txt eq_pos)) 61)
+  then (ls, PrimInt63.add (find_eol_aux txt len i fuel) 1)
+  else
+    let name_start := PrimInt63.add eq_pos 1 in
+    let eol := find_eol_aux txt len name_start fuel in
+    let name := PrimString.sub txt name_start (PrimInt63.sub eol name_start) in
+    let next_i := if PrimInt63.ltb eol len
+                  then PrimInt63.add eol 1 else eol in
+    let new_names :=
+      list_set_nth_string (ls_sheet_names ls)
+                          (nat_of_int (ls_active ls)) name in
+    let ls' := mkLoop (ls_sheet ls) (ls_selected ls) (ls_fbar_text ls)
+                      (ls_edit_buf ls) (ls_parse_errs ls)
+                      (ls_undo ls) (ls_redo ls) (ls_formats ls)
+                      (ls_other_sheets ls) (ls_active ls)
+                      (ls_charts ls) (ls_merges ls) new_names in
+    (ls', next_i).
+
 (* Walk the save string, splitting on newlines, and dispatch each line
-   through [commit_to] on a fresh sheet. *)
+   through [commit_to] on a fresh sheet.  Recognises [S=N] sheet-switch
+   directives and [N=<name>] rename directives so multi-sheet workbooks
+   round-trip across save/load. *)
 Fixpoint apply_load_lines
     (ls : loop_state) (txt : PrimString.string) (len i : int) (fuel : nat)
   : loop_state :=
@@ -894,20 +1113,16 @@ Fixpoint apply_load_lines
       let c := char_to_int (PrimString.get txt i) in
       if PrimInt63.eqb c 35 then
         (* skip comment line *)
-        let fix skip (j : int) (g : nat) : int :=
-          match g with
-          | O => j
-          | S g' =>
-            if PrimInt63.ltb j len then
-              if PrimInt63.eqb
-                   (char_to_int (PrimString.get txt j)) 10
-              then PrimInt63.add j 1
-              else skip (PrimInt63.add j 1) g'
-            else j
-          end in
-        apply_load_lines ls txt len (skip i fuel') fuel'
+        let next := PrimInt63.add (find_eol_aux txt len i fuel') 1 in
+        apply_load_lines ls txt len next fuel'
       else if PrimInt63.eqb c 10 then
         apply_load_lines ls txt len (PrimInt63.add i 1) fuel'
+      else if PrimInt63.eqb c 83 (* 'S' *) then
+        let '(ls', next) := apply_sheet_switch ls txt len i fuel' in
+        apply_load_lines ls' txt len next fuel'
+      else if PrimInt63.eqb c 78 (* 'N' *) then
+        let '(ls', next) := apply_sheet_rename ls txt len i fuel' in
+        apply_load_lines ls' txt len next fuel'
       else
         match parse_uint_aux fuel' txt len i 0%Z false with
         | None => apply_load_lines ls txt len (PrimInt63.add i 1) fuel'
@@ -921,17 +1136,7 @@ Fixpoint apply_load_lines
               if PrimInt63.leb len k then ls
               else if PrimInt63.eqb (char_to_int (PrimString.get txt k)) 44 then
                 let k1 := PrimInt63.add k 1 in
-                let fix find_eol (j : int) (g : nat) : int :=
-                  match g with
-                  | O => j
-                  | S g' =>
-                    if PrimInt63.ltb j len then
-                      if PrimInt63.eqb
-                           (char_to_int (PrimString.get txt j)) 10
-                      then j else find_eol (PrimInt63.add j 1) g'
-                    else j
-                  end in
-                let eol := find_eol k1 fuel' in
+                let eol := find_eol_aux txt len k1 fuel' in
                 let line := PrimString.sub txt k1 (PrimInt63.sub eol k1) in
                 let r := mkRef (Uint63.of_Z col_z) (Uint63.of_Z row_z) in
                 let in_bounds :=
@@ -958,7 +1163,7 @@ Definition do_load (ls : loop_state) : itree imguiE loop_state :=
     let cleared := mkLoop new_sheet None "" nil nil
                           (ls_sheet ls :: ls_undo ls) nil
                           (ls_formats ls)
-                          (ls_other_sheets ls) (ls_active ls) (ls_charts ls) (ls_merges ls) in
+                          (ls_other_sheets ls) (ls_active ls) (ls_charts ls) (ls_merges ls) (ls_sheet_names ls) in
     let len := PrimString.length content in
     Ret (apply_load_lines cleared content len 0
                           (S (S (nat_of_int len))))
@@ -981,7 +1186,8 @@ Definition render_one_cell
     (ls : loop_state) (c r : nat) : itree imguiE loop_state :=
   let ref := ref_at c r in
   let '(disp, is_err) :=
-    cell_display (ls_sheet ls) (ls_merges ls) (ls_parse_errs ls) ref in
+    cell_display (ls_sheet ls) (ls_merges ls) (ls_parse_errs ls)
+                 (ls_formats ls) ref in
   let selected :=
     match ls_selected ls with
     | None => false
@@ -1052,7 +1258,8 @@ Definition num_cols_nat : nat := 260.
 Definition num_rows_nat : nat := 200.
 
 Definition render_tab_bar (ls : loop_state) : itree imguiE loop_state :=
-  new_idx <- imgui_tab_bar_select "sheets" NUM_SHEETS (ls_active ls) ;;
+  new_idx <- imgui_tab_bar_select "sheets" (ls_sheet_names ls)
+                                  (ls_active ls) ;;
   Ret (switch_to_sheet ls new_idx).
 
 (* Pull a Z value out of the cell at [r], evaluating a formula at
@@ -1061,7 +1268,7 @@ Definition cell_value_z (s : Sheet) (r : CellRef) : option Z :=
   match get_cell s r with
   | CLit n => Some n
   | CForm e =>
-    match eval_expr DEFAULT_FUEL (cons r nil) s e with
+    match eval_expr DEFAULT_FUEL (mark_visited empty_visited r) s e with
     | EVal n => Some n
     | _ => None
     end
@@ -1179,7 +1386,7 @@ Definition pdf_text_of_cell (s : Sheet) (r : CellRef) : PrimString.string :=
   | CStr str => str
   | CBool b  => if b then "TRUE" else "FALSE"
   | CForm e =>
-    match eval_expr DEFAULT_FUEL (cons r nil) s e with
+    match eval_expr DEFAULT_FUEL (mark_visited empty_visited r) s e with
     | EVal v   => string_of_z v
     | EFVal f  => string_of_float f
     | EValS sv => sv
@@ -1240,8 +1447,10 @@ Definition file_menu (ls : loop_state) : itree imguiE loop_state :=
   let ls0 := cond_apply new_clicked do_clear ls in
   save_clicked <- imgui_menu_item "Save" true ;;
   ls1 <- (if save_clicked then do_save ls0 else Ret ls0) ;;
+  save_as_clicked <- imgui_menu_item "Save As (formula bar = path)" true ;;
+  ls1a <- (if save_as_clicked then do_save_as ls1 else Ret ls1) ;;
   load_clicked <- imgui_menu_item "Open" true ;;
-  ls2 <- (if load_clicked then do_load ls1 else Ret ls1) ;;
+  ls2 <- (if load_clicked then do_load ls1a else Ret ls1a) ;;
   pdf_clicked <- imgui_menu_item "Export to PDF" true ;;
   ls3 <- (if pdf_clicked then do_pdf_export ls2 else Ret ls2) ;;
   Ret ls3.
@@ -1267,8 +1476,8 @@ Definition edit_menu (ls : loop_state) : itree imguiE loop_state :=
   let ls_s := cond_apply swp_clicked do_swap_with_next_row ls_d in
   mrg_clicked <- imgui_menu_item "Merge Cell Right" has_sel ;;
   let ls_m := cond_apply mrg_clicked do_merge_right ls_s in
-  rep_clicked <- imgui_menu_item "Replace 0 -> 1" true ;;
-  let ls_x := cond_apply rep_clicked do_replace_zero_one ls_m in
+  rep_clicked <- imgui_menu_item "Replace (formula bar = FROM|TO)" true ;;
+  let ls_x := cond_apply rep_clicked do_replace_user ls_m in
   Ret ls_x.
 
 Definition render_menu_bar (ls : loop_state) : itree imguiE loop_state :=
@@ -1339,10 +1548,12 @@ Definition handle_shortcuts (ls : loop_state) : itree imguiE loop_state :=
   m <- ctrl_key_pressed "m" ;;
   let ls11 := cond_apply m do_merge_right ls10 in
   h <- ctrl_key_pressed "h" ;;
-  let ls12 := cond_apply h do_replace_zero_one ls11 in
+  let ls12 := cond_apply h do_replace_user ls11 in
   p <- ctrl_key_pressed "p" ;;
   ls13 <- (if p then do_pdf_export ls12 else Ret ls12) ;;
-  Ret ls13.
+  shift_s <- ctrl_shift_key_pressed "s" ;;
+  ls14 <- (if shift_s then do_save_as ls13 else Ret ls13) ;;
+  Ret ls14.
 
 (* ----- Per-frame procedure -------------------------------- *)
 
@@ -1361,6 +1572,10 @@ Definition process_frame (ls : loop_state) : itree imguiE (bool * loop_state) :=
     ls3 <- render_tab_bar ls2 ;;
     ls4 <- render_grid ls3 ;;
     imgui_end_window ;;
+    (* Pin Charts to a bottom strip on first launch so it doesn't
+       cover rows 1-22 of the grid; subsequent frames respect any
+       drag/resize the user does. *)
+    imgui_next_window_initial_pos_size 10%Z 600%Z 1260%Z 190%Z ;;
     imgui_begin_window "Charts" ;;
     render_charts ls4 ;;
     imgui_end_window ;;
@@ -1385,7 +1600,7 @@ Definition rocqsheet_run : itree imguiE c_int :=
   run_app initial_loop_state.
 
 Crane Extraction "rocqsheet" rocqsheet_run smoke eval_cell
-  parse_formula parse_int_literal.
+  parse_formula parse_int_literal replace_int_in_expr.
 
 (* --- Loop-state correctness ------------------------------------- *)
 

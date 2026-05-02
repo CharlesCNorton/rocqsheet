@@ -266,7 +266,24 @@ int main() {
     put_form(S::Expr::eif(S::Expr::eint(0),
                             S::Expr::eint(99),
                             S::Expr::eint(-1)));
-    // MIN, MAX, SUM, COUNT, IFERROR, MOD, POW correspondence.    auto sh4 = S::set_cell(S::new_sheet, S::CellRef{0, 0}, S::Cell::clit(5));    sh4 = S::set_cell(sh4, S::CellRef{1, 0}, S::Cell::clit(3));    sh4 = S::set_cell(sh4, S::CellRef{2, 0}, S::Cell::clit(9));    auto put_op = [&](S::Expr e) {      auto local = S::set_cell(sh4, S::CellRef{3, 0},          S::Cell::cform(std::move(e)));      agree("new-ops", local, S::CellRef{3, 0});    };    put_op(S::Expr::emin(S::CellRef{0, 0}, S::CellRef{2, 0}));    put_op(S::Expr::emax(S::CellRef{0, 0}, S::CellRef{2, 0}));    put_op(S::Expr::esum(S::CellRef{0, 0}, S::CellRef{2, 0}));    put_op(S::Expr::ecount(S::CellRef{0, 0}, S::CellRef{2, 0}));    put_op(S::Expr::eiferr(        S::Expr::ediv(S::Expr::eint(1), S::Expr::eint(0)),        S::Expr::eint(-7)));    put_op(S::Expr::emod(S::Expr::eint(17), S::Expr::eint(5)));    put_op(S::Expr::epow(S::Expr::eint(2), S::Expr::eint(10)));
+    // MIN, MAX, SUM, COUNT, IFERROR, MOD, POW correspondence.
+    auto sh4 = S::set_cell(S::new_sheet, S::CellRef{0, 0}, S::Cell::clit(5));
+    sh4 = S::set_cell(sh4, S::CellRef{1, 0}, S::Cell::clit(3));
+    sh4 = S::set_cell(sh4, S::CellRef{2, 0}, S::Cell::clit(9));
+    auto put_op = [&](S::Expr e) {
+      auto local = S::set_cell(sh4, S::CellRef{3, 0},
+          S::Cell::cform(std::move(e)));
+      agree("new-ops", local, S::CellRef{3, 0});
+    };
+    put_op(S::Expr::emin(S::CellRef{0, 0}, S::CellRef{2, 0}));
+    put_op(S::Expr::emax(S::CellRef{0, 0}, S::CellRef{2, 0}));
+    put_op(S::Expr::esum(S::CellRef{0, 0}, S::CellRef{2, 0}));
+    put_op(S::Expr::ecount(S::CellRef{0, 0}, S::CellRef{2, 0}));
+    put_op(S::Expr::eiferr(
+        S::Expr::ediv(S::Expr::eint(1), S::Expr::eint(0)),
+        S::Expr::eint(-7)));
+    put_op(S::Expr::emod(S::Expr::eint(17), S::Expr::eint(5)));
+    put_op(S::Expr::epow(S::Expr::eint(2), S::Expr::eint(10)));
   }
 
   if (failures == 0) std::printf("OK (all kernel cases pass)\n");

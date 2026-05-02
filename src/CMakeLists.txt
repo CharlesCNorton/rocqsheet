@@ -53,6 +53,7 @@ add_executable(rocqsheet
   main.cpp
   chart_helpers.cpp
   pdf_helpers.cpp
+  tab_bar_helpers.cpp
   ${GEN_DIR}/rocqsheet.cpp)
 target_include_directories(rocqsheet PRIVATE
   ${GEN_DIR}
@@ -83,6 +84,9 @@ add_test(NAME formula_test COMMAND formula_test)
 add_executable(kernel_test
   ${REPO_ROOT}/tests/kernel_test.cpp
   eval_iter.cpp
+  chart_helpers.cpp
+  pdf_helpers.cpp
+  tab_bar_helpers.cpp
   ${GEN_DIR}/rocqsheet.cpp)
 target_include_directories(kernel_test PRIVATE
   ${GEN_DIR}
@@ -92,3 +96,19 @@ target_link_libraries(kernel_test PRIVATE imgui)
 target_compile_options(kernel_test PRIVATE
   -Wall -Wextra)
 add_test(NAME kernel_test COMMAND kernel_test)
+
+add_executable(torture_test
+  ${REPO_ROOT}/tests/torture_test.cpp
+  eval_iter.cpp
+  chart_helpers.cpp
+  pdf_helpers.cpp
+  tab_bar_helpers.cpp
+  ${GEN_DIR}/rocqsheet.cpp)
+target_include_directories(torture_test PRIVATE
+  ${GEN_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${CRANE_THEORIES_CPP})
+target_link_libraries(torture_test PRIVATE imgui)
+target_compile_options(torture_test PRIVATE
+  -Wall -Wextra)
+add_test(NAME torture_test COMMAND torture_test)

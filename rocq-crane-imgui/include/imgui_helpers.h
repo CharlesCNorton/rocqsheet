@@ -10,6 +10,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <memory>
 #include <utility>
 
 #include <imgui.h>
@@ -17,11 +18,28 @@
 #include <imgui_impl_opengl3.h>
 #include <GLFW/glfw3.h>
 
+// Forward declarations of out-of-line helpers.  Bodies live in
+// src/chart_helpers.cpp / src/pdf_helpers.cpp where the full
+// [List<...>] body is visible.  These declarations only mention
+// primitive types or [List<int64_t>] / [List<pair<...>>] so they
+// avoid touching the [Rocqsheet::Cell] forward-declaration tangle.
+template <typename T> struct List;
+namespace chart_helpers {
+void chart_render(int64_t kind, const List<int64_t>& values,
+                  const std::string& title);
+}  // namespace chart_helpers
+namespace pdf_helpers {
+using PdfTextEntry = std::pair<std::pair<int64_t, int64_t>, std::string>;
+using PdfPageEntries = List<PdfTextEntry>;
+bool emit_pdf(const List<PdfPageEntries>& pages,
+              const std::string& path);
+}  // namespace pdf_helpers
+
 namespace imgui_helpers {
 
 // Process-global handles set by src/main.cpp at startup.
 inline GLFWwindow* g_window = nullptr;
-inline ImGuiListClipper g_clipper{};
+inline std::unique_ptr<ImGuiListClipper> g_clipper;
 inline bool g_clipper_active = false;
 
 enum class cell_event { None, Selected, DoubleClicked };
@@ -63,6 +81,20 @@ inline void full_viewport() {
 inline bool g_next_window_menu_bar = false;
 
 inline void next_window_menu_bar() { g_next_window_menu_bar = true; }
+
+// Pins the next [begin_window] to a bottom strip on the first launch
+// so the floating "Charts" panel doesn't cover the upper rows of the
+// grid.  Subsequent frames respect any user drag/resize because of
+// [ImGuiCond_FirstUseEver].
+inline void next_window_initial_pos_size(int64_t x, int64_t y,
+                                         int64_t w, int64_t h) {
+  ImGui::SetNextWindowPos(
+      ImVec2(static_cast<float>(x), static_cast<float>(y)),
+      ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(
+      ImVec2(static_cast<float>(w), static_cast<float>(h)),
+      ImGuiCond_FirstUseEver);
+}
 
 inline void begin_window(const std::string& name) {
   ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse;
@@ -119,25 +151,25 @@ inline void table_set_column_index(int64_t i) {
 // [clipper_begin] once, [clipper_step] in a loop, [clipper_end] once.
 
 inline void clipper_begin(int64_t total_rows) {
-  g_clipper = ImGuiListClipper{};
-  g_clipper.Begin(static_cast<int>(total_rows));
+  g_clipper = std::make_unique<ImGuiListClipper>();
+  g_clipper->Begin(static_cast<int>(total_rows));
   g_clipper_active = true;
 }
 inline bool clipper_step() {
   if (!g_clipper_active) return false;
-  bool more = g_clipper.Step();
+  bool more = g_clipper->Step();
   if (!more) g_clipper_active = false;
   return more;
 }
 inline int64_t clipper_get_start() {
-  return static_cast<int64_t>(g_clipper.DisplayStart);
+  return static_cast<int64_t>(g_clipper->DisplayStart);
 }
 inline int64_t clipper_get_end() {
-  return static_cast<int64_t>(g_clipper.DisplayEnd);
+  return static_cast<int64_t>(g_clipper->DisplayEnd);
 }
 inline void clipper_end() {
   if (g_clipper_active) {
-    g_clipper.End();
+    g_clipper->End(); g_clipper.reset();
     g_clipper_active = false;
   }
 }
@@ -173,6 +205,64 @@ inline cell_event selectable_cell(int64_t c, int64_t r, bool selected,
   return cell_event::None;
 }
 
+// Same as [selectable_cell] but applies the per-cell formatting:
+// bold (FontStyle is approximated by colour boost since ImGui needs a
+// preloaded bold font asset), packed RGB foreground colour
+// (0xRRGGBB), border, and horizontal alignment (0=left, 1=center,
+// 2=right).  When all attributes are at the defaults the rendering
+// is byte-identical to [selectable_cell].
+inline cell_event selectable_cell_formatted(
+    int64_t c, int64_t r, bool selected, bool is_error,
+    const std::string& display,
+    bool bold, int64_t color_rgb, bool border, int64_t align) {
+  ImGui::PushID(static_cast<int>(c));
+  ImGui::PushID(static_cast<int>(r));
+  ImGuiSelectableFlags f = ImGuiSelectableFlags_AllowDoubleClick |
+                           ImGuiSelectableFlags_AllowOverlap;
+  ImVec2 size = {ImGui::GetContentRegionAvail().x,
+                 ImGui::GetTextLineHeightWithSpacing()};
+  ImVec2 start = ImGui::GetCursorScreenPos();
+  bool clicked = ImGui::Selectable("##cell_fmt", selected, f, size);
+  bool dbl =
+      clicked && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
+  if (border) {
+    ImVec2 a = start;
+    ImVec2 b{start.x + size.x, start.y + size.y};
+    ImGui::GetWindowDrawList()->AddRect(
+        a, b, IM_COL32(180, 180, 180, 220), 0.0f, 0, 1.0f);
+  }
+  if (!display.empty()) {
+    float text_w = ImGui::CalcTextSize(display.c_str()).x;
+    float dx = 0.0f;
+    if (align == 1) dx = (size.x - text_w) * 0.5f;
+    else if (align == 2) dx = size.x - text_w - 2.0f;
+    if (dx < 0.0f) dx = 0.0f;
+    ImGui::SetCursorScreenPos({start.x + dx, start.y});
+    ImU32 col;
+    if (is_error) {
+      col = IM_COL32(220, 80, 80, 255);
+    } else if (color_rgb == 0) {
+      col = ImGui::GetColorU32(ImGuiCol_Text);
+    } else {
+      uint32_t v = static_cast<uint32_t>(color_rgb);
+      col = IM_COL32((v >> 16) & 0xFF, (v >> 8) & 0xFF, v & 0xFF, 255);
+    }
+    ImGui::PushStyleColor(ImGuiCol_Text, col);
+    if (bold) {
+      ImVec2 p = ImGui::GetCursorScreenPos();
+      ImGui::GetWindowDrawList()->AddText({p.x + 1.0f, p.y},
+                                          col, display.c_str());
+    }
+    ImGui::TextUnformatted(display.c_str());
+    ImGui::PopStyleColor();
+  }
+  ImGui::PopID();
+  ImGui::PopID();
+  if (dbl) return cell_event::DoubleClicked;
+  if (clicked) return cell_event::Selected;
+  return cell_event::None;
+}
+
 // Returns (current buffer contents after this frame, true iff Enter
 // was pressed this frame).  When Enter is pressed the kernel-side
 // driver should commit; otherwise it just stores the current buffer.
@@ -187,6 +277,13 @@ inline std::pair<std::string, bool> input_text(const std::string& id,
   std::string out(buf.c_str());  // strip trailing zeros
   return {std::move(out), enter};
 }
+
+// ----- Tab bar ----------------------------------------------------------
+// Forward declared here; the body lives in src/tab_bar_helpers.cpp
+// where the full [List<std::string>] template body is visible.
+int64_t tab_bar_select(const std::string& id,
+                       const List<std::string>& names,
+                       int64_t current);
 
 // ----- Menu bar ---------------------------------------------------------
 
@@ -239,6 +336,21 @@ inline void clipboard_set(const std::string& s) {
 
 inline bool ctrl_key_pressed(const std::string& k) {
   if (!ImGui::GetIO().KeyCtrl) return false;
+  if (ImGui::GetIO().KeyShift) return false;
+  if (k.size() == 1) {
+    char c = k[0];
+    if (c >= 'a' && c <= 'z') c -= 32;
+    if (c >= 'A' && c <= 'Z') {
+      ImGuiKey key = static_cast<ImGuiKey>(ImGuiKey_A + (c - 'A'));
+      return ImGui::IsKeyPressed(key);
+    }
+  }
+  return false;
+}
+
+inline bool ctrl_shift_key_pressed(const std::string& k) {
+  if (!ImGui::GetIO().KeyCtrl)  return false;
+  if (!ImGui::GetIO().KeyShift) return false;
   if (k.size() == 1) {
     char c = k[0];
     if (c >= 'a' && c <= 'z') c -= 32;

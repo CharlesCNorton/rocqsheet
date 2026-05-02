@@ -151,6 +151,26 @@ Fixpoint mem_cellref (r : CellRef) (xs : list CellRef) : bool :=
   | y :: ys => if cellref_eqb r y then true else mem_cellref r ys
   end.
 
+(* Cycle-detection set used by [eval_expr] et al.  Backed by a
+   persistent boolean array indexed by [cell_index], so passing the
+   set into recursive calls is an O(1) [shared_ptr] copy in the
+   extracted C++ rather than a deep clone of an [std::unique_ptr]
+   linked list (the cost of the previous [list CellRef] representation
+   on long ref chains).  [mark_visited] uses [PrimArray.set]'s
+   copy-on-write semantics: a fresh branch pays one O(GRID_SIZE)
+   vector copy, but every subsequent step on the same chain mutates
+   in place. *)
+Definition VisitedSet : Type := PrimArray.array bool.
+
+Definition empty_visited : VisitedSet :=
+  PrimArray.make GRID_SIZE false.
+
+Definition mark_visited (vs : VisitedSet) (r : CellRef) : VisitedSet :=
+  PrimArray.set vs (cell_index r) true.
+
+Definition is_visited (vs : VisitedSet) (r : CellRef) : bool :=
+  PrimArray.get vs (cell_index r).
+
 Definition cell_col_of (r : CellRef) : int :=
   PrimInt63.mod (cell_index r) NUM_COLS.
 
@@ -210,7 +230,7 @@ Definition combine_bins (op : PrimString.string -> PrimString.string -> EvalResu
   | _, _          => EErr
   end.
 
-Fixpoint eval_expr (fuel : nat) (visited : list CellRef) (s : Sheet)
+Fixpoint eval_expr (fuel : nat) (visited : VisitedSet) (s : Sheet)
                    (e : Expr) : EvalResult :=
   match fuel with
   | O => EFuel
@@ -219,7 +239,7 @@ Fixpoint eval_expr (fuel : nat) (visited : list CellRef) (s : Sheet)
     | EInt n => EVal n
     | EFloat f => EFVal f
     | ERef r =>
-      if mem_cellref r visited then EErr
+      if is_visited visited r then EErr
       else
         match get_cell s r with
         | CEmpty   => EVal 0%Z
@@ -227,7 +247,7 @@ Fixpoint eval_expr (fuel : nat) (visited : list CellRef) (s : Sheet)
         | CFloat f => EFVal f
         | CStr s'  => EValS s'
         | CBool b  => EValB b
-        | CForm e' => eval_expr fuel' (r :: visited) s e'
+        | CForm e' => eval_expr fuel' (mark_visited visited r) s e'
         end
     | EAdd a b =>
       combine_bin (fun va vb => EVal (Z.add va vb))
@@ -418,12 +438,12 @@ Fixpoint eval_expr (fuel : nat) (visited : list CellRef) (s : Sheet)
     end
   end
 
-with eval_at_ref (fuel : nat) (visited : list CellRef) (s : Sheet)
+with eval_at_ref (fuel : nat) (visited : VisitedSet) (s : Sheet)
                  (r : CellRef) : EvalResult :=
   match fuel with
   | O => EFuel
   | S fuel' =>
-    if mem_cellref r visited then EErr
+    if is_visited visited r then EErr
     else
       match get_cell s r with
       | CEmpty   => EVal 0%Z
@@ -431,11 +451,11 @@ with eval_at_ref (fuel : nat) (visited : list CellRef) (s : Sheet)
       | CFloat f => EFVal f
       | CStr s'  => EValS s'
       | CBool b  => EValB b
-      | CForm e  => eval_expr fuel' (r :: visited) s e
+      | CForm e  => eval_expr fuel' (mark_visited visited r) s e
       end
   end
 
-with sum_cols (fuel : nat) (visited : list CellRef) (s : Sheet)
+with sum_cols (fuel : nat) (visited : VisitedSet) (s : Sheet)
               (col hc : int) (row : int) (acc : Z) : EvalResult :=
   match fuel with
   | O => EFuel
@@ -453,7 +473,7 @@ with sum_cols (fuel : nat) (visited : list CellRef) (s : Sheet)
       end
   end
 
-with sum_rows (fuel : nat) (visited : list CellRef) (s : Sheet)
+with sum_rows (fuel : nat) (visited : VisitedSet) (s : Sheet)
               (lc hc : int) (row hr : int) (acc : Z) : EvalResult :=
   match fuel with
   | O => EFuel
@@ -471,7 +491,7 @@ with sum_rows (fuel : nat) (visited : list CellRef) (s : Sheet)
       end
   end
 
-with min_cols (fuel : nat) (visited : list CellRef) (s : Sheet)
+with min_cols (fuel : nat) (visited : VisitedSet) (s : Sheet)
               (col hc : int) (row : int) (acc : Z) : EvalResult :=
   match fuel with
   | O => EFuel
@@ -489,7 +509,7 @@ with min_cols (fuel : nat) (visited : list CellRef) (s : Sheet)
       end
   end
 
-with min_rows (fuel : nat) (visited : list CellRef) (s : Sheet)
+with min_rows (fuel : nat) (visited : VisitedSet) (s : Sheet)
               (lc hc : int) (row hr : int) (acc : Z) : EvalResult :=
   match fuel with
   | O => EFuel
@@ -507,7 +527,7 @@ with min_rows (fuel : nat) (visited : list CellRef) (s : Sheet)
       end
   end
 
-with max_cols (fuel : nat) (visited : list CellRef) (s : Sheet)
+with max_cols (fuel : nat) (visited : VisitedSet) (s : Sheet)
               (col hc : int) (row : int) (acc : Z) : EvalResult :=
   match fuel with
   | O => EFuel
@@ -525,7 +545,7 @@ with max_cols (fuel : nat) (visited : list CellRef) (s : Sheet)
       end
   end
 
-with max_rows (fuel : nat) (visited : list CellRef) (s : Sheet)
+with max_rows (fuel : nat) (visited : VisitedSet) (s : Sheet)
               (lc hc : int) (row hr : int) (acc : Z) : EvalResult :=
   match fuel with
   | O => EFuel
@@ -550,7 +570,7 @@ Definition eval_cell (fuel : nat) (s : Sheet) (r : CellRef) : EvalResult :=
   | CFloat f => EFVal f
   | CStr s'  => EValS s'
   | CBool b  => EValB b
-  | CForm e  => eval_expr fuel (r :: nil) s e
+  | CForm e  => eval_expr fuel (mark_visited empty_visited r) s e
   end.
 
 Definition DEFAULT_FUEL : nat := 4000.
@@ -653,8 +673,8 @@ Theorem eval_gt_false :
   eval_cell DEFAULT_FUEL s r = EVal 0%Z.
 Proof. vm_compute. reflexivity. Qed.
 
-Theorem mem_cellref_eval_ref_err : forall fuel visited s r,
-  mem_cellref r visited = true ->
+Theorem is_visited_eval_ref_err : forall fuel visited s r,
+  is_visited visited r = true ->
   eval_expr (S fuel) visited s (ERef r) = EErr.
 Proof. intros fuel visited s r H. simpl. rewrite H. reflexivity. Qed.
 
@@ -945,7 +965,7 @@ Proof.
         try (apply combine_bins_monotone_eq; try assumption;
              intros Hr; apply IHe; assumption).
       * reflexivity.
-      * destruct (mem_cellref c visited); [reflexivity|].
+      * destruct (is_visited visited c); [reflexivity|].
         destruct (get_cell s c); try reflexivity.
         apply IHe; assumption.
       * (* EIf *)
@@ -1072,7 +1092,7 @@ Proof.
       destruct fuel' as [|fuel']; [lia|].
       assert (Hle' : fuel <= fuel') by lia.
       simpl in *.
-      destruct (mem_cellref r visited); [reflexivity|].
+      destruct (is_visited visited r); [reflexivity|].
       destruct (get_cell s r); try reflexivity.
       apply IHe; assumption.
     + (* sum_cols *)
@@ -1475,13 +1495,13 @@ Proof. reflexivity. Qed.
 (* a + 0 = a, smoke at a finite literal. *)
 Theorem eval_float_add_zero_smoke :
   let one_five := PrimFloat.of_uint63 3%uint63 in
-  eval_expr 2 nil new_sheet (EFAdd (EFloat one_five) (EFloat (PrimFloat.of_uint63 0%uint63)))
+  eval_expr 2 empty_visited new_sheet (EFAdd (EFloat one_five) (EFloat (PrimFloat.of_uint63 0%uint63)))
   = EFVal one_five.
 Proof. vm_compute. reflexivity. Qed.
 
 (* a * 0 = 0, smoke at a finite literal. *)
 Theorem eval_float_mul_zero_smoke :
-  eval_expr 2 nil new_sheet
+  eval_expr 2 empty_visited new_sheet
     (EFMul (EFloat (PrimFloat.of_uint63 7%uint63))
            (EFloat (PrimFloat.of_uint63 0%uint63)))
   = EFVal (PrimFloat.of_uint63 0%uint63).
@@ -1489,7 +1509,7 @@ Proof. vm_compute. reflexivity. Qed.
 
 (* NaN propagation: NaN + anything is NaN under PrimFloat. *)
 Theorem eval_float_nan_propagates_smoke :
-  match eval_expr 2 nil new_sheet
+  match eval_expr 2 empty_visited new_sheet
         (EFAdd (EFloat PrimFloat.nan)
                (EFloat (PrimFloat.of_uint63 1%uint63))) with
   | EFVal f => PrimFloat.is_nan f = true
@@ -1499,10 +1519,10 @@ Proof. vm_compute. reflexivity. Qed.
 
 (* Commutativity of float add at concrete values. *)
 Theorem eval_float_add_comm_smoke :
-  eval_expr 2 nil new_sheet
+  eval_expr 2 empty_visited new_sheet
     (EFAdd (EFloat (PrimFloat.of_uint63 3%uint63))
            (EFloat (PrimFloat.of_uint63 5%uint63)))
-  = eval_expr 2 nil new_sheet
+  = eval_expr 2 empty_visited new_sheet
     (EFAdd (EFloat (PrimFloat.of_uint63 5%uint63))
            (EFloat (PrimFloat.of_uint63 3%uint63))).
 Proof. vm_compute. reflexivity. Qed.

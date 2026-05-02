@@ -4,10 +4,10 @@
    [src/imgui_helpers.h]. *)
 
 From Corelib Require Import PrimString PrimInt63.
+From Stdlib Require Import BinInt List.
 From Crane Require Extraction.
 From Crane Require Import Mapping.NatIntStd Mapping.ZInt.
 From Crane Require Import Monads.ITree.
-
 Open Scope itree_scope.
 
 (* Outcome of a cell selectable for one frame. *)
@@ -41,6 +41,10 @@ Inductive imguiE : Type -> Type :=
   | EClipperEnd       : imguiE unit
   | ESelectable       : int -> int -> bool -> bool -> PrimString.string ->
                         imguiE cell_event
+  (* Same as ESelectable plus formatting: bold, packed RGB foreground
+     colour, border, alignment encoded as Z (0=left,1=center,2=right). *)
+  | ESelectableFmt    : int -> int -> bool -> bool -> PrimString.string ->
+                        bool -> Z -> bool -> Z -> imguiE cell_event
   (* InputText returns (current_buffer, enter_pressed). *)
   | EInputText        : PrimString.string -> PrimString.string ->
                         imguiE (PrimString.string * bool)
@@ -52,14 +56,36 @@ Inductive imguiE : Type -> Type :=
   (* Sets the next-window flag so the upcoming begin_window opens
      a menu-bar-enabled window. *)
   | ENextWindowMenuBar : imguiE unit
+  (* Pins the next [begin_window] to a specific position and size on
+     first launch only (subsequent frames respect any user drag /
+     resize). *)
+  | ENextWindowInitialPosSize : Z -> Z -> Z -> Z -> imguiE unit
   | EFileRead         : PrimString.string -> imguiE (PrimString.string * bool)
   | EFileWrite        : PrimString.string -> PrimString.string -> imguiE bool
   | EClipboardGet     : imguiE PrimString.string
   | EClipboardSet     : PrimString.string -> imguiE unit
   | ECtrlKeyPressed   : PrimString.string -> imguiE bool
+  | ECtrlShiftKeyPressed : PrimString.string -> imguiE bool
   | EKeyPressed       : PrimString.string -> imguiE bool
   | ESameLine         : imguiE unit
-  | EFbarRefLabel     : PrimString.string -> imguiE unit.
+  | EFbarRefLabel     : PrimString.string -> imguiE unit
+  (* Renders a tab bar.  [names] supplies the per-tab labels; the tab
+     count is the list length.  Returns the active tab index (the one
+     whose body is currently displayed by ImGui).  [current] is supplied
+     for future programmatic switching but is not yet honoured by the
+     helper. *)
+  | ETabBarSelect     : PrimString.string -> list PrimString.string ->
+                        int -> imguiE int
+  (* Inline chart drawing.  [kind] is encoded as Z (0=line, 1=bar,
+     2=pie, 3=scatter); [values] is the row-major list of cell values
+     in the chart's range; [title] is shown in the chart border. *)
+  | EChartRender      : Z -> list Z -> PrimString.string -> imguiE unit
+  (* Emit a PDF 1.4 file at [path].  Each page is a flat list of
+     (x, y, text) tuples in PDF coordinates already, so the C++ side
+     never needs to know the spreadsheet's [Cell] layout.  Returns
+     [true] on successful write. *)
+  | EPdfEmit          : list (list (Z * Z * PrimString.string))
+                        -> PrimString.string -> imguiE bool.
 
 (* Smart constructors. *)
 Definition glfw_should_close : itree imguiE bool := trigger EShouldClose.
@@ -99,6 +125,13 @@ Definition imgui_selectable_cell
     (display : PrimString.string)
   : itree imguiE cell_event :=
   trigger (ESelectable c r selected is_error display).
+Definition imgui_selectable_cell_fmt
+    (c r : int) (selected : bool) (is_error : bool)
+    (display : PrimString.string)
+    (bold : bool) (color_rgb : Z) (border : bool) (align : Z)
+  : itree imguiE cell_event :=
+  trigger (ESelectableFmt c r selected is_error display
+                          bold color_rgb border align).
 Definition imgui_input_text (id : PrimString.string) (cur : PrimString.string)
   : itree imguiE (PrimString.string * bool) :=
   trigger (EInputText id cur).
@@ -111,6 +144,9 @@ Definition imgui_menu_item (label : PrimString.string) (enabled : bool)
   : itree imguiE bool := trigger (EMenuItem label enabled).
 Definition imgui_next_window_menu_bar : itree imguiE unit :=
   trigger ENextWindowMenuBar.
+Definition imgui_next_window_initial_pos_size
+  (x y w h : Z) : itree imguiE unit :=
+  trigger (ENextWindowInitialPosSize x y w h).
 Definition file_read (path : PrimString.string)
   : itree imguiE (PrimString.string * bool) := trigger (EFileRead path).
 Definition file_write (path : PrimString.string) (content : PrimString.string)
@@ -121,11 +157,23 @@ Definition clipboard_set (s : PrimString.string) : itree imguiE unit :=
   trigger (EClipboardSet s).
 Definition ctrl_key_pressed (k : PrimString.string) : itree imguiE bool :=
   trigger (ECtrlKeyPressed k).
+Definition ctrl_shift_key_pressed (k : PrimString.string)
+  : itree imguiE bool := trigger (ECtrlShiftKeyPressed k).
 Definition key_pressed (k : PrimString.string) : itree imguiE bool :=
   trigger (EKeyPressed k).
 Definition imgui_same_line : itree imguiE unit := trigger ESameLine.
 Definition fbar_ref_label (s : PrimString.string) : itree imguiE unit :=
   trigger (EFbarRefLabel s).
+Definition imgui_tab_bar_select (id : PrimString.string)
+                                (names : list PrimString.string)
+                                (current : int)
+  : itree imguiE int := trigger (ETabBarSelect id names current).
+Definition imgui_chart_render (kind : Z) (values : list Z)
+                              (title : PrimString.string)
+  : itree imguiE unit := trigger (EChartRender kind values title).
+Definition imgui_pdf_emit (pages : list (list (Z * Z * PrimString.string)))
+                          (path : PrimString.string)
+  : itree imguiE bool := trigger (EPdfEmit pages path).
 
 (* Erased-itree extraction: each constructor inlines to its C++
    helper at the call site; the inductive itself maps to the empty
@@ -162,6 +210,7 @@ Crane Extract Inductive imguiE => ""
     "imgui_helpers::clipper_get_end()"
     "imgui_helpers::clipper_end()"
     "imgui_helpers::selectable_cell(%a0, %a1, %a2, %a3, %a4)"
+    "imgui_helpers::selectable_cell_formatted(%a0, %a1, %a2, %a3, %a4, %a5, %a6, %a7, %a8)"
     "imgui_helpers::input_text(%a0, %a1)"
     "imgui_helpers::begin_menu_bar()"
     "imgui_helpers::end_menu_bar()"
@@ -169,14 +218,19 @@ Crane Extract Inductive imguiE => ""
     "imgui_helpers::end_menu()"
     "imgui_helpers::menu_item(%a0, %a1)"
     "imgui_helpers::next_window_menu_bar()"
+    "imgui_helpers::next_window_initial_pos_size(%a0, %a1, %a2, %a3)"
     "imgui_helpers::file_read(%a0)"
     "imgui_helpers::file_write(%a0, %a1)"
     "imgui_helpers::clipboard_get()"
     "imgui_helpers::clipboard_set(%a0)"
     "imgui_helpers::ctrl_key_pressed(%a0)"
+    "imgui_helpers::ctrl_shift_key_pressed(%a0)"
     "imgui_helpers::key_pressed(%a0)"
     "imgui_helpers::same_line()"
-    "imgui_helpers::fbar_ref_label(%a0)" ]
+    "imgui_helpers::fbar_ref_label(%a0)"
+    "imgui_helpers::tab_bar_select(%a0, %a1, %a2)"
+    "chart_helpers::chart_render(%a0, %a1, %a2)"
+    "pdf_helpers::emit_pdf(%a0, %a1)" ]
   From "imgui_helpers.h".
 
 Crane Extract Inlined Constant glfw_should_close =>
@@ -225,6 +279,9 @@ Crane Extract Inlined Constant imgui_clipper_end =>
   "imgui_helpers::clipper_end()" From "imgui_helpers.h".
 Crane Extract Inlined Constant imgui_selectable_cell =>
   "imgui_helpers::selectable_cell(%a0, %a1, %a2, %a3, %a4)" From "imgui_helpers.h".
+Crane Extract Inlined Constant imgui_selectable_cell_fmt =>
+  "imgui_helpers::selectable_cell_formatted(%a0, %a1, %a2, %a3, %a4, %a5, %a6, %a7, %a8)"
+  From "imgui_helpers.h".
 Crane Extract Inlined Constant imgui_input_text =>
   "imgui_helpers::input_text(%a0, %a1)" From "imgui_helpers.h".
 Crane Extract Inlined Constant imgui_begin_menu_bar =>
@@ -239,6 +296,9 @@ Crane Extract Inlined Constant imgui_menu_item =>
   "imgui_helpers::menu_item(%a0, %a1)" From "imgui_helpers.h".
 Crane Extract Inlined Constant imgui_next_window_menu_bar =>
   "imgui_helpers::next_window_menu_bar()" From "imgui_helpers.h".
+Crane Extract Inlined Constant imgui_next_window_initial_pos_size =>
+  "imgui_helpers::next_window_initial_pos_size(%a0, %a1, %a2, %a3)"
+  From "imgui_helpers.h".
 Crane Extract Inlined Constant file_read =>
   "imgui_helpers::file_read(%a0)" From "imgui_helpers.h".
 Crane Extract Inlined Constant file_write =>
@@ -249,9 +309,17 @@ Crane Extract Inlined Constant clipboard_set =>
   "imgui_helpers::clipboard_set(%a0)" From "imgui_helpers.h".
 Crane Extract Inlined Constant ctrl_key_pressed =>
   "imgui_helpers::ctrl_key_pressed(%a0)" From "imgui_helpers.h".
+Crane Extract Inlined Constant ctrl_shift_key_pressed =>
+  "imgui_helpers::ctrl_shift_key_pressed(%a0)" From "imgui_helpers.h".
 Crane Extract Inlined Constant key_pressed =>
   "imgui_helpers::key_pressed(%a0)" From "imgui_helpers.h".
 Crane Extract Inlined Constant imgui_same_line =>
   "imgui_helpers::same_line()" From "imgui_helpers.h".
 Crane Extract Inlined Constant fbar_ref_label =>
   "imgui_helpers::fbar_ref_label(%a0)" From "imgui_helpers.h".
+Crane Extract Inlined Constant imgui_tab_bar_select =>
+  "imgui_helpers::tab_bar_select(%a0, %a1, %a2)" From "imgui_helpers.h".
+Crane Extract Inlined Constant imgui_chart_render =>
+  "chart_helpers::chart_render(%a0, %a1, %a2)" From "imgui_helpers.h".
+Crane Extract Inlined Constant imgui_pdf_emit =>
+  "pdf_helpers::emit_pdf(%a0, %a1)" From "imgui_helpers.h".

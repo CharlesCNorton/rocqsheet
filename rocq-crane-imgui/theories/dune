@@ -1,0 +1,10 @@
+; Crane bindings to the Dear ImGui effect interface (imguiE) and its
+; C++ helper header.  Once the parent rocqsheet repo flips its
+; theories/dune over to depend on this package, the in-tree
+; theories/ImGuiE.v can be removed.
+
+(coq.theory
+ (name RocqCraneImGui)
+ (package rocq-crane-imgui)
+ (synopsis "Crane bindings for Dear ImGui")
+ (theories Stdlib Crane ITree ExtLib Paco))

@@ -7,6 +7,7 @@ From Stdlib Require Import List BinInt.
 From Corelib Require Import PrimInt63.
 From Crane Require Import Mapping.NatIntStd Mapping.ZInt.
 From Rocqsheet Require Import Rocqsheet.
+From Rocqsheet Require Import NumberFormat.
 Import ListNotations.
 Import Rocqsheet.
 
@@ -18,10 +19,11 @@ Record CellFormat : Type := mkFormat
   { fmt_bold      : bool
   ; fmt_color_rgb : Z       (* packed 0xRRGGBB *)
   ; fmt_border    : bool
-  ; fmt_align     : Align }.
+  ; fmt_align     : Align
+  ; fmt_number    : NumberFormat }.
 
 Definition default_format : CellFormat :=
-  mkFormat false 0%Z false AlignLeft.
+  mkFormat false 0%Z false AlignLeft NFInteger.
 
 Definition FormatMap : Type := list (CellRef * CellFormat).
 

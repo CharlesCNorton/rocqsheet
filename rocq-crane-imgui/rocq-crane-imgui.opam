@@ -1,0 +1,30 @@
+opam-version: "2.0"
+synopsis: "Crane Coq bindings for Dear ImGui (imguiE effect interface)"
+description: """
+Reusable imgui-side bindings for projects that drive a Dear ImGui
+front-end from a Crane-extracted Coq itree.  Mirrors the layout of
+joom's rocq-crane-sdl2 so it can be opam-pinned and consumed as a
+git submodule by downstream applications (e.g. rocqsheet).
+"""
+maintainer: "CharlesCNorton <machineelv@gmail.com>"
+authors: "CharlesCNorton <machineelv@gmail.com>"
+license: "MIT"
+homepage: "https://github.com/CharlesCNorton/rocqsheet"
+bug-reports: "https://github.com/CharlesCNorton/rocqsheet/issues"
+
+depends: [
+  "ocaml" {>= "4.14"}
+  "dune" {>= "3.17"}
+  "rocq-core" {>= "9.0"}
+  "rocq-crane"
+  "coq-itree" {>= "5.2"}
+  "coq-ext-lib"
+  "coq-paco"
+]
+
+build: [
+  ["dune" "build" "-p" name "-j" jobs]
+]
+install: [
+  ["dune" "install" "-p" name "--prefix=%{prefix}%"]
+]
