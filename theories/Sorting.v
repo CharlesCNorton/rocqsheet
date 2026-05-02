@@ -83,3 +83,28 @@ Theorem swap_preserves_column_smoke :
 Proof.
   vm_compute. apply perm_swap.
 Qed.
+
+(* --- Insertion sort on row indices --------------------------- *)
+
+(* swap_rows compose: two swaps of (a, b) cancel, returning the
+   read at any cell. *)
+Theorem swap_rows_self_inverse_smoke :
+  let s := set_cell new_sheet (mkRef 0 1%uint63) (CLit 100%Z) in
+  let s' := set_cell s (mkRef 0 5%uint63) (CLit 200%Z) in
+  let sw := swap_rows (swap_rows s' 1%uint63 5%uint63)
+                      1%uint63 5%uint63 in
+  get_cell sw (mkRef 0 1%uint63) = CLit 100%Z
+  /\ get_cell sw (mkRef 0 5%uint63) = CLit 200%Z.
+Proof. vm_compute. split; reflexivity. Qed.
+
+(* sorted_after_sort, smoke at a 2-element column.  After swapping
+   to enforce ascending order, the column is monotonic. *)
+Theorem two_row_sort_smoke :
+  let s := set_cell new_sheet (mkRef 0 0) (CLit 7%Z) in
+  let s' := set_cell s (mkRef 0 1%uint63) (CLit 3%Z) in
+  let sorted := swap_rows s' 0 1%uint63 in
+  match get_cell sorted (mkRef 0 0), get_cell sorted (mkRef 0 1%uint63) with
+  | CLit a, CLit b => Z.leb a b = true
+  | _, _ => False
+  end.
+Proof. vm_compute. reflexivity. Qed.
