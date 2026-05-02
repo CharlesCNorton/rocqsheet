@@ -40,3 +40,47 @@ Theorem eval_cell_empty_is_zero : forall fuel s r,
 Proof.
   intros fuel s r H. apply eval_empty. exact H.
 Qed.
+
+(* Adding identical operands doubles the result. *)
+Theorem eval_add_self : forall a fuel visited s,
+  eval_expr (S (S fuel)) visited s (EAdd (EInt a) (EInt a))
+  = EVal (Z.add a a).
+Proof. reflexivity. Qed.
+
+(* Multiplying by zero yields zero. *)
+Theorem eval_mul_zero_l_proof : forall a fuel visited s,
+  eval_expr (S (S fuel)) visited s (EMul (EInt 0%Z) (EInt a)) = EVal 0%Z.
+Proof. reflexivity. Qed.
+
+Theorem eval_mul_zero_r_proof : forall a fuel visited s,
+  eval_expr (S (S fuel)) visited s (EMul (EInt a) (EInt 0%Z)) = EVal 0%Z.
+Proof.
+  intros. simpl. rewrite Z.mul_0_r. reflexivity.
+Qed.
+
+(* Sub then add the same value recovers the original. *)
+Theorem eval_sub_add_cancel : forall a b fuel visited s,
+  eval_expr (S (S (S fuel))) visited s
+    (EAdd (ESub (EInt a) (EInt b)) (EInt b))
+  = EVal a.
+Proof.
+  intros. simpl. f_equal. lia.
+Qed.
+
+(* IF on a positive literal takes the then-branch. *)
+Theorem eval_if_pos_lit_smoke :
+  let s := new_sheet in
+  eval_expr 5 nil s (EIf (EInt 7%Z) (EInt 1%Z) (EInt 2%Z)) = EVal 1%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+(* IF on a negative literal takes the then-branch. *)
+Theorem eval_if_neg_lit_smoke :
+  let s := new_sheet in
+  eval_expr 5 nil s (EIf (EInt (-3)%Z) (EInt 1%Z) (EInt 2%Z)) = EVal 1%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+(* IF on zero takes the else-branch. *)
+Theorem eval_if_zero_lit_smoke :
+  let s := new_sheet in
+  eval_expr 5 nil s (EIf (EInt 0%Z) (EInt 1%Z) (EInt 2%Z)) = EVal 2%Z.
+Proof. vm_compute. reflexivity. Qed.
