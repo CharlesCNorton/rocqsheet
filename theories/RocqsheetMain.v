@@ -64,6 +64,9 @@ Definition put_lit (s : Sheet) (c r : nat) (v : Z) : Sheet :=
 Definition put_form (s : Sheet) (c r : nat) (e : Expr) : Sheet :=
   set_cell s (mkRef (int_of_nat c) (int_of_nat r)) (CForm e).
 
+Definition put_cell (s : Sheet) (c r : nat) (cell : Cell) : Sheet :=
+  set_cell s (mkRef (int_of_nat c) (int_of_nat r)) cell.
+
 Definition ref_at (c r : nat) : CellRef :=
   mkRef (int_of_nat c) (int_of_nat r).
 
@@ -135,6 +138,45 @@ Definition demo_sheet : Sheet :=
   let s := put_form s 0 21
              (EIfErr (EDiv (ERef (ref_at 0 10)) (EInt 0%Z))
                      (EInt (-1)%Z)) in
+
+  let s := put_cell s 0 23
+             (CFloat (PrimFloat.of_uint63 2%uint63)) in
+  let s := put_cell s 1 23
+             (CFloat (PrimFloat.of_uint63 3%uint63)) in
+  let s := put_form s 2 23
+             (EFAdd (ERef (ref_at 0 23)) (ERef (ref_at 1 23))) in
+  let s := put_form s 3 23
+             (EFMul (ERef (ref_at 0 23)) (ERef (ref_at 1 23))) in
+  let s := put_form s 4 23
+             (EFDiv (ERef (ref_at 1 23)) (ERef (ref_at 0 23))) in
+
+  let s := put_cell s 0 25 (CStr "Rocq"%pstring) in
+  let s := put_cell s 1 25 (CStr "sheet"%pstring) in
+  let s := put_form s 2 25
+             (EConcat (ERef (ref_at 0 25)) (ERef (ref_at 1 25))) in
+  let s := put_form s 3 25
+             (ELen (ERef (ref_at 2 25))) in
+  let s := put_form s 4 25
+             (ESubstr (ERef (ref_at 2 25)) (EInt 0%Z) (EInt 4%Z)) in
+
+  let s := put_cell s 0 27 (CBool true) in
+  let s := put_cell s 1 27 (CBool false) in
+  let s := put_form s 2 27
+             (EBAnd (ERef (ref_at 0 27)) (ERef (ref_at 1 27))) in
+  let s := put_form s 3 27
+             (EBOr (ERef (ref_at 0 27)) (ERef (ref_at 1 27))) in
+  let s := put_form s 4 27
+             (EBNot (ERef (ref_at 0 27))) in
+
+  let s := put_form s 0 29
+             (EMin (ref_at 0 0) (ref_at 1 0)) in
+  let s := put_form s 1 29
+             (EMax (ref_at 0 0) (ref_at 1 0)) in
+
+  let s := put_form s 0 31
+             (EMod (EInt 17%Z) (EInt 5%Z)) in
+  let s := put_form s 1 31
+             (EPow (EInt 2%Z) (EInt 10%Z)) in
   s.
 
 (* ----- Pretty printer (Cell -> source text) ----------------------- *)
