@@ -42,7 +42,18 @@ int main(int /*argc*/, char** /*argv*/) {
 
   imgui_helpers::g_window = win;
 
-  int exit_code = rocqsheet_run();
+  // The Coq-side [run_app] is a [cofix] guarded by [Tau]; Crane
+  // extracts it as a tail-recursive C++ function but the recursion
+  // borrows into [res.second] across the call site, blocking the
+  // compiler's TCO and overflowing the stack after a few thousand
+  // frames.  Drive [process_frame] directly from a loop here.
+  loop_state ls = initial_loop_state;
+  while (true) {
+    auto step = process_frame(std::move(ls));
+    if (step.first) break;
+    ls = std::move(step.second);
+  }
+  int exit_code = 0;
 
   imgui_helpers::g_clipper.reset();
   ImGui_ImplOpenGL3_Shutdown();

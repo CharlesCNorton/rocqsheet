@@ -1151,7 +1151,8 @@ Definition process_frame (ls : loop_state) : itree imguiE (bool * loop_state) :=
     imgui_separator ;;
     ls3 <- render_tab_bar ls2 ;;
     ls4 <- render_grid ls3 ;;
-    imgui_separator ;;
+    imgui_end_window ;;
+    imgui_begin_window "Charts" ;;
     render_charts ls4 ;;
     imgui_end_window ;;
     ls5 <- handle_shortcuts ls4 ;;
