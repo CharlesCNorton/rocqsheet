@@ -23,48 +23,41 @@
    serialiser.  Add a C++ helper that consumes the extracted
    document and emits a minimal PDF 1.4 stream.
 
-6. **Unit-typed cells.** Add `Cell::CUnit` carrying `(Unit, Z)`
-    over a finite tag set (`USD`, `EUR`, `GBP`, `M`, `S`, `BPS`).
-    Arithmetic across mismatched units returns `EErr`.
-    *Theorems:* `unit_safety` (no add/sub across distinct tags
-    yields a non-`EErr` value); `conversion_round_trip` for
-    explicit casts.
-
-7. **Bit-identical cross-platform determinism.**
+6. **Bit-identical cross-platform determinism.**
     *Theorems:* `forall w, eval_workbook w` is independent of host
     platform, given `PrimFloat` IEEE conformance and the saturating
     `Z` overrides.
 
-8. **Verified financial primitives.** `BLACK_SCHOLES`, `PV`, `IRR`,
+7. **Verified financial primitives.** `BLACK_SCHOLES`, `PV`, `IRR`,
     Greeks (`Delta`, `Gamma`, `Vega`, `Theta`, `Rho`), Black-76,
     swaption pricing.
     *Theorems:* `put_call_parity`, `vega_monotone_in_vol`,
     `gamma_convex_in_strike`, `IRR_NPV_zero`.
 
-9. **Inline contract checking in the formula bar.** Each column
+8. **Inline contract checking in the formula bar.** Each column
     declares an invariant; on commit the kernel attempts to
     discharge the formula's obligation against it; failure is
     rendered as a red marker.
     *Theorems:* the discharge procedure is sound (no formula passes
     that invalidates the column invariant on any input).
 
-10. **Sheet-level dependent types.** Column `B` declared as
+9. **Sheet-level dependent types.** Column `B` declared as
     `Vector R (length A)` indexes `B` by `A`'s row count.
     *Theorems:* well-typedness preserved by every `pure_edit_step`.
 
-11. **Sandboxed scripting language.** Extend `Macros.v` to a typed
+10. **Sandboxed scripting language.** Extend `Macros.v` to a typed
     expression language whose effects appear only as documented
     event constructors.
     *Theorems:* `macro_pure` (no effect constructor reached) implies
     sheet-only effect; `sandbox_total` (every macro terminates).
 
-12. **Property-based regressions on save.** Per-column `Prop`s
+11. **Property-based regressions on save.** Per-column `Prop`s
     sampled across the sheet via QuickChick; counter-examples
     surface as marked cells.
     *Theorems:* every supported `Prop` is decidable on closed cell
     values.
 
-13. **Static error-reachability analysis.** `analyze_workbook : Sheet
+12. **Static error-reachability analysis.** `analyze_workbook : Sheet
     -> list (CellRef * ErrorClass)` over `EErr` paths,
     divide-by-zero witnesses, and `NaN` producers.
     *Theorems:* `analysis_complete` (any cell that evaluates to
