@@ -23,19 +23,13 @@
    serialiser.  Add a C++ helper that consumes the extracted
    document and emits a minimal PDF 1.4 stream.
 
-6. **Sandboxed scripting language.** Extend `Macros.v` to a typed
-    expression language whose effects appear only as documented
-    event constructors.
-    *Theorems:* `macro_pure` (no effect constructor reached) implies
-    sheet-only effect; `sandbox_total` (every macro terminates).
-
-7. **Property-based regressions on save.** Per-column `Prop`s
+6. **Property-based regressions on save.** Per-column `Prop`s
     sampled across the sheet via QuickChick; counter-examples
     surface as marked cells.
     *Theorems:* every supported `Prop` is decidable on closed cell
     values.
 
-8. **Static error-reachability analysis.** `analyze_workbook : Sheet
+7. **Static error-reachability analysis.** `analyze_workbook : Sheet
     -> list (CellRef * ErrorClass)` over `EErr` paths,
     divide-by-zero witnesses, and `NaN` producers.
     *Theorems:* `analysis_complete` (any cell that evaluates to
