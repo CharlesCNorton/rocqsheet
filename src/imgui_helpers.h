@@ -18,6 +18,17 @@
 #include <imgui_impl_opengl3.h>
 #include <GLFW/glfw3.h>
 
+// Forward declaration of the chart drawing helper.  The body lives
+// in src/chart_helpers.cpp where it can include the generated
+// rocqsheet.h for the full [List<int64_t>] body.  Declared here so
+// the Crane-extracted code can resolve the symbol via the same
+// include it already pulls in for [imgui_helpers].
+template <typename T> struct List;
+namespace chart_helpers {
+void chart_render(int64_t kind, const List<int64_t>& values,
+                  const std::string& title);
+}  // namespace chart_helpers
+
 namespace imgui_helpers {
 
 // Process-global handles set by src/main.cpp at startup.

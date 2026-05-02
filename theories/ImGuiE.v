@@ -4,7 +4,7 @@
    [src/imgui_helpers.h]. *)
 
 From Corelib Require Import PrimString PrimInt63.
-From Stdlib Require Import BinInt.
+From Stdlib Require Import BinInt List.
 From Crane Require Extraction.
 From Crane Require Import Mapping.NatIntStd Mapping.ZInt.
 From Crane Require Import Monads.ITree.
@@ -69,7 +69,11 @@ Inductive imguiE : Type -> Type :=
      Returns the active tab index (the one whose body is currently
      displayed by ImGui).  [current] is supplied for future programmatic
      switching but is not yet honoured by the helper. *)
-  | ETabBarSelect     : PrimString.string -> int -> int -> imguiE int.
+  | ETabBarSelect     : PrimString.string -> int -> int -> imguiE int
+  (* Inline chart drawing.  [kind] is encoded as Z (0=line, 1=bar,
+     2=pie, 3=scatter); [values] is the row-major list of cell values
+     in the chart's range; [title] is shown in the chart border. *)
+  | EChartRender      : Z -> list Z -> PrimString.string -> imguiE unit.
 
 (* Smart constructors. *)
 Definition glfw_should_close : itree imguiE bool := trigger EShouldClose.
@@ -145,6 +149,9 @@ Definition fbar_ref_label (s : PrimString.string) : itree imguiE unit :=
   trigger (EFbarRefLabel s).
 Definition imgui_tab_bar_select (id : PrimString.string) (num current : int)
   : itree imguiE int := trigger (ETabBarSelect id num current).
+Definition imgui_chart_render (kind : Z) (values : list Z)
+                              (title : PrimString.string)
+  : itree imguiE unit := trigger (EChartRender kind values title).
 
 (* Erased-itree extraction: each constructor inlines to its C++
    helper at the call site; the inductive itself maps to the empty
@@ -197,7 +204,8 @@ Crane Extract Inductive imguiE => ""
     "imgui_helpers::key_pressed(%a0)"
     "imgui_helpers::same_line()"
     "imgui_helpers::fbar_ref_label(%a0)"
-    "imgui_helpers::tab_bar_select(%a0, %a1, %a2)" ]
+    "imgui_helpers::tab_bar_select(%a0, %a1, %a2)"
+    "chart_helpers::chart_render(%a0, %a1, %a2)" ]
   From "imgui_helpers.h".
 
 Crane Extract Inlined Constant glfw_should_close =>
@@ -281,3 +289,5 @@ Crane Extract Inlined Constant fbar_ref_label =>
   "imgui_helpers::fbar_ref_label(%a0)" From "imgui_helpers.h".
 Crane Extract Inlined Constant imgui_tab_bar_select =>
   "imgui_helpers::tab_bar_select(%a0, %a1, %a2)" From "imgui_helpers.h".
+Crane Extract Inlined Constant imgui_chart_render =>
+  "chart_helpers::chart_render(%a0, %a1, %a2)" From "imgui_helpers.h".

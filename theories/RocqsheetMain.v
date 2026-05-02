@@ -12,6 +12,7 @@ From Rocqsheet Require Import Rocqsheet.
 From Rocqsheet Require Import ImGuiE.
 From Rocqsheet Require Import Parser.
 From Rocqsheet Require Import Formatting.
+From Rocqsheet Require Import Charts.
 Import ListNotations.
 Import Rocqsheet.
 
@@ -380,7 +381,8 @@ Record loop_state : Type := mkLoop {
   ls_redo         : list Sheet;
   ls_formats      : FormatMap;
   ls_other_sheets : list (int * Sheet);
-  ls_active       : int
+  ls_active       : int;
+  ls_charts       : list Chart
 }.
 
 (* Demo formats: the row of computed answers in [demo_sheet] gets
@@ -417,9 +419,18 @@ Definition sales_sheet : Sheet :=
 Definition initial_other_sheets : list (int * Sheet) :=
   [(1%uint63, sales_sheet)].
 
+(* Three demo charts pulling from the demo-sheet rows: a line chart
+   over the addition row, a bar chart over the multiplication row,
+   and a pie over the subtraction row.  Each chart hangs below the
+   grid in [process_frame]. *)
+Definition initial_charts : list Chart :=
+  [ mkChart ChartLine    (ref_at 0 0) (ref_at 3 0) []
+  ; mkChart ChartBar     (ref_at 0 2) (ref_at 3 2) []
+  ; mkChart ChartScatter (ref_at 0 4) (ref_at 2 4) [] ].
+
 Definition initial_loop_state : loop_state :=
   mkLoop demo_sheet None "" nil nil nil nil demo_formats
-         initial_other_sheets 0%uint63.
+         initial_other_sheets 0%uint63 initial_charts.
 
 (* ----- Edit-buffer / parse-error helpers -------------------- *)
 
@@ -502,20 +513,20 @@ Definition push_undo (ls : loop_state) (before : Sheet) : loop_state :=
   mkLoop (ls_sheet ls) (ls_selected ls) (ls_fbar_text ls)
          (ls_edit_buf ls) (ls_parse_errs ls)
          (before :: ls_undo ls) nil (ls_formats ls)
-         (ls_other_sheets ls) (ls_active ls).
+         (ls_other_sheets ls) (ls_active ls) (ls_charts ls).
 
 Definition select_cell (ls : loop_state) (r : CellRef) : loop_state :=
   mkLoop (ls_sheet ls) (Some r)
          (fbar_for_cell (ls_edit_buf ls) (ls_sheet ls) r)
          (ls_edit_buf ls) (ls_parse_errs ls)
          (ls_undo ls) (ls_redo ls) (ls_formats ls)
-         (ls_other_sheets ls) (ls_active ls).
+         (ls_other_sheets ls) (ls_active ls) (ls_charts ls).
 
 Definition update_fbar (ls : loop_state) (s : PrimString.string) : loop_state :=
   mkLoop (ls_sheet ls) (ls_selected ls) s
          (ls_edit_buf ls) (ls_parse_errs ls)
          (ls_undo ls) (ls_redo ls) (ls_formats ls)
-         (ls_other_sheets ls) (ls_active ls).
+         (ls_other_sheets ls) (ls_active ls) (ls_charts ls).
 
 (* Inspect leading character.  Empty string returns 0. *)
 Definition first_char_int (s : PrimString.string) : int :=
@@ -581,7 +592,7 @@ Definition commit_to (ls : loop_state) (r : CellRef) (txt : PrimString.string)
     let new_pe := remove_ref (ls_parse_errs ls) r in
     mkLoop new_sheet (ls_selected ls) (ls_fbar_text ls)
            new_eb new_pe (before :: ls_undo ls) nil (ls_formats ls)
-           (ls_other_sheets ls) (ls_active ls)
+           (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
   else if starts_with_eq txt then
     let body := strip_leading_eq txt in
     match parse_formula body with
@@ -591,13 +602,13 @@ Definition commit_to (ls : loop_state) (r : CellRef) (txt : PrimString.string)
       let new_pe := remove_ref (ls_parse_errs ls) r in
       mkLoop new_sheet (ls_selected ls) (ls_fbar_text ls)
              new_eb new_pe (before :: ls_undo ls) nil (ls_formats ls)
-             (ls_other_sheets ls) (ls_active ls)
+             (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
     | None =>
       let new_eb := put_edit (ls_edit_buf ls) r txt in
       let new_pe := add_ref (ls_parse_errs ls) r in
       mkLoop before (ls_selected ls) (ls_fbar_text ls)
              new_eb new_pe (ls_undo ls) (ls_redo ls) (ls_formats ls)
-             (ls_other_sheets ls) (ls_active ls)
+             (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
     end
   else
     match parse_int_literal txt with
@@ -607,13 +618,13 @@ Definition commit_to (ls : loop_state) (r : CellRef) (txt : PrimString.string)
       let new_pe := remove_ref (ls_parse_errs ls) r in
       mkLoop new_sheet (ls_selected ls) (ls_fbar_text ls)
              new_eb new_pe (before :: ls_undo ls) nil (ls_formats ls)
-             (ls_other_sheets ls) (ls_active ls)
+             (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
     | None =>
       let new_eb := put_edit (ls_edit_buf ls) r txt in
       let new_pe := add_ref (ls_parse_errs ls) r in
       mkLoop before (ls_selected ls) (ls_fbar_text ls)
              new_eb new_pe (ls_undo ls) (ls_redo ls) (ls_formats ls)
-             (ls_other_sheets ls) (ls_active ls)
+             (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
     end.
 
 Definition do_commit (ls : loop_state) : loop_state :=
@@ -629,7 +640,7 @@ Definition do_undo (ls : loop_state) : loop_state :=
     mkLoop prev (ls_selected ls) (ls_fbar_text ls)
            (ls_edit_buf ls) (ls_parse_errs ls)
            rest (ls_sheet ls :: ls_redo ls) (ls_formats ls)
-           (ls_other_sheets ls) (ls_active ls)
+           (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
   end.
 
 Definition do_redo (ls : loop_state) : loop_state :=
@@ -639,13 +650,13 @@ Definition do_redo (ls : loop_state) : loop_state :=
     mkLoop next (ls_selected ls) (ls_fbar_text ls)
            (ls_edit_buf ls) (ls_parse_errs ls)
            (ls_sheet ls :: ls_undo ls) rest (ls_formats ls)
-           (ls_other_sheets ls) (ls_active ls)
+           (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
   end.
 
 Definition do_clear (ls : loop_state) : loop_state :=
   mkLoop new_sheet None "" nil nil
          (ls_sheet ls :: ls_undo ls) nil (ls_formats ls)
-         (ls_other_sheets ls) (ls_active ls).
+         (ls_other_sheets ls) (ls_active ls) (ls_charts ls).
 
 (* Look up a sheet in the assoc workbook, falling back to a fresh
    empty sheet.  Wrapped in its own Definition so Crane extracts it
@@ -674,7 +685,7 @@ Definition switch_to_sheet (ls : loop_state) (new_idx : int) : loop_state :=
     let new_sh := lookup_sheet_or_new stored new_idx in
     let new_other := assoc_int_remove stored new_idx in
     mkLoop new_sh None "" nil nil nil nil (ls_formats ls)
-           new_other new_idx.
+           new_other new_idx (ls_charts ls).
 
 (* Conditional apply.  Used in handler chains to avoid extracting a
    declare-then-assign pattern that would require a default
@@ -835,7 +846,7 @@ Definition do_load (ls : loop_state) : itree imguiE loop_state :=
     let cleared := mkLoop new_sheet None "" nil nil
                           (ls_sheet ls :: ls_undo ls) nil
                           (ls_formats ls)
-                          (ls_other_sheets ls) (ls_active ls) in
+                          (ls_other_sheets ls) (ls_active ls) (ls_charts ls) in
     let len := PrimString.length content in
     Ret (apply_load_lines cleared content len 0
                           (S (S (nat_of_int len))))
@@ -930,6 +941,84 @@ Definition num_rows_nat : nat := 200.
 Definition render_tab_bar (ls : loop_state) : itree imguiE loop_state :=
   new_idx <- imgui_tab_bar_select "sheets" NUM_SHEETS (ls_active ls) ;;
   Ret (switch_to_sheet ls new_idx).
+
+(* Pull a Z value out of the cell at [r], evaluating a formula at
+   default fuel.  Non-numeric cells are skipped (None). *)
+Definition cell_value_z (s : Sheet) (r : CellRef) : option Z :=
+  match get_cell s r with
+  | CLit n => Some n
+  | CForm e =>
+    match eval_expr DEFAULT_FUEL (cons r nil) s e with
+    | EVal n => Some n
+    | _ => None
+    end
+  | _ => None
+  end.
+
+(* Walk one row of a chart range, appending integer values onto [acc]
+   in column-ascending order. *)
+Fixpoint chart_row_values
+    (s : Sheet) (row : nat) (col : nat) (count : nat) (acc : list Z) : list Z :=
+  match count with
+  | O => acc
+  | S count' =>
+    let r := ref_at col row in
+    let acc' :=
+      match cell_value_z s r with
+      | Some n => acc ++ [n]
+      | None => acc
+      end in
+    chart_row_values s row (S col) count' acc'
+  end.
+
+Fixpoint chart_range_values
+    (s : Sheet) (row : nat) (count : nat)
+    (col_start col_count : nat) (acc : list Z) : list Z :=
+  match count with
+  | O => acc
+  | S count' =>
+    let acc' := chart_row_values s row col_start col_count acc in
+    chart_range_values s (S row) count' col_start col_count acc'
+  end.
+
+Definition chart_values (s : Sheet) (c : Chart) : list Z :=
+  let cs := nat_of_int (cell_col_of (chart_tl c)) in
+  let ce := nat_of_int (cell_col_of (chart_br c)) in
+  let rs := nat_of_int (cell_row_of (chart_tl c)) in
+  let re := nat_of_int (cell_row_of (chart_br c)) in
+  if andb (Nat.leb cs ce) (Nat.leb rs re)
+  then chart_range_values s rs (S (re - rs)) cs (S (ce - cs)) []
+  else [].
+
+Definition chart_kind_to_z (k : ChartKind) : Z :=
+  match k with
+  | ChartLine    => 0%Z
+  | ChartBar     => 1%Z
+  | ChartPie     => 2%Z
+  | ChartScatter => 3%Z
+  end.
+
+Definition chart_default_title (k : ChartKind) : PrimString.string :=
+  match k with
+  | ChartLine    => "Line"
+  | ChartBar     => "Bar"
+  | ChartPie     => "Pie"
+  | ChartScatter => "Scatter"
+  end.
+
+Fixpoint render_charts_aux
+    (s : Sheet) (cs : list Chart) : itree imguiE unit :=
+  match cs with
+  | nil => Ret tt
+  | c :: rest =>
+    let vs := chart_values s c in
+    imgui_chart_render (chart_kind_to_z (chart_kind c))
+                       vs (chart_default_title (chart_kind c)) ;;
+    render_charts_aux s rest
+  end.
+
+Definition render_charts (ls : loop_state) : itree imguiE unit :=
+  render_charts_aux (ls_sheet ls) (ls_charts ls).
 
 Definition render_grid (ls : loop_state) : itree imguiE loop_state :=
   ok <- imgui_begin_table "grid" (int_of_nat (S num_cols_nat)) ;;
@@ -1062,6 +1151,8 @@ Definition process_frame (ls : loop_state) : itree imguiE (bool * loop_state) :=
     imgui_separator ;;
     ls3 <- render_tab_bar ls2 ;;
     ls4 <- render_grid ls3 ;;
+    imgui_separator ;;
+    render_charts ls4 ;;
     imgui_end_window ;;
     ls5 <- handle_shortcuts ls4 ;;
     imgui_render_frame ;;
