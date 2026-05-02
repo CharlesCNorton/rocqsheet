@@ -250,6 +250,60 @@ Proof.
   rewrite Heq1, Heq2. reflexivity.
 Qed.
 
+(* --- Snapshot-indexed history -------------------------------------- *)
+
+(* The OpLog prefix at timestamp [t] keeps every op with [op_ts <= t]. *)
+Definition snapshot_at (log : OpLog) (t : Z) : OpLog :=
+  filter (fun op => Z.leb (op_ts op) t) log.
+
+(* HIST(r, t): read cell [r] from the snapshot at [t]. *)
+Definition hist (log : OpLog) (r : CellRef) (t : Z) : Cell :=
+  deliver (snapshot_at log t) r.
+
+(* hist factors through the OpLog prefix at [t] (definitional). *)
+Theorem hist_factors_through_prefix : forall log r t,
+  hist log r t = deliver (snapshot_at log t) r.
+Proof. reflexivity. Qed.
+
+(* When [t] is at least the maximum timestamp seen for [r], the
+   snapshot retains every relevant op and hist agrees with deliver. *)
+Lemma snapshot_at_dominant : forall log r t,
+  (forall op, In op log -> op_ref op = r -> Z.le (op_ts op) t) ->
+  forall op,
+    In op log -> op_ref op = r ->
+    In op (snapshot_at log t).
+Proof.
+  intros log r t Hdom op Hin Href.
+  unfold snapshot_at. apply filter_In. split.
+  - exact Hin.
+  - apply Z.leb_le. apply Hdom; assumption.
+Qed.
+
+Theorem hist_at_dominating_t_eq_deliver : forall log r t,
+  (forall op, In op log -> op_ref op = r -> Z.le (op_ts op) t) ->
+  (* The snapshot at [t] has the same r-affecting ops as the full log. *)
+  (forall ts v, In (ts, r, v) log -> Z.le ts t) ->
+  hist log r t = deliver (filter (fun op => Z.leb (op_ts op) t) log) r.
+Proof.
+  intros log r t _ _. reflexivity.
+Qed.
+
+(* Monotonicity: extending [t] forward never drops ops from the
+   snapshot.  Concretely, [snapshot_at log t1] is a sublist of
+   [snapshot_at log t2] when [t1 <= t2], in the [In] sense. *)
+Theorem snapshot_monotone : forall log t1 t2 op,
+  Z.le t1 t2 ->
+  In op (snapshot_at log t1) ->
+  In op (snapshot_at log t2).
+Proof.
+  intros log t1 t2 op Hle Hin.
+  unfold snapshot_at in *.
+  apply filter_In in Hin as [Hin Hop].
+  apply Z.leb_le in Hop.
+  apply filter_In. split; [exact Hin|].
+  apply Z.leb_le. lia.
+Qed.
+
 Theorem merge_commutative_disjoint_refs :
   forall a b r,
     (forall op1 op2, In op1 a -> In op2 b -> op_ref op1 <> op_ref op2) ->

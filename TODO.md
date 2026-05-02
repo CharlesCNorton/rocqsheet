@@ -65,35 +65,30 @@
     *Theorems:* `put_call_parity`, `vega_monotone_in_vol`,
     `gamma_convex_in_strike`, `IRR_NPV_zero`.
 
-13. **Snapshot-indexed history.** `HIST(r, t)` reads cell `r` at
-    timestamp `t` from the audit log.
-    *Theorems:* `HIST(r, current) = eval r`; `HIST(r, t)`
-    factors through the `OpLog` prefix at `t`.
-
-14. **Inline contract checking in the formula bar.** Each column
+13. **Inline contract checking in the formula bar.** Each column
     declares an invariant; on commit the kernel attempts to
     discharge the formula's obligation against it; failure is
     rendered as a red marker.
     *Theorems:* the discharge procedure is sound (no formula passes
     that invalidates the column invariant on any input).
 
-15. **Sheet-level dependent types.** Column `B` declared as
+14. **Sheet-level dependent types.** Column `B` declared as
     `Vector R (length A)` indexes `B` by `A`'s row count.
     *Theorems:* well-typedness preserved by every `pure_edit_step`.
 
-16. **Sandboxed scripting language.** Extend `Macros.v` to a typed
+15. **Sandboxed scripting language.** Extend `Macros.v` to a typed
     expression language whose effects appear only as documented
     event constructors.
     *Theorems:* `macro_pure` (no effect constructor reached) implies
     sheet-only effect; `sandbox_total` (every macro terminates).
 
-17. **Property-based regressions on save.** Per-column `Prop`s
+16. **Property-based regressions on save.** Per-column `Prop`s
     sampled across the sheet via QuickChick; counter-examples
     surface as marked cells.
     *Theorems:* every supported `Prop` is decidable on closed cell
     values.
 
-18. **Static error-reachability analysis.** `analyze_workbook : Sheet
+17. **Static error-reachability analysis.** `analyze_workbook : Sheet
     -> list (CellRef * ErrorClass)` over `EErr` paths,
     divide-by-zero witnesses, and `NaN` producers.
     *Theorems:* `analysis_complete` (any cell that evaluates to
