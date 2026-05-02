@@ -93,13 +93,7 @@
     *Theorems:* every supported `Prop` is decidable on closed cell
     values.
 
-18. **Per-cell provenance hashes.** `value_hash r = H(formula,
-    inputs_hashes)`.
-    *Theorems:* identical workbooks under identical inputs produce
-    identical hashes; collision-resistance reduction to the
-    underlying digest.
-
-19. **Static error-reachability analysis.** `analyze_workbook : Sheet
+18. **Static error-reachability analysis.** `analyze_workbook : Sheet
     -> list (CellRef * ErrorClass)` over `EErr` paths,
     divide-by-zero witnesses, and `NaN` producers.
     *Theorems:* `analysis_complete` (any cell that evaluates to
