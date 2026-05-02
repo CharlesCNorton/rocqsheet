@@ -85,3 +85,30 @@ Theorem eval_named_after_define_smoke :
   let s := set_cell new_sheet (mkRef 0 0) (CLit 99%Z) in
   eval_named nm DEFAULT_FUEL s "x" = EVal 99%Z.
 Proof. vm_compute. reflexivity. Qed.
+
+(* --- Sheet-scoped name lookup (cross-sheet refs) --------------- *)
+
+Definition ScopedNameMap : Type :=
+  list (PrimString.string * (PrimInt63.int * CellRef)).
+
+Fixpoint lookup_scoped (snm : ScopedNameMap) (n : PrimString.string)
+    : option (PrimInt63.int * CellRef) :=
+  match snm with
+  | nil => None
+  | (n', sr) :: rest =>
+    if pstring_eqb n n' then Some sr else lookup_scoped rest n
+  end.
+
+Definition define_scoped (snm : ScopedNameMap) (n : PrimString.string)
+                         (sheet_id : PrimInt63.int) (r : CellRef)
+    : ScopedNameMap :=
+  (n, (sheet_id, r)) :: snm.
+
+Theorem lookup_scoped_smoke :
+  let snm := define_scoped nil "alpha" 1%uint63 (mkRef 3 4) in
+  lookup_scoped snm "alpha" = Some (1%uint63, mkRef 3 4).
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem lookup_scoped_unbound_smoke :
+  lookup_scoped nil "missing" = None.
+Proof. reflexivity. Qed.
