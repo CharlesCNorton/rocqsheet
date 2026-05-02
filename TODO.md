@@ -99,13 +99,7 @@
     identical hashes; collision-resistance reduction to the
     underlying digest.
 
-19. **Trade-ticket schema with round-trip.** Record `TradeTicket`
-    with field-level invariants (`notional > 0`, `maturity >
-    value_date`, `currency` in a finite set).
-    *Theorems:* `book_to_sheet_to_book = id`; schema invariants
-    preserved by every `pure_edit_step`.
-
-20. **Static error-reachability analysis.** `analyze_workbook : Sheet
+19. **Static error-reachability analysis.** `analyze_workbook : Sheet
     -> list (CellRef * ErrorClass)` over `EErr` paths,
     divide-by-zero witnesses, and `NaN` producers.
     *Theorems:* `analysis_complete` (any cell that evaluates to
