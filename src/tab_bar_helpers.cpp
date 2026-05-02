@@ -7,12 +7,12 @@
 
 #include "imgui_helpers.h"
 #include "rocqsheet.h"
+#include "list_helpers.h"
 
 #include <imgui.h>
 
 #include <cstdio>
 #include <string>
-#include <variant>
 #include <vector>
 
 namespace imgui_helpers {
@@ -21,14 +21,7 @@ int64_t tab_bar_select(const std::string& id,
                        const List<std::string>& names,
                        int64_t /*current*/) {
   std::vector<std::string> name_vec;
-  const List<std::string>* p = &names;
-  while (p &&
-         std::holds_alternative<typename List<std::string>::Cons>(p->v())) {
-    const auto& cell =
-        std::get<typename List<std::string>::Cons>(p->v());
-    name_vec.push_back(cell.d_a0);
-    p = cell.d_a1.get();
-  }
+  list_helpers::list_to_vec(names, name_vec);
 
   int64_t result = 0;
   if (ImGui::BeginTabBar(id.c_str(), ImGuiTabBarFlags_Reorderable)) {

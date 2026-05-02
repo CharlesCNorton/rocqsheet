@@ -2,6 +2,7 @@
 
 #include "chart_helpers.h"
 #include "rocqsheet.h"
+#include "list_helpers.h"
 
 #include <imgui.h>
 
@@ -11,23 +12,10 @@
 
 namespace chart_helpers {
 
-namespace {
-
-void list_to_vec(const List<int64_t>& xs, std::vector<int64_t>& out) {
-  const List<int64_t>* p = &xs;
-  while (p && std::holds_alternative<typename List<int64_t>::Cons>(p->v())) {
-    const auto& cell = std::get<typename List<int64_t>::Cons>(p->v());
-    out.push_back(cell.d_a0);
-    p = cell.d_a1.get();
-  }
-}
-
-}  // namespace
-
 void chart_render(int64_t kind, const List<int64_t>& values,
                   const std::string& title) {
   std::vector<int64_t> vs;
-  list_to_vec(values, vs);
+  list_helpers::list_to_vec(values, vs);
 
   ImVec2 pos = ImGui::GetCursorScreenPos();
   const ImVec2 size{320.0f, 160.0f};

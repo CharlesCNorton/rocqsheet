@@ -20,6 +20,13 @@ if(NOT EXISTS "${GEN_DIR}/rocqsheet.cpp")
     "Run `make extract` from the repo root first.")
 endif()
 
+# Suppress -Wunused-variable on the generated translation unit only;
+# extracted Z-to-nat conversions and discarded effect results bind
+# locals that the surrounding code does not consume.  Hand-written
+# files keep the warning enabled.
+set_source_files_properties(${GEN_DIR}/rocqsheet.cpp PROPERTIES
+  COMPILE_OPTIONS "-Wno-unused-variable;-Wno-unused-but-set-variable")
+
 # --- Dependencies -----------------------------------------------------------
 
 find_package(OpenGL REQUIRED)
@@ -51,6 +58,7 @@ target_link_libraries(imgui PUBLIC PkgConfig::GLFW OpenGL::GL)
 
 add_executable(rocqsheet
   main.cpp
+  eval_iter.cpp
   chart_helpers.cpp
   pdf_helpers.cpp
   tab_bar_helpers.cpp
@@ -71,6 +79,9 @@ enable_testing()
 # generated rocqsheet.h pulls in imgui_helpers.h transitively.
 add_executable(formula_test
   formula_test.cpp
+  chart_helpers.cpp
+  pdf_helpers.cpp
+  tab_bar_helpers.cpp
   ${GEN_DIR}/rocqsheet.cpp)
 target_include_directories(formula_test PRIVATE
   ${GEN_DIR}

@@ -64,6 +64,8 @@ run: build
 test: build
 	./$(CMAKE_DIR)/formula_test
 	./$(CMAKE_DIR)/kernel_test
+	./$(CMAKE_DIR)/torture_test
+	./tests/headless_smoke.sh
 
 clean:
 	dune clean

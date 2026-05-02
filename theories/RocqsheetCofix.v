@@ -12,37 +12,37 @@ Open Scope int63.
 Definition NoE : Type -> Type := fun _ => Empty_set.
 
 Inductive Cont : Type :=
-  | KAddR    : list CellRef -> Expr -> Cont
+  | KAddR    : VisitedSet -> Expr -> Cont
   | KAddL    : Z -> Cont
-  | KSubR    : list CellRef -> Expr -> Cont
+  | KSubR    : VisitedSet -> Expr -> Cont
   | KSubL    : Z -> Cont
-  | KMulR    : list CellRef -> Expr -> Cont
+  | KMulR    : VisitedSet -> Expr -> Cont
   | KMulL    : Z -> Cont
-  | KDivR    : list CellRef -> Expr -> Cont
+  | KDivR    : VisitedSet -> Expr -> Cont
   | KDivL    : Z -> Cont
-  | KEqR     : list CellRef -> Expr -> Cont
+  | KEqR     : VisitedSet -> Expr -> Cont
   | KEqL     : Z -> Cont
-  | KLtR     : list CellRef -> Expr -> Cont
+  | KLtR     : VisitedSet -> Expr -> Cont
   | KLtL     : Z -> Cont
-  | KGtR     : list CellRef -> Expr -> Cont
+  | KGtR     : VisitedSet -> Expr -> Cont
   | KGtL     : Z -> Cont
-  | KIf      : list CellRef -> Expr -> Expr -> Cont
-  | KModR    : list CellRef -> Expr -> Cont
+  | KIf      : VisitedSet -> Expr -> Expr -> Cont
+  | KModR    : VisitedSet -> Expr -> Cont
   | KModL    : Z -> Cont
-  | KPowR    : list CellRef -> Expr -> Cont
+  | KPowR    : VisitedSet -> Expr -> Cont
   | KPowL    : Z -> Cont
   | KNot     : Cont
-  | KAndR    : list CellRef -> Expr -> Cont
+  | KAndR    : VisitedSet -> Expr -> Cont
   | KAndL    : Z -> Cont
-  | KOrR     : list CellRef -> Expr -> Cont
+  | KOrR     : VisitedSet -> Expr -> Cont
   | KOrL     : Z -> Cont
-  | KSumNext : list CellRef -> int -> int -> int -> int -> int -> Z -> Cont
-  | KIfErr   : list CellRef -> Expr -> Cont.
+  | KSumNext : VisitedSet -> int -> int -> int -> int -> int -> Z -> Cont
+  | KIfErr   : VisitedSet -> Expr -> Cont.
 
 Inductive PC : Type :=
-  | PCEval    : list CellRef -> Expr -> PC
+  | PCEval    : VisitedSet -> Expr -> PC
   | PCApply   : option Z -> PC
-  | PCSumStep : list CellRef -> int -> int -> int -> int -> int -> Z -> PC.
+  | PCSumStep : VisitedSet -> int -> int -> int -> int -> int -> Z -> PC.
 
 Record State : Type := mkSt
   { st_sheet : Sheet
@@ -54,7 +54,7 @@ Definition trans (st : State) : State + option Z :=
   | PCEval visited (EInt n) =>
       inl (mkSt (st_sheet st) (PCApply (Some n)) (st_stack st))
   | PCEval visited (ERef r) =>
-      if mem_cellref r visited then
+      if is_visited visited r then
         inl (mkSt (st_sheet st) (PCApply None) (st_stack st))
       else
         match get_cell (st_sheet st) r with
@@ -64,7 +64,8 @@ Definition trans (st : State) : State + option Z :=
         | CStr _   => inr None
         | CBool _  => inr None
         | CForm e' => inl (mkSt (st_sheet st)
-                                (PCEval (r :: visited) e') (st_stack st))
+                                (PCEval (mark_visited visited r) e')
+                                (st_stack st))
         end
   | PCEval visited (EAdd a b) =>
       inl (mkSt (st_sheet st) (PCEval visited a)
@@ -251,7 +252,7 @@ CoFixpoint step (st : State) : itree NoE (option Z) :=
   | inr v   => Ret v
   end.
 
-Definition eval_co (visited : list CellRef) (s : Sheet) (e : Expr)
+Definition eval_co (visited : VisitedSet) (s : Sheet) (e : Expr)
   : itree NoE (option Z) :=
   step (mkSt s (PCEval visited e) []).
 
@@ -262,7 +263,7 @@ Definition eval_cell_co (s : Sheet) (r : CellRef) : itree NoE (option Z) :=
   | CFloat _ => Ret None  (* cofix evaluator covers Z only *)
   | CStr _   => Ret None
   | CBool _  => Ret None
-  | CForm e  => eval_co (r :: nil) s e
+  | CForm e  => eval_co (mark_visited empty_visited r) s e
   end.
 
 Fixpoint run_n (n : nat) (t : itree NoE (option Z)) : option (option Z) :=

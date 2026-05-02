@@ -2,6 +2,7 @@
 
 #include "pdf_helpers.h"
 #include "rocqsheet.h"
+#include "list_helpers.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -18,16 +19,6 @@ namespace {
 constexpr double PAGE_W = 612.0;
 constexpr double PAGE_H = 792.0;
 constexpr double FONT_SIZE = 9.0;
-
-template <typename T>
-void list_to_vec(const List<T>& xs, std::vector<T>& out) {
-  const List<T>* p = &xs;
-  while (p && std::holds_alternative<typename List<T>::Cons>(p->v())) {
-    const auto& cell = std::get<typename List<T>::Cons>(p->v());
-    out.push_back(cell.d_a0);
-    p = cell.d_a1.get();
-  }
-}
 
 std::string pdf_escape(const std::string& s) {
   std::string out;
@@ -46,7 +37,7 @@ std::string pdf_escape(const std::string& s) {
 
 std::string build_content_stream(const PdfPageEntries& page) {
   std::vector<PdfTextEntry> entries;
-  list_to_vec(page, entries);
+  list_helpers::list_to_vec(page, entries);
   std::ostringstream s;
   s << "BT\n/F1 " << FONT_SIZE << " Tf\n";
   double last_x = 0.0;
@@ -74,7 +65,7 @@ std::string build_content_stream(const PdfPageEntries& page) {
 bool emit_pdf(const List<PdfPageEntries>& pages_list,
               const std::string& path) {
   std::vector<PdfPageEntries> pages;
-  list_to_vec(pages_list, pages);
+  list_helpers::list_to_vec(pages_list, pages);
   if (pages.empty()) return false;
 
   std::ofstream f(path, std::ios::binary);

@@ -62,8 +62,16 @@ jobs:
             startGroup "Configure and build native executable + tests"
               opam exec -- make build
             endGroup
-            startGroup "Run parser and kernel runtime tests"
+            startGroup "Run parser, kernel, torture, and headless smoke"
               opam exec -- make test
+            endGroup
+            startGroup "Headless --eval smoke against fixture"
+              opam exec -- ./_build/cmake/rocqsheet --headless \
+                --load tests/fixtures/headless_smoke.txt --eval D1 \
+                | grep -q '^100$'
+              opam exec -- ./_build/cmake/rocqsheet --headless \
+                --load tests/fixtures/headless_smoke.txt --print-csv \
+                | grep -q '100,100,100,100'
             endGroup
           uninstall: |
             startGroup "Skip opam uninstall"
