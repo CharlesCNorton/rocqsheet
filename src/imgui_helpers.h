@@ -247,6 +247,32 @@ inline std::pair<std::string, bool> input_text(const std::string& id,
   return {std::move(out), enter};
 }
 
+// ----- Tab bar ----------------------------------------------------------
+// Renders a horizontal tab bar with [num_tabs] labelled "Sheet 1"..
+// "Sheet N".  Returns the index of the active tab this frame: ImGui
+// tracks the current selection internally, and the per-tab
+// BeginTabItem returns true only for the displayed tab, so we use
+// that branch to capture the active index.
+
+inline int64_t tab_bar_select(const std::string& id, int64_t num_tabs,
+                              int64_t /*current*/) {
+  int64_t result = 0;
+  if (ImGui::BeginTabBar(id.c_str(), ImGuiTabBarFlags_Reorderable)) {
+    for (int64_t i = 0; i < num_tabs; ++i) {
+      char label[24];
+      std::snprintf(label, sizeof(label), "Sheet %lld###t%lld",
+                    static_cast<long long>(i + 1),
+                    static_cast<long long>(i));
+      if (ImGui::BeginTabItem(label)) {
+        result = i;
+        ImGui::EndTabItem();
+      }
+    }
+    ImGui::EndTabBar();
+  }
+  return result;
+}
+
 // ----- Menu bar ---------------------------------------------------------
 
 inline bool begin_menu_bar() { return ImGui::BeginMenuBar(); }

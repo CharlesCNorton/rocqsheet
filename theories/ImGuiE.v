@@ -64,7 +64,12 @@ Inductive imguiE : Type -> Type :=
   | ECtrlKeyPressed   : PrimString.string -> imguiE bool
   | EKeyPressed       : PrimString.string -> imguiE bool
   | ESameLine         : imguiE unit
-  | EFbarRefLabel     : PrimString.string -> imguiE unit.
+  | EFbarRefLabel     : PrimString.string -> imguiE unit
+  (* Renders a tab bar with [num] tabs labelled "Sheet 1".."Sheet N".
+     Returns the active tab index (the one whose body is currently
+     displayed by ImGui).  [current] is supplied for future programmatic
+     switching but is not yet honoured by the helper. *)
+  | ETabBarSelect     : PrimString.string -> int -> int -> imguiE int.
 
 (* Smart constructors. *)
 Definition glfw_should_close : itree imguiE bool := trigger EShouldClose.
@@ -138,6 +143,8 @@ Definition key_pressed (k : PrimString.string) : itree imguiE bool :=
 Definition imgui_same_line : itree imguiE unit := trigger ESameLine.
 Definition fbar_ref_label (s : PrimString.string) : itree imguiE unit :=
   trigger (EFbarRefLabel s).
+Definition imgui_tab_bar_select (id : PrimString.string) (num current : int)
+  : itree imguiE int := trigger (ETabBarSelect id num current).
 
 (* Erased-itree extraction: each constructor inlines to its C++
    helper at the call site; the inductive itself maps to the empty
@@ -189,7 +196,8 @@ Crane Extract Inductive imguiE => ""
     "imgui_helpers::ctrl_key_pressed(%a0)"
     "imgui_helpers::key_pressed(%a0)"
     "imgui_helpers::same_line()"
-    "imgui_helpers::fbar_ref_label(%a0)" ]
+    "imgui_helpers::fbar_ref_label(%a0)"
+    "imgui_helpers::tab_bar_select(%a0, %a1, %a2)" ]
   From "imgui_helpers.h".
 
 Crane Extract Inlined Constant glfw_should_close =>
@@ -271,3 +279,5 @@ Crane Extract Inlined Constant imgui_same_line =>
   "imgui_helpers::same_line()" From "imgui_helpers.h".
 Crane Extract Inlined Constant fbar_ref_label =>
   "imgui_helpers::fbar_ref_label(%a0)" From "imgui_helpers.h".
+Crane Extract Inlined Constant imgui_tab_bar_select =>
+  "imgui_helpers::tab_bar_select(%a0, %a1, %a2)" From "imgui_helpers.h".

@@ -350,15 +350,37 @@ Definition show_cell (c : Cell) : PrimString.string :=
 
 (* ----- Loop state --------------------------------------------- *)
 
+(* Assoc-list workbook keyed by int63.  Avoids the nested
+   [PrimArray.array (PrimArray.array Cell)] extraction issue (the
+   inner private default constructor is inaccessible from the outer
+   instantiation). *)
+Fixpoint assoc_int_lookup (xs : list (int * Sheet)) (k : int) : option Sheet :=
+  match xs with
+  | nil => None
+  | (k', v) :: rest =>
+    if PrimInt63.eqb k k' then Some v else assoc_int_lookup rest k
+  end.
+
+Fixpoint assoc_int_remove (xs : list (int * Sheet)) (k : int)
+    : list (int * Sheet) :=
+  match xs with
+  | nil => nil
+  | (k', v) :: rest =>
+    if PrimInt63.eqb k k' then assoc_int_remove rest k
+    else (k', v) :: assoc_int_remove rest k
+  end.
+
 Record loop_state : Type := mkLoop {
-  ls_sheet      : Sheet;
-  ls_selected   : option CellRef;
-  ls_fbar_text  : PrimString.string;
-  ls_edit_buf   : list (CellRef * PrimString.string);
-  ls_parse_errs : list CellRef;
-  ls_undo       : list Sheet;
-  ls_redo       : list Sheet;
-  ls_formats    : FormatMap
+  ls_sheet        : Sheet;
+  ls_selected     : option CellRef;
+  ls_fbar_text    : PrimString.string;
+  ls_edit_buf     : list (CellRef * PrimString.string);
+  ls_parse_errs   : list CellRef;
+  ls_undo         : list Sheet;
+  ls_redo         : list Sheet;
+  ls_formats      : FormatMap;
+  ls_other_sheets : list (int * Sheet);
+  ls_active       : int
 }.
 
 (* Demo formats: the row of computed answers in [demo_sheet] gets
@@ -376,8 +398,28 @@ Definition demo_formats : FormatMap :=
   ; (ref_at 2 4, mkFormat false 8388736%Z (* 0x800080 purple *)
                           false AlignRight) ].
 
+(* A small "Sales" demo seeded into sheet slot 1 so the tab UI has
+   something to switch to. *)
+Definition sales_sheet : Sheet :=
+  let s := new_sheet in
+  let s := put_lit s 0 0 100%Z in
+  let s := put_lit s 1 0 7%Z in
+  let s := put_form s 2 0
+             (EMul (ERef (ref_at 0 0)) (ERef (ref_at 1 0))) in
+  let s := put_lit s 0 1 250%Z in
+  let s := put_lit s 1 1 12%Z in
+  let s := put_form s 2 1
+             (EMul (ERef (ref_at 0 1)) (ERef (ref_at 1 1))) in s.
+
+(* Active sheet is sheet 0 (demo_sheet stored in [ls_sheet]); slot 1
+   holds [sales_sheet] in the assoc list.  All other slots default to
+   [new_sheet] when first visited. *)
+Definition initial_other_sheets : list (int * Sheet) :=
+  [(1%uint63, sales_sheet)].
+
 Definition initial_loop_state : loop_state :=
-  mkLoop demo_sheet None "" nil nil nil nil demo_formats.
+  mkLoop demo_sheet None "" nil nil nil nil demo_formats
+         initial_other_sheets 0%uint63.
 
 (* ----- Edit-buffer / parse-error helpers -------------------- *)
 
@@ -459,18 +501,21 @@ Definition fbar_for_cell
 Definition push_undo (ls : loop_state) (before : Sheet) : loop_state :=
   mkLoop (ls_sheet ls) (ls_selected ls) (ls_fbar_text ls)
          (ls_edit_buf ls) (ls_parse_errs ls)
-         (before :: ls_undo ls) nil (ls_formats ls).
+         (before :: ls_undo ls) nil (ls_formats ls)
+         (ls_other_sheets ls) (ls_active ls).
 
 Definition select_cell (ls : loop_state) (r : CellRef) : loop_state :=
   mkLoop (ls_sheet ls) (Some r)
          (fbar_for_cell (ls_edit_buf ls) (ls_sheet ls) r)
          (ls_edit_buf ls) (ls_parse_errs ls)
-         (ls_undo ls) (ls_redo ls) (ls_formats ls).
+         (ls_undo ls) (ls_redo ls) (ls_formats ls)
+         (ls_other_sheets ls) (ls_active ls).
 
 Definition update_fbar (ls : loop_state) (s : PrimString.string) : loop_state :=
   mkLoop (ls_sheet ls) (ls_selected ls) s
          (ls_edit_buf ls) (ls_parse_errs ls)
-         (ls_undo ls) (ls_redo ls) (ls_formats ls).
+         (ls_undo ls) (ls_redo ls) (ls_formats ls)
+         (ls_other_sheets ls) (ls_active ls).
 
 (* Inspect leading character.  Empty string returns 0. *)
 Definition first_char_int (s : PrimString.string) : int :=
@@ -536,6 +581,7 @@ Definition commit_to (ls : loop_state) (r : CellRef) (txt : PrimString.string)
     let new_pe := remove_ref (ls_parse_errs ls) r in
     mkLoop new_sheet (ls_selected ls) (ls_fbar_text ls)
            new_eb new_pe (before :: ls_undo ls) nil (ls_formats ls)
+           (ls_other_sheets ls) (ls_active ls)
   else if starts_with_eq txt then
     let body := strip_leading_eq txt in
     match parse_formula body with
@@ -545,11 +591,13 @@ Definition commit_to (ls : loop_state) (r : CellRef) (txt : PrimString.string)
       let new_pe := remove_ref (ls_parse_errs ls) r in
       mkLoop new_sheet (ls_selected ls) (ls_fbar_text ls)
              new_eb new_pe (before :: ls_undo ls) nil (ls_formats ls)
+             (ls_other_sheets ls) (ls_active ls)
     | None =>
       let new_eb := put_edit (ls_edit_buf ls) r txt in
       let new_pe := add_ref (ls_parse_errs ls) r in
       mkLoop before (ls_selected ls) (ls_fbar_text ls)
              new_eb new_pe (ls_undo ls) (ls_redo ls) (ls_formats ls)
+             (ls_other_sheets ls) (ls_active ls)
     end
   else
     match parse_int_literal txt with
@@ -559,11 +607,13 @@ Definition commit_to (ls : loop_state) (r : CellRef) (txt : PrimString.string)
       let new_pe := remove_ref (ls_parse_errs ls) r in
       mkLoop new_sheet (ls_selected ls) (ls_fbar_text ls)
              new_eb new_pe (before :: ls_undo ls) nil (ls_formats ls)
+             (ls_other_sheets ls) (ls_active ls)
     | None =>
       let new_eb := put_edit (ls_edit_buf ls) r txt in
       let new_pe := add_ref (ls_parse_errs ls) r in
       mkLoop before (ls_selected ls) (ls_fbar_text ls)
              new_eb new_pe (ls_undo ls) (ls_redo ls) (ls_formats ls)
+             (ls_other_sheets ls) (ls_active ls)
     end.
 
 Definition do_commit (ls : loop_state) : loop_state :=
@@ -579,6 +629,7 @@ Definition do_undo (ls : loop_state) : loop_state :=
     mkLoop prev (ls_selected ls) (ls_fbar_text ls)
            (ls_edit_buf ls) (ls_parse_errs ls)
            rest (ls_sheet ls :: ls_redo ls) (ls_formats ls)
+           (ls_other_sheets ls) (ls_active ls)
   end.
 
 Definition do_redo (ls : loop_state) : loop_state :=
@@ -588,11 +639,42 @@ Definition do_redo (ls : loop_state) : loop_state :=
     mkLoop next (ls_selected ls) (ls_fbar_text ls)
            (ls_edit_buf ls) (ls_parse_errs ls)
            (ls_sheet ls :: ls_undo ls) rest (ls_formats ls)
+           (ls_other_sheets ls) (ls_active ls)
   end.
 
 Definition do_clear (ls : loop_state) : loop_state :=
   mkLoop new_sheet None "" nil nil
-         (ls_sheet ls :: ls_undo ls) nil (ls_formats ls).
+         (ls_sheet ls :: ls_undo ls) nil (ls_formats ls)
+         (ls_other_sheets ls) (ls_active ls).
+
+(* Look up a sheet in the assoc workbook, falling back to a fresh
+   empty sheet.  Wrapped in its own Definition so Crane extracts it
+   as a value-returning function and avoids declaring an
+   uninitialised [persistent_array<Cell>] (whose default constructor
+   is intentionally private). *)
+Definition lookup_sheet_or_new
+    (xs : list (int * Sheet)) (k : int) : Sheet :=
+  match assoc_int_lookup xs k with
+  | Some sh => sh
+  | None => new_sheet
+  end.
+
+(* Switching tabs: store the live [ls_sheet] under its current slot
+   in the assoc-list workbook (overwriting any prior copy), then load
+   the slot we are entering (defaulting to [new_sheet] if the slot was
+   never visited).  Per-sheet selection / formula bar / edit buffer /
+   parse errors / undo / redo are reset; per-cell formats are kept
+   global. *)
+Definition switch_to_sheet (ls : loop_state) (new_idx : int) : loop_state :=
+  if PrimInt63.eqb new_idx (ls_active ls) then ls
+  else
+    let stored :=
+      (ls_active ls, ls_sheet ls)
+        :: assoc_int_remove (ls_other_sheets ls) (ls_active ls) in
+    let new_sh := lookup_sheet_or_new stored new_idx in
+    let new_other := assoc_int_remove stored new_idx in
+    mkLoop new_sh None "" nil nil nil nil (ls_formats ls)
+           new_other new_idx.
 
 (* Conditional apply.  Used in handler chains to avoid extracting a
    declare-then-assign pattern that would require a default
@@ -752,7 +834,8 @@ Definition do_load (ls : loop_state) : itree imguiE loop_state :=
   if ok then
     let cleared := mkLoop new_sheet None "" nil nil
                           (ls_sheet ls :: ls_undo ls) nil
-                          (ls_formats ls) in
+                          (ls_formats ls)
+                          (ls_other_sheets ls) (ls_active ls) in
     let len := PrimString.length content in
     Ret (apply_load_lines cleared content len 0
                           (S (S (nat_of_int len))))
@@ -843,6 +926,10 @@ Fixpoint setup_columns (c : nat) (count : nat) : itree imguiE unit :=
 
 Definition num_cols_nat : nat := 260.
 Definition num_rows_nat : nat := 200.
+
+Definition render_tab_bar (ls : loop_state) : itree imguiE loop_state :=
+  new_idx <- imgui_tab_bar_select "sheets" NUM_SHEETS (ls_active ls) ;;
+  Ret (switch_to_sheet ls new_idx).
 
 Definition render_grid (ls : loop_state) : itree imguiE loop_state :=
   ok <- imgui_begin_table "grid" (int_of_nat (S num_cols_nat)) ;;
@@ -973,11 +1060,12 @@ Definition process_frame (ls : loop_state) : itree imguiE (bool * loop_state) :=
     ls1 <- render_menu_bar ls ;;
     ls2 <- render_formula_bar ls1 ;;
     imgui_separator ;;
-    ls3 <- render_grid ls2 ;;
+    ls3 <- render_tab_bar ls2 ;;
+    ls4 <- render_grid ls3 ;;
     imgui_end_window ;;
-    ls4 <- handle_shortcuts ls3 ;;
+    ls5 <- handle_shortcuts ls4 ;;
     imgui_render_frame ;;
-    Ret (false, ls4).
+    Ret (false, ls5).
 
 (* ----- Top-level loop ----------------------------------- *)
 
