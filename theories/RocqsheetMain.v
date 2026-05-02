@@ -27,6 +27,10 @@ Axiom string_of_z : Z -> PrimString.string.
 Crane Extract Inlined Constant string_of_z =>
   "std::to_string(%a0)".
 
+Axiom string_of_float : PrimFloat.float -> PrimString.string.
+Crane Extract Inlined Constant string_of_float =>
+  "std::to_string(%a0)".
+
 (* Column-header label generation: A..Z then AA..IZ. *)
 Definition letters : list PrimString.string :=
   ["A"; "B"; "C"; "D"; "E"; "F"; "G"; "H"; "I"; "J"; "K"; "L"; "M";
@@ -266,7 +270,7 @@ Fixpoint show_expr (e : Expr) : PrimString.string :=
       (PrimString.cat (show_expr a)
         (PrimString.cat ","
           (PrimString.cat (show_expr fb) ")")))
-  | EFloat _ => "<float>"
+  | EFloat f => string_of_float f
   | EFAdd a b => PrimString.cat
                   (PrimString.cat
                     (PrimString.cat "(" (show_expr a))
@@ -328,7 +332,7 @@ Definition show_cell (c : Cell) : PrimString.string :=
   match c with
   | CEmpty   => ""
   | CLit n   => string_of_z n
-  | CFloat _ => "<float>"
+  | CFloat f => string_of_float f
   | CStr s   => s
   | CBool b  => if b then "TRUE" else "FALSE"
   | CForm e  => PrimString.cat "=" (show_expr e)
@@ -401,13 +405,13 @@ Definition cell_display (s : Sheet) (errs : list CellRef) (r : CellRef)
     match get_cell s r with
     | CEmpty   => ("", false)
     | CLit n   => (string_of_z n, false)
-    | CFloat _ => ("<float>", false)
+    | CFloat f => (string_of_float f, false)
     | CStr str => (str, false)
     | CBool b  => ((if b then "TRUE" else "FALSE"), false)
     | CForm e =>
       match eval_expr DEFAULT_FUEL (cons r nil) s e with
       | EVal v   => (string_of_z v, false)
-      | EFVal _  => ("<float>", false)
+      | EFVal f  => (string_of_float f, false)
       | EValS sv => (sv, false)
       | EValB b  => ((if b then "TRUE" else "FALSE"), false)
       | EErr     => (err_marker, true)

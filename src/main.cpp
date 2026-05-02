@@ -44,6 +44,7 @@ int main(int /*argc*/, char** /*argv*/) {
 
   int exit_code = rocqsheet_run();
 
+  imgui_helpers::g_clipper.reset();
   ImGui_ImplOpenGL3_Shutdown();
   ImGui_ImplGlfw_Shutdown();
   ImGui::DestroyContext();

@@ -10,6 +10,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <memory>
 #include <utility>
 
 #include <imgui.h>
@@ -21,7 +22,7 @@ namespace imgui_helpers {
 
 // Process-global handles set by src/main.cpp at startup.
 inline GLFWwindow* g_window = nullptr;
-inline ImGuiListClipper g_clipper{};
+inline std::unique_ptr<ImGuiListClipper> g_clipper;
 inline bool g_clipper_active = false;
 
 enum class cell_event { None, Selected, DoubleClicked };
@@ -119,25 +120,25 @@ inline void table_set_column_index(int64_t i) {
 // [clipper_begin] once, [clipper_step] in a loop, [clipper_end] once.
 
 inline void clipper_begin(int64_t total_rows) {
-  g_clipper = ImGuiListClipper{};
-  g_clipper.Begin(static_cast<int>(total_rows));
+  g_clipper = std::make_unique<ImGuiListClipper>();
+  g_clipper->Begin(static_cast<int>(total_rows));
   g_clipper_active = true;
 }
 inline bool clipper_step() {
   if (!g_clipper_active) return false;
-  bool more = g_clipper.Step();
+  bool more = g_clipper->Step();
   if (!more) g_clipper_active = false;
   return more;
 }
 inline int64_t clipper_get_start() {
-  return static_cast<int64_t>(g_clipper.DisplayStart);
+  return static_cast<int64_t>(g_clipper->DisplayStart);
 }
 inline int64_t clipper_get_end() {
-  return static_cast<int64_t>(g_clipper.DisplayEnd);
+  return static_cast<int64_t>(g_clipper->DisplayEnd);
 }
 inline void clipper_end() {
   if (g_clipper_active) {
-    g_clipper.End();
+    g_clipper->End(); g_clipper.reset();
     g_clipper_active = false;
   }
 }
