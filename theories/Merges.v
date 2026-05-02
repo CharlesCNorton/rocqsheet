@@ -8,22 +8,32 @@ Import Rocqsheet.
 
 Open Scope int63.
 
+(* Local accessors computed via [cell_index] so the extracted C++
+   does not emit a base-class-qualified projection (which Crane
+   produces for direct [ref_col r] / [ref_row r] outside the
+   [Rocqsheet] module). *)
+Definition col_of (r : CellRef) : int :=
+  PrimInt63.mod (cell_index r) NUM_COLS.
+
+Definition row_of (r : CellRef) : int :=
+  PrimInt63.div (cell_index r) NUM_COLS.
+
 (* A merged region is a (top-left, bottom-right) pair. *)
 Definition MergeRegion : Type := CellRef * CellRef.
 
-Definition Merges : Type := list MergeRegion.
+Definition MergeList : Type := list MergeRegion.
 
 (* True if [r] is inside the rectangle [tl, br]. *)
 Definition in_region (r : CellRef) (m : MergeRegion) : bool :=
   let '(tl, br) := m in
-  andb (PrimInt63.leb (ref_col tl) (ref_col r))
-       (andb (PrimInt63.leb (ref_col r) (ref_col br))
-             (andb (PrimInt63.leb (ref_row tl) (ref_row r))
-                   (PrimInt63.leb (ref_row r) (ref_row br)))).
+  andb (PrimInt63.leb (col_of tl) (col_of r))
+       (andb (PrimInt63.leb (col_of r) (col_of br))
+             (andb (PrimInt63.leb (row_of tl) (row_of r))
+                   (PrimInt63.leb (row_of r) (row_of br)))).
 
 (* Find the first region containing [r]; return its top-left.  When
    no region contains [r], return [r] unchanged. *)
-Fixpoint resolve (ms : Merges) (r : CellRef) : CellRef :=
+Fixpoint resolve (ms : MergeList) (r : CellRef) : CellRef :=
   match ms with
   | nil => r
   | m :: rest =>
@@ -32,22 +42,22 @@ Fixpoint resolve (ms : Merges) (r : CellRef) : CellRef :=
 
 (* Read through merges: a cell in a merged region resolves to the
    top-left's underlying value. *)
-Definition merged_get (s : Sheet) (ms : Merges) (r : CellRef) : Cell :=
+Definition merged_get (s : Sheet) (ms : MergeList) (r : CellRef) : Cell :=
   get_cell s (resolve ms r).
 
 (* Write through merges: writes always land at the top-left of the
    first region containing the target, leaving other cells in the
    region untouched. *)
-Definition merged_set (s : Sheet) (ms : Merges) (r : CellRef) (c : Cell)
+Definition merged_set (s : Sheet) (ms : MergeList) (r : CellRef) (c : Cell)
     : Sheet :=
   set_cell s (resolve ms r) c.
 
 (* Add a merge region.  No deduplication. *)
-Definition add_merge (ms : Merges) (tl br : CellRef) : Merges :=
+Definition add_merge (ms : MergeList) (tl br : CellRef) : MergeList :=
   (tl, br) :: ms.
 
 (* Remove the first region whose top-left equals [tl]. *)
-Fixpoint remove_merge (ms : Merges) (tl : CellRef) : Merges :=
+Fixpoint remove_merge (ms : MergeList) (tl : CellRef) : MergeList :=
   match ms with
   | nil => nil
   | m :: rest =>
@@ -111,6 +121,6 @@ Theorem merged_get_smoke :
   let tl := mkRef 1 1 in
   let br := mkRef 2 2 in
   let s := set_cell new_sheet tl (CLit 7%Z) in
-  let ms : Merges := [(tl, br)] in
+  let ms : MergeList := [(tl, br)] in
   merged_get s ms (mkRef 2 2) = CLit 7%Z.
 Proof. vm_compute. reflexivity. Qed.

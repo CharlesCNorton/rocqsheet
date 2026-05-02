@@ -18,16 +18,22 @@
 #include <imgui_impl_opengl3.h>
 #include <GLFW/glfw3.h>
 
-// Forward declaration of the chart drawing helper.  The body lives
-// in src/chart_helpers.cpp where it can include the generated
-// rocqsheet.h for the full [List<int64_t>] body.  Declared here so
-// the Crane-extracted code can resolve the symbol via the same
-// include it already pulls in for [imgui_helpers].
+// Forward declarations of out-of-line helpers.  Bodies live in
+// src/chart_helpers.cpp / src/pdf_helpers.cpp where the full
+// [List<...>] body is visible.  These declarations only mention
+// primitive types or [List<int64_t>] / [List<pair<...>>] so they
+// avoid touching the [Rocqsheet::Cell] forward-declaration tangle.
 template <typename T> struct List;
 namespace chart_helpers {
 void chart_render(int64_t kind, const List<int64_t>& values,
                   const std::string& title);
 }  // namespace chart_helpers
+namespace pdf_helpers {
+using PdfTextEntry = std::pair<std::pair<int64_t, int64_t>, std::string>;
+using PdfPageEntries = List<PdfTextEntry>;
+bool emit_pdf(const List<PdfPageEntries>& pages,
+              const std::string& path);
+}  // namespace pdf_helpers
 
 namespace imgui_helpers {
 

@@ -73,15 +73,47 @@ Fixpoint column_values_aux (s : Sheet) (c : int) (row : nat) (count : nat)
 Definition column_values (s : Sheet) (c : int) : list Cell :=
   column_values_aux s c 0 200.
 
+(* Helper: an element can hop across an arbitrary inner block. *)
+Lemma perm_move_across :
+  forall {A} (xs : list A) y zs,
+    Permutation (y :: xs ++ zs) (xs ++ y :: zs).
+Proof.
+  intros A xs y zs.
+  induction xs as [|x rest IH]; simpl.
+  - apply Permutation_refl.
+  - apply perm_trans with (x :: y :: rest ++ zs).
+    + apply perm_swap.
+    + apply perm_skip. exact IH.
+Qed.
+
+(* Helper: swap two elements separated by an arbitrary inner block,
+   under a common prefix. *)
+Lemma perm_swap_across :
+  forall {A} (xs : list A) a b ys zs,
+    Permutation (xs ++ a :: ys ++ b :: zs) (xs ++ b :: ys ++ a :: zs).
+Proof.
+  intros A xs a b ys zs.
+  apply Permutation_app_head.
+  apply perm_trans with (a :: b :: ys ++ zs).
+  - apply perm_skip. apply Permutation_sym. apply perm_move_across.
+  - apply perm_trans with (b :: a :: ys ++ zs).
+    + apply perm_swap.
+    + apply perm_skip. apply perm_move_across.
+Qed.
+
 (* A swap is a permutation of the column values: the smoke checks
-   the multiset is preserved at one column. *)
+   the multiset is preserved at one column.  The two literals sit at
+   rows 1 and 4 with two empty cells between them, so the
+   permutation is a swap-across-block under a single-element prefix. *)
 Theorem swap_preserves_column_smoke :
   let s := set_cell new_sheet (mkRef 0 1%uint63) (CLit 10%Z) in
   let s' := set_cell s (mkRef 0 4%uint63) (CLit 20%Z) in
   let sw := swap_rows s' 1%uint63 4%uint63 in
   Permutation (column_values s' 0%uint63) (column_values sw 0%uint63).
 Proof.
-  vm_compute. apply perm_swap.
+  vm_compute.
+  apply (perm_swap_across [CEmpty] (CLit 10%Z) (CLit 20%Z)
+                          [CEmpty; CEmpty]).
 Qed.
 
 (* --- Insertion sort on row indices --------------------------- *)

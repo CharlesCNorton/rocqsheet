@@ -8,7 +8,6 @@ From Stdlib Require Import BinInt List.
 From Crane Require Extraction.
 From Crane Require Import Mapping.NatIntStd Mapping.ZInt.
 From Crane Require Import Monads.ITree.
-
 Open Scope itree_scope.
 
 (* Outcome of a cell selectable for one frame. *)
@@ -73,7 +72,13 @@ Inductive imguiE : Type -> Type :=
   (* Inline chart drawing.  [kind] is encoded as Z (0=line, 1=bar,
      2=pie, 3=scatter); [values] is the row-major list of cell values
      in the chart's range; [title] is shown in the chart border. *)
-  | EChartRender      : Z -> list Z -> PrimString.string -> imguiE unit.
+  | EChartRender      : Z -> list Z -> PrimString.string -> imguiE unit
+  (* Emit a PDF 1.4 file at [path].  Each page is a flat list of
+     (x, y, text) tuples in PDF coordinates already, so the C++ side
+     never needs to know the spreadsheet's [Cell] layout.  Returns
+     [true] on successful write. *)
+  | EPdfEmit          : list (list (Z * Z * PrimString.string))
+                        -> PrimString.string -> imguiE bool.
 
 (* Smart constructors. *)
 Definition glfw_should_close : itree imguiE bool := trigger EShouldClose.
@@ -152,6 +157,9 @@ Definition imgui_tab_bar_select (id : PrimString.string) (num current : int)
 Definition imgui_chart_render (kind : Z) (values : list Z)
                               (title : PrimString.string)
   : itree imguiE unit := trigger (EChartRender kind values title).
+Definition imgui_pdf_emit (pages : list (list (Z * Z * PrimString.string)))
+                          (path : PrimString.string)
+  : itree imguiE bool := trigger (EPdfEmit pages path).
 
 (* Erased-itree extraction: each constructor inlines to its C++
    helper at the call site; the inductive itself maps to the empty
@@ -205,7 +213,8 @@ Crane Extract Inductive imguiE => ""
     "imgui_helpers::same_line()"
     "imgui_helpers::fbar_ref_label(%a0)"
     "imgui_helpers::tab_bar_select(%a0, %a1, %a2)"
-    "chart_helpers::chart_render(%a0, %a1, %a2)" ]
+    "chart_helpers::chart_render(%a0, %a1, %a2)"
+    "pdf_helpers::emit_pdf(%a0, %a1)" ]
   From "imgui_helpers.h".
 
 Crane Extract Inlined Constant glfw_should_close =>
@@ -291,3 +300,5 @@ Crane Extract Inlined Constant imgui_tab_bar_select =>
   "imgui_helpers::tab_bar_select(%a0, %a1, %a2)" From "imgui_helpers.h".
 Crane Extract Inlined Constant imgui_chart_render =>
   "chart_helpers::chart_render(%a0, %a1, %a2)" From "imgui_helpers.h".
+Crane Extract Inlined Constant imgui_pdf_emit =>
+  "pdf_helpers::emit_pdf(%a0, %a1)" From "imgui_helpers.h".

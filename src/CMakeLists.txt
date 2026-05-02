@@ -52,6 +52,7 @@ target_link_libraries(imgui PUBLIC PkgConfig::GLFW OpenGL::GL)
 add_executable(rocqsheet
   main.cpp
   chart_helpers.cpp
+  pdf_helpers.cpp
   ${GEN_DIR}/rocqsheet.cpp)
 target_include_directories(rocqsheet PRIVATE
   ${GEN_DIR}
