@@ -11,8 +11,18 @@ From Crane Require Import Monads.ITree.
 From Rocqsheet Require Import Rocqsheet.
 From Rocqsheet Require Import ImGuiE.
 From Rocqsheet Require Import Parser.
+From Rocqsheet Require Import Formatting.
 Import ListNotations.
 Import Rocqsheet.
+
+(* Encode the [Align] enum as a Z so the imgui FFI can carry it as a
+   single primitive. *)
+Definition align_to_z (a : Align) : Z :=
+  match a with
+  | AlignLeft   => 0%Z
+  | AlignCenter => 1%Z
+  | AlignRight  => 2%Z
+  end.
 
 Open Scope itree_scope.
 Open Scope int63_scope.
@@ -347,11 +357,27 @@ Record loop_state : Type := mkLoop {
   ls_edit_buf   : list (CellRef * PrimString.string);
   ls_parse_errs : list CellRef;
   ls_undo       : list Sheet;
-  ls_redo       : list Sheet
+  ls_redo       : list Sheet;
+  ls_formats    : FormatMap
 }.
 
+(* Demo formats: the row of computed answers in [demo_sheet] gets
+   bold dark blue with right alignment, the headers row gets a thin
+   border.  Picked so the rendering pipeline visibly exercises the
+   bold/colour/border/align channels at startup. *)
+Definition demo_formats : FormatMap :=
+  [ (ref_at 2 0, mkFormat true 16711680%Z (* 0xFF0000 red *)
+                          false AlignRight)
+  ; (ref_at 3 0, mkFormat true 16711680%Z false AlignRight)
+  ; (ref_at 2 2, mkFormat false 32768%Z   (* 0x008000 green *)
+                          true  AlignRight)
+  ; (ref_at 3 2, mkFormat true 255%Z      (* 0x0000FF blue *)
+                          true  AlignCenter)
+  ; (ref_at 2 4, mkFormat false 8388736%Z (* 0x800080 purple *)
+                          false AlignRight) ].
+
 Definition initial_loop_state : loop_state :=
-  mkLoop demo_sheet None "" nil nil nil nil.
+  mkLoop demo_sheet None "" nil nil nil nil demo_formats.
 
 (* ----- Edit-buffer / parse-error helpers -------------------- *)
 
@@ -433,18 +459,18 @@ Definition fbar_for_cell
 Definition push_undo (ls : loop_state) (before : Sheet) : loop_state :=
   mkLoop (ls_sheet ls) (ls_selected ls) (ls_fbar_text ls)
          (ls_edit_buf ls) (ls_parse_errs ls)
-         (before :: ls_undo ls) nil.
+         (before :: ls_undo ls) nil (ls_formats ls).
 
 Definition select_cell (ls : loop_state) (r : CellRef) : loop_state :=
   mkLoop (ls_sheet ls) (Some r)
          (fbar_for_cell (ls_edit_buf ls) (ls_sheet ls) r)
          (ls_edit_buf ls) (ls_parse_errs ls)
-         (ls_undo ls) (ls_redo ls).
+         (ls_undo ls) (ls_redo ls) (ls_formats ls).
 
 Definition update_fbar (ls : loop_state) (s : PrimString.string) : loop_state :=
   mkLoop (ls_sheet ls) (ls_selected ls) s
          (ls_edit_buf ls) (ls_parse_errs ls)
-         (ls_undo ls) (ls_redo ls).
+         (ls_undo ls) (ls_redo ls) (ls_formats ls).
 
 (* Inspect leading character.  Empty string returns 0. *)
 Definition first_char_int (s : PrimString.string) : int :=
@@ -509,7 +535,7 @@ Definition commit_to (ls : loop_state) (r : CellRef) (txt : PrimString.string)
     let new_eb := remove_edit (ls_edit_buf ls) r in
     let new_pe := remove_ref (ls_parse_errs ls) r in
     mkLoop new_sheet (ls_selected ls) (ls_fbar_text ls)
-           new_eb new_pe (before :: ls_undo ls) nil
+           new_eb new_pe (before :: ls_undo ls) nil (ls_formats ls)
   else if starts_with_eq txt then
     let body := strip_leading_eq txt in
     match parse_formula body with
@@ -518,12 +544,12 @@ Definition commit_to (ls : loop_state) (r : CellRef) (txt : PrimString.string)
       let new_eb := put_edit (ls_edit_buf ls) r txt in
       let new_pe := remove_ref (ls_parse_errs ls) r in
       mkLoop new_sheet (ls_selected ls) (ls_fbar_text ls)
-             new_eb new_pe (before :: ls_undo ls) nil
+             new_eb new_pe (before :: ls_undo ls) nil (ls_formats ls)
     | None =>
       let new_eb := put_edit (ls_edit_buf ls) r txt in
       let new_pe := add_ref (ls_parse_errs ls) r in
       mkLoop before (ls_selected ls) (ls_fbar_text ls)
-             new_eb new_pe (ls_undo ls) (ls_redo ls)
+             new_eb new_pe (ls_undo ls) (ls_redo ls) (ls_formats ls)
     end
   else
     match parse_int_literal txt with
@@ -532,12 +558,12 @@ Definition commit_to (ls : loop_state) (r : CellRef) (txt : PrimString.string)
       let new_eb := put_edit (ls_edit_buf ls) r txt in
       let new_pe := remove_ref (ls_parse_errs ls) r in
       mkLoop new_sheet (ls_selected ls) (ls_fbar_text ls)
-             new_eb new_pe (before :: ls_undo ls) nil
+             new_eb new_pe (before :: ls_undo ls) nil (ls_formats ls)
     | None =>
       let new_eb := put_edit (ls_edit_buf ls) r txt in
       let new_pe := add_ref (ls_parse_errs ls) r in
       mkLoop before (ls_selected ls) (ls_fbar_text ls)
-             new_eb new_pe (ls_undo ls) (ls_redo ls)
+             new_eb new_pe (ls_undo ls) (ls_redo ls) (ls_formats ls)
     end.
 
 Definition do_commit (ls : loop_state) : loop_state :=
@@ -552,7 +578,7 @@ Definition do_undo (ls : loop_state) : loop_state :=
   | prev :: rest =>
     mkLoop prev (ls_selected ls) (ls_fbar_text ls)
            (ls_edit_buf ls) (ls_parse_errs ls)
-           rest (ls_sheet ls :: ls_redo ls)
+           rest (ls_sheet ls :: ls_redo ls) (ls_formats ls)
   end.
 
 Definition do_redo (ls : loop_state) : loop_state :=
@@ -561,12 +587,12 @@ Definition do_redo (ls : loop_state) : loop_state :=
   | next :: rest =>
     mkLoop next (ls_selected ls) (ls_fbar_text ls)
            (ls_edit_buf ls) (ls_parse_errs ls)
-           (ls_sheet ls :: ls_undo ls) rest
+           (ls_sheet ls :: ls_undo ls) rest (ls_formats ls)
   end.
 
 Definition do_clear (ls : loop_state) : loop_state :=
   mkLoop new_sheet None "" nil nil
-         (ls_sheet ls :: ls_undo ls) nil.
+         (ls_sheet ls :: ls_undo ls) nil (ls_formats ls).
 
 (* Conditional apply.  Used in handler chains to avoid extracting a
    declare-then-assign pattern that would require a default
@@ -725,7 +751,8 @@ Definition do_load (ls : loop_state) : itree imguiE loop_state :=
   let '(content, ok) := res in
   if ok then
     let cleared := mkLoop new_sheet None "" nil nil
-                          (ls_sheet ls :: ls_undo ls) nil in
+                          (ls_sheet ls :: ls_undo ls) nil
+                          (ls_formats ls) in
     let len := PrimString.length content in
     Ret (apply_load_lines cleared content len 0
                           (S (S (nat_of_int len))))
@@ -753,8 +780,12 @@ Definition render_one_cell
     | None => false
     | Some sr => cellref_eqb sr ref
     end in
-  ev <- imgui_selectable_cell (int_of_nat c) (int_of_nat r)
-                               selected is_err disp ;;
+  let fmt := lookup_format (ls_formats ls) ref in
+  ev <- imgui_selectable_cell_fmt (int_of_nat c) (int_of_nat r)
+                                   selected is_err disp
+                                   (fmt_bold fmt) (fmt_color_rgb fmt)
+                                   (fmt_border fmt)
+                                   (align_to_z (fmt_align fmt)) ;;
   match ev with
   | CellNone => Ret ls
   | _ => Ret (select_cell ls ref)

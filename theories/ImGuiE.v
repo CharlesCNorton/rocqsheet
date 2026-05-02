@@ -4,6 +4,7 @@
    [src/imgui_helpers.h]. *)
 
 From Corelib Require Import PrimString PrimInt63.
+From Stdlib Require Import BinInt.
 From Crane Require Extraction.
 From Crane Require Import Mapping.NatIntStd Mapping.ZInt.
 From Crane Require Import Monads.ITree.
@@ -41,6 +42,10 @@ Inductive imguiE : Type -> Type :=
   | EClipperEnd       : imguiE unit
   | ESelectable       : int -> int -> bool -> bool -> PrimString.string ->
                         imguiE cell_event
+  (* Same as ESelectable plus formatting: bold, packed RGB foreground
+     colour, border, alignment encoded as Z (0=left,1=center,2=right). *)
+  | ESelectableFmt    : int -> int -> bool -> bool -> PrimString.string ->
+                        bool -> Z -> bool -> Z -> imguiE cell_event
   (* InputText returns (current_buffer, enter_pressed). *)
   | EInputText        : PrimString.string -> PrimString.string ->
                         imguiE (PrimString.string * bool)
@@ -99,6 +104,13 @@ Definition imgui_selectable_cell
     (display : PrimString.string)
   : itree imguiE cell_event :=
   trigger (ESelectable c r selected is_error display).
+Definition imgui_selectable_cell_fmt
+    (c r : int) (selected : bool) (is_error : bool)
+    (display : PrimString.string)
+    (bold : bool) (color_rgb : Z) (border : bool) (align : Z)
+  : itree imguiE cell_event :=
+  trigger (ESelectableFmt c r selected is_error display
+                          bold color_rgb border align).
 Definition imgui_input_text (id : PrimString.string) (cur : PrimString.string)
   : itree imguiE (PrimString.string * bool) :=
   trigger (EInputText id cur).
@@ -162,6 +174,7 @@ Crane Extract Inductive imguiE => ""
     "imgui_helpers::clipper_get_end()"
     "imgui_helpers::clipper_end()"
     "imgui_helpers::selectable_cell(%a0, %a1, %a2, %a3, %a4)"
+    "imgui_helpers::selectable_cell_formatted(%a0, %a1, %a2, %a3, %a4, %a5, %a6, %a7, %a8)"
     "imgui_helpers::input_text(%a0, %a1)"
     "imgui_helpers::begin_menu_bar()"
     "imgui_helpers::end_menu_bar()"
@@ -225,6 +238,9 @@ Crane Extract Inlined Constant imgui_clipper_end =>
   "imgui_helpers::clipper_end()" From "imgui_helpers.h".
 Crane Extract Inlined Constant imgui_selectable_cell =>
   "imgui_helpers::selectable_cell(%a0, %a1, %a2, %a3, %a4)" From "imgui_helpers.h".
+Crane Extract Inlined Constant imgui_selectable_cell_fmt =>
+  "imgui_helpers::selectable_cell_formatted(%a0, %a1, %a2, %a3, %a4, %a5, %a6, %a7, %a8)"
+  From "imgui_helpers.h".
 Crane Extract Inlined Constant imgui_input_text =>
   "imgui_helpers::input_text(%a0, %a1)" From "imgui_helpers.h".
 Crane Extract Inlined Constant imgui_begin_menu_bar =>

@@ -174,6 +174,64 @@ inline cell_event selectable_cell(int64_t c, int64_t r, bool selected,
   return cell_event::None;
 }
 
+// Same as [selectable_cell] but applies the per-cell formatting:
+// bold (FontStyle is approximated by colour boost since ImGui needs a
+// preloaded bold font asset), packed RGB foreground colour
+// (0xRRGGBB), border, and horizontal alignment (0=left, 1=center,
+// 2=right).  When all attributes are at the defaults the rendering
+// is byte-identical to [selectable_cell].
+inline cell_event selectable_cell_formatted(
+    int64_t c, int64_t r, bool selected, bool is_error,
+    const std::string& display,
+    bool bold, int64_t color_rgb, bool border, int64_t align) {
+  ImGui::PushID(static_cast<int>(c));
+  ImGui::PushID(static_cast<int>(r));
+  ImGuiSelectableFlags f = ImGuiSelectableFlags_AllowDoubleClick |
+                           ImGuiSelectableFlags_AllowOverlap;
+  ImVec2 size = {ImGui::GetContentRegionAvail().x,
+                 ImGui::GetTextLineHeightWithSpacing()};
+  ImVec2 start = ImGui::GetCursorScreenPos();
+  bool clicked = ImGui::Selectable("##cell_fmt", selected, f, size);
+  bool dbl =
+      clicked && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
+  if (border) {
+    ImVec2 a = start;
+    ImVec2 b{start.x + size.x, start.y + size.y};
+    ImGui::GetWindowDrawList()->AddRect(
+        a, b, IM_COL32(180, 180, 180, 220), 0.0f, 0, 1.0f);
+  }
+  if (!display.empty()) {
+    float text_w = ImGui::CalcTextSize(display.c_str()).x;
+    float dx = 0.0f;
+    if (align == 1) dx = (size.x - text_w) * 0.5f;
+    else if (align == 2) dx = size.x - text_w - 2.0f;
+    if (dx < 0.0f) dx = 0.0f;
+    ImGui::SetCursorScreenPos({start.x + dx, start.y});
+    ImU32 col;
+    if (is_error) {
+      col = IM_COL32(220, 80, 80, 255);
+    } else if (color_rgb == 0) {
+      col = ImGui::GetColorU32(ImGuiCol_Text);
+    } else {
+      uint32_t v = static_cast<uint32_t>(color_rgb);
+      col = IM_COL32((v >> 16) & 0xFF, (v >> 8) & 0xFF, v & 0xFF, 255);
+    }
+    ImGui::PushStyleColor(ImGuiCol_Text, col);
+    if (bold) {
+      ImVec2 p = ImGui::GetCursorScreenPos();
+      ImGui::GetWindowDrawList()->AddText({p.x + 1.0f, p.y},
+                                          col, display.c_str());
+    }
+    ImGui::TextUnformatted(display.c_str());
+    ImGui::PopStyleColor();
+  }
+  ImGui::PopID();
+  ImGui::PopID();
+  if (dbl) return cell_event::DoubleClicked;
+  if (clicked) return cell_event::Selected;
+  return cell_event::None;
+}
+
 // Returns (current buffer contents after this frame, true iff Enter
 // was pressed this frame).  When Enter is pressed the kernel-side
 // driver should commit; otherwise it just stores the current buffer.
