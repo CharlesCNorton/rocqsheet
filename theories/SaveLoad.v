@@ -16,6 +16,8 @@ From Rocqsheet Require Import Formatting.
 From Rocqsheet Require Import NumberFormat.
 From Rocqsheet Require Import Merges.
 From Rocqsheet Require Import Charts.
+From Rocqsheet Require Import Csv.
+From Rocqsheet Require Import Html.
 From Rocqsheet Require Import State.
 From Rocqsheet Require Import Edit.
 Import ListNotations.
@@ -262,6 +264,28 @@ Definition do_save_as (ls : loop_state) : itree imguiE loop_state :=
     then save_path
     else ls_fbar_text ls in
   _ <- file_save_atomic path (build_save_string ls) ;;
+  Ret ls.
+
+Definition csv_path : PrimString.string := "rocqsheet.csv".
+Definition html_path : PrimString.string := "rocqsheet.html".
+
+(* Export the active sheet as RFC 4180-style CSV.  Falls back to
+   "rocqsheet.csv" when the formula bar is blank; otherwise treats
+   the formula bar text as the destination path. *)
+Definition do_export_csv (ls : loop_state) : itree imguiE loop_state :=
+  let path :=
+    if all_whitespace (ls_fbar_text ls) then csv_path
+    else ls_fbar_text ls in
+  _ <- file_save_atomic path (Csv.to_csv (ls_sheet ls)) ;;
+  Ret ls.
+
+(* Export the active sheet as a <table>-based HTML document.  Same
+   path conventions as the CSV export. *)
+Definition do_export_html (ls : loop_state) : itree imguiE loop_state :=
+  let path :=
+    if all_whitespace (ls_fbar_text ls) then html_path
+    else ls_fbar_text ls in
+  _ <- file_save_atomic path (Html.to_html (ls_sheet ls)) ;;
   Ret ls.
 
 (* Find/Replace driven by the formula bar.  Expects [ls_fbar_text] of

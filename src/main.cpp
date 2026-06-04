@@ -18,12 +18,14 @@
 
 #include <cctype>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <variant>
 
 namespace {
@@ -44,6 +46,54 @@ bool slurp_file(const std::string& path, std::string& out) {
   ss << f.rdbuf();
   out = ss.str();
   return true;
+}
+
+// Path of the user config file that persists window size / position
+// across sessions.  Format is a single line "<w>x<h>+<x>+<y>".  When
+// missing or malformed the launch falls back to the default 1280x800
+// geometry.
+std::string window_config_path() {
+  const char* xdg = std::getenv("XDG_CONFIG_HOME");
+  std::string base;
+  if (xdg && *xdg) {
+    base = xdg;
+  } else {
+    const char* home = std::getenv("HOME");
+    base = home ? std::string(home) + "/.config" : std::string(".");
+  }
+  return base + "/rocqsheet/window";
+}
+
+// Geometry record: width, height, x, y.  Negative values mean "not
+// set" — used when the config file doesn't exist yet.
+struct WindowGeom {
+  int w = 1280, h = 800, x = -1, y = -1;
+};
+
+WindowGeom read_window_geom() {
+  WindowGeom g;
+  std::string content;
+  if (!slurp_file(window_config_path(), content)) return g;
+  if (std::sscanf(content.c_str(), "%dx%d+%d+%d",
+                  &g.w, &g.h, &g.x, &g.y) < 2) {
+    return WindowGeom{};
+  }
+  if (g.w < 320) g.w = 320;
+  if (g.h < 240) g.h = 240;
+  return g;
+}
+
+void write_window_geom(int w, int h, int x, int y) {
+  std::string path = window_config_path();
+  // Best-effort: create parent dir.
+  size_t slash = path.find_last_of('/');
+  if (slash != std::string::npos) {
+    std::string dir = path.substr(0, slash);
+    (void)::mkdir(dir.c_str(), 0755);
+  }
+  std::ofstream f(path);
+  if (!f) return;
+  f << w << "x" << h << "+" << x << "+" << y << '\n';
 }
 
 // Build the start-of-session loop_state.  Replaces the previous
@@ -320,8 +370,12 @@ int main(int argc, char** argv) {
   glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-  GLFWwindow* win = glfwCreateWindow(1280, 800, "Rocqsheet", nullptr, nullptr);
+  WindowGeom geom = read_window_geom();
+  GLFWwindow* win = glfwCreateWindow(geom.w, geom.h, "Rocqsheet", nullptr, nullptr);
   if (!win) { glfwTerminate(); return 1; }
+  if (geom.x >= 0 && geom.y >= 0) {
+    glfwSetWindowPos(win, geom.x, geom.y);
+  }
   glfwMakeContextCurrent(win);
   glfwSwapInterval(1);
 
@@ -357,6 +411,15 @@ int main(int argc, char** argv) {
     ls = std::move(step.second);
   }
   int exit_code = 0;
+
+  // Persist window geometry so the next launch starts where the
+  // previous session ended.
+  {
+    int w = 0, h = 0, x = 0, y = 0;
+    glfwGetWindowSize(win, &w, &h);
+    glfwGetWindowPos(win, &x, &y);
+    write_window_geom(w, h, x, y);
+  }
 
   imgui_helpers::g_clipper.reset();
   ImGui_ImplOpenGL3_Shutdown();

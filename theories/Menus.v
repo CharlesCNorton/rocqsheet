@@ -29,7 +29,11 @@ Definition file_menu (ls : loop_state) : itree imguiE loop_state :=
   ls2 <- (if load_clicked then do_load ls1a else Ret ls1a) ;;
   pdf_clicked <- imgui_menu_item "Export to PDF" true ;;
   ls3 <- (if pdf_clicked then do_pdf_export ls2 else Ret ls2) ;;
-  Ret ls3.
+  csv_clicked <- imgui_menu_item "Export to CSV (formula bar = path)" true ;;
+  ls4 <- (if csv_clicked then do_export_csv ls3 else Ret ls3) ;;
+  html_clicked <- imgui_menu_item "Export to HTML (formula bar = path)" true ;;
+  ls5 <- (if html_clicked then do_export_html ls4 else Ret ls4) ;;
+  Ret ls5.
 
 Definition edit_menu (ls : loop_state) : itree imguiE loop_state :=
   let undo_label :=
