@@ -50,6 +50,14 @@ Fixpoint shift_refs (dc dr : int) (e : Expr) : Expr :=
   | EMax tl br => EMax (shift_ref dc dr tl) (shift_ref dc dr br)
   | ECountN tl br => ECountN (shift_ref dc dr tl) (shift_ref dc dr br)
   | ECountA tl br => ECountA (shift_ref dc dr tl) (shift_ref dc dr br)
+  | ESumIf tl br op lit sumtl =>
+    ESumIf (shift_ref dc dr tl) (shift_ref dc dr br) op lit
+           (shift_ref dc dr sumtl)
+  | ECountIf tl br op lit =>
+    ECountIf (shift_ref dc dr tl) (shift_ref dc dr br) op lit
+  | EAvgIf tl br op lit sumtl =>
+    EAvgIf (shift_ref dc dr tl) (shift_ref dc dr br) op lit
+           (shift_ref dc dr sumtl)
   end.
 
 Theorem shift_ref_zero : forall r, shift_ref 0 0 r = r.

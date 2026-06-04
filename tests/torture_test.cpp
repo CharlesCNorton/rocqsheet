@@ -373,6 +373,36 @@ void test_count_counta() {
             as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{5, 1})), 0);
 }
 
+// Item 25: SUMIF / COUNTIF / AVERAGEIF with a CmpOp-against-literal
+// predicate and an offset aggregation range.
+void test_if_aggregates() {
+  // Criteria column A rows 1-5; data column C rows 1-5.
+  auto s = S::new_sheet;
+  const int64_t crit[5] = {1, 5, 10, -3, 7};
+  const int64_t data[5] = {100, 200, 300, 400, 500};
+  for (int r = 0; r < 5; ++r) {
+    s = lit(s, 0, r, crit[r]);
+    s = lit(s, 2, r, data[r]);
+  }
+  S::CellRef tl{0, 0}, br{0, 4}, sumtl{2, 0};
+  s = form(s, 4, 0, S::Expr::ecountif(tl, br, S::CmpOp::e_CMPGT, 4));
+  check_int("COUNTIF >4",
+            as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{4, 0})), 3);
+  s = form(s, 4, 1, S::Expr::esumif(tl, br, S::CmpOp::e_CMPGT, 4, sumtl));
+  check_int("SUMIF >4",
+            as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{4, 1})), 1000);
+  s = form(s, 4, 2, S::Expr::eavgif(tl, br, S::CmpOp::e_CMPLT, 8, sumtl));
+  check_int("AVERAGEIF <8",
+            as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{4, 2})), 300);
+  s = form(s, 4, 3, S::Expr::ecountif(tl, br, S::CmpOp::e_CMPEQ, -3));
+  check_int("COUNTIF =-3",
+            as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{4, 3})), 1);
+  // No criteria match: AVERAGEIF divides by zero matches → EErr.
+  s = form(s, 4, 4, S::Expr::eavgif(tl, br, S::CmpOp::e_CMPGT, 1000, sumtl));
+  check("AVERAGEIF no-match → EErr",
+        is_err(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{4, 4})));
+}
+
 void test_boolean_ops() {
   auto s = put(S::new_sheet, 0, 0, S::Cell::cbool(true));
   s = put(s, 1, 0, S::Cell::cbool(false));
@@ -553,6 +583,7 @@ int main() {
   test_aggregations();
   test_aggregation_with_holes();
   test_count_counta();
+  test_if_aggregates();
   test_boolean_ops();
   test_string_ops();
   test_correspondence_corpus();

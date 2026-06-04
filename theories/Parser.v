@@ -96,7 +96,11 @@ Inductive token : Type :=
   | TFloat : PrimFloat.float -> token
   | TStr : PrimString.string -> token
   | TTrue
-  | TFalse.
+  | TFalse
+  (* Item 25: IF-aggregates. *)
+  | TSumIf
+  | TCountIf
+  | TAvgIf.
 
 (* INT64_MAX / 10 = 922337203685477580; one extra digit must not
    exceed (INT64_MAX mod 10) = 7.  The negated form accepts one extra
@@ -372,6 +376,27 @@ Fixpoint tokenize_aux
         then
           (* "SWITCH(" *)
           tokenize_aux fuel' s len i7 (TSwitch :: acc)
+        else if PrimInt63.eqb c0 65 && PrimInt63.eqb c1u 86 &&
+                PrimInt63.eqb c2u 69 && PrimInt63.eqb c3u 82 &&
+                PrimInt63.eqb c4u 65 && PrimInt63.eqb c5u 71 &&
+                PrimInt63.eqb c6u 69 && PrimInt63.eqb c7u 73 &&
+                PrimInt63.eqb c8u 70 && lparen i9
+        then
+          (* "AVERAGEIF(" *)
+          tokenize_aux fuel' s len (PrimInt63.add i9 1) (TAvgIf :: acc)
+        else if PrimInt63.eqb c0 67 && PrimInt63.eqb c1u 79 &&
+                PrimInt63.eqb c2u 85 && PrimInt63.eqb c3u 78 &&
+                PrimInt63.eqb c4u 84 && PrimInt63.eqb c5u 73 &&
+                PrimInt63.eqb c6u 70 && lparen i7
+        then
+          (* "COUNTIF(" *)
+          tokenize_aux fuel' s len i8 (TCountIf :: acc)
+        else if PrimInt63.eqb c0 83 && PrimInt63.eqb c1u 85 &&
+                PrimInt63.eqb c2u 77 && PrimInt63.eqb c3u 73 &&
+                PrimInt63.eqb c4u 70 && five_letter_kw_lp
+        then
+          (* "SUMIF(" *)
+          tokenize_aux fuel' s len i6 (TSumIf :: acc)
         else if PrimInt63.eqb c0 67 && PrimInt63.eqb c1u 79 &&
                 PrimInt63.eqb c2u 85 && PrimInt63.eqb c3u 78 &&
                 PrimInt63.eqb c4u 84 && PrimInt63.eqb c5u 65 &&
@@ -500,6 +525,19 @@ Fixpoint build_switch_chain (value : Expr) (args : list Expr) : option Expr :=
 Definition desugar_switch (args : list Expr) : option Expr :=
   match args with
   | value :: rest => build_switch_chain value rest
+  | _ => None
+  end.
+
+(* Item 25: parse the predicate of an IF-aggregate — a comparison
+   operator followed by an integer literal (optionally negated). *)
+Definition parse_pred (toks : list token) : option (CmpOp * Z * list token) :=
+  match toks with
+  | TGt :: TInt n :: rest => Some (CmpGt, n, rest)
+  | TGt :: TMinus :: TInt n :: rest => Some (CmpGt, Z.opp n, rest)
+  | TLt :: TInt n :: rest => Some (CmpLt, n, rest)
+  | TLt :: TMinus :: TInt n :: rest => Some (CmpLt, Z.opp n, rest)
+  | TEq :: TInt n :: rest => Some (CmpEq, n, rest)
+  | TEq :: TMinus :: TInt n :: rest => Some (CmpEq, Z.opp n, rest)
   | _ => None
   end.
 
@@ -701,6 +739,27 @@ with parse_factor (fuel : nat) (toks : list token)
        that COUNT means "numeric cells" (item 79). *)
     | TRangeSize :: TRef r1 :: TColon :: TRef r2 :: TRParen :: rest' =>
       Some (ECount r1 r2, rest')
+    (* Item 25: SUMIF(range, pred, sum_anchor) / COUNTIF(range, pred)
+       / AVERAGEIF(range, pred, sum_anchor).  The predicate is a
+       comparison against an integer literal, e.g. >3, <0, =42. *)
+    | TSumIf :: TRef r1 :: TColon :: TRef r2 :: TComma :: rest =>
+      match parse_pred rest with
+      | Some (op, lit, TComma :: TRef r3 :: TRParen :: rest') =>
+        Some (ESumIf r1 r2 op lit r3, rest')
+      | _ => None
+      end
+    | TCountIf :: TRef r1 :: TColon :: TRef r2 :: TComma :: rest =>
+      match parse_pred rest with
+      | Some (op, lit, TRParen :: rest') =>
+        Some (ECountIf r1 r2 op lit, rest')
+      | _ => None
+      end
+    | TAvgIf :: TRef r1 :: TColon :: TRef r2 :: TComma :: rest =>
+      match parse_pred rest with
+      | Some (op, lit, TComma :: TRef r3 :: TRParen :: rest') =>
+        Some (EAvgIf r1 r2 op lit r3, rest')
+      | _ => None
+      end
     | TCounta :: TRef r1 :: TColon :: TRef r2 :: TRParen :: rest' =>
       (* Item 79: COUNTA counts non-empty cells. *)
       Some (ECountA r1 r2, rest')
@@ -769,7 +828,8 @@ Fixpoint expr_depth (e : Expr) : nat :=
   match e with
   | EInt _ | ERef _ | EFloat _ | EStr _ | EBool _ => 1
   | ESum _ _ | EAvg _ _ | ECount _ _ | EMin _ _ | EMax _ _
-  | ECountN _ _ | ECountA _ _ => 1
+  | ECountN _ _ | ECountA _ _
+  | ESumIf _ _ _ _ _ | ECountIf _ _ _ _ | EAvgIf _ _ _ _ _ => 1
   | ENot a | ELen a | EBNot a => S (expr_depth a)
   | EAdd a b | ESub a b | EMul a b | EDiv a b
   | EEq a b | ELt a b | EGt a b

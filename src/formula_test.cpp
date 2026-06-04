@@ -120,7 +120,17 @@ int main() {
   want_fail("if-bare",     "IF");
   want_fail("eq-trailing", "A1=");
 
-  // Item 79: counting aggregates.
+  // Item 25: IF-aggregates.
+  want_ok("sumif",          "SUMIF(A1:A5,>4,C1)");
+  want_ok("countif",        "COUNTIF(A1:A5,=3)");
+  want_ok("countif-neg",    "COUNTIF(A1:A5,<-3)");
+  want_ok("averageif",      "AVERAGEIF(A1:A5,<8,C1)");
+  want_ok("sumif-lower",    "sumif(A1:A5,>4,C1)");
+  want_fail("sumif-nopred", "SUMIF(A1:A5,C1)");
+  want_fail("countif-noargs", "COUNTIF()");
+  want_fail("averageif-norange", "AVERAGEIF(A1,>4,C1)");
+
+  // Item 79 (old numbering): counting aggregates.
   want_ok("count",        "COUNT(A1:B2)");
   want_ok("counta",       "COUNTA(A1:B2)");
   want_ok("range-size",   "RANGE_SIZE(A1:B2)");

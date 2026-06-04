@@ -54,7 +54,8 @@ Fixpoint float_free (e : Expr) : bool :=
   | ENot a | ELen a | EBNot a => float_free a
   | ESum _ _ | EAvg _ _ | ECount _ _
   | EMin _ _ | EMax _ _
-  | ECountN _ _ | ECountA _ _ => true
+  | ECountN _ _ | ECountA _ _
+  | ESumIf _ _ _ _ _ | ECountIf _ _ _ _ | EAvgIf _ _ _ _ _ => true
   | EFloat _ | EFAdd _ _ | EFSub _ _ | EFMul _ _ | EFDiv _ _ => false
   end.
 

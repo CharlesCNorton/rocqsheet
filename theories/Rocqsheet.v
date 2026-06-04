@@ -59,6 +59,31 @@ Definition cellref_eqb (r1 r2 : CellRef) : bool :=
 Definition cell_index (r : CellRef) : int :=
   PrimInt63.add (PrimInt63.mul (ref_row r) NUM_COLS) (ref_col r).
 
+(* Item 25: comparison shape for the IF-aggregate predicates.  The
+   criteria of SUMIF / COUNTIF / AVERAGEIF is one of these against a
+   literal integer. *)
+Inductive CmpOp : Type :=
+  | CmpEq : CmpOp
+  | CmpLt : CmpOp
+  | CmpGt : CmpOp.
+
+Definition cmp_holds (op : CmpOp) (v lit : Z) : bool :=
+  match op with
+  | CmpEq => Z.eqb v lit
+  | CmpLt => Z.ltb v lit
+  | CmpGt => Z.gtb v lit
+  end.
+
+(* Surface spelling of the comparison.  Lives here (not State.v) so
+   the extracted switch's unqualified enum case labels resolve inside
+   the same generated class as the CmpOp enum. *)
+Definition show_cmp (op : CmpOp) : PrimString.string :=
+  match op with
+  | CmpEq => "="%pstring
+  | CmpLt => "<"%pstring
+  | CmpGt => ">"%pstring
+  end.
+
 Inductive Expr : Type :=
   | EInt   : Z -> Expr
   | ERef   : CellRef -> Expr
@@ -99,7 +124,14 @@ Inductive Expr : Type :=
      rectangle-cardinality [ECount] stays and is surfaced in the
      parser as RANGE_SIZE. *)
   | ECountN : CellRef -> CellRef -> Expr
-  | ECountA : CellRef -> CellRef -> Expr.
+  | ECountA : CellRef -> CellRef -> Expr
+  (* Item 25: IF-aggregates.  Criteria rectangle (tl, br), predicate
+     (CmpOp against a literal), and — for SUMIF / AVERAGEIF — the
+     anchor of a parallel aggregation range whose cells sit at a
+     fixed offset from the criteria cells. *)
+  | ESumIf   : CellRef -> CellRef -> CmpOp -> Z -> CellRef -> Expr
+  | ECountIf : CellRef -> CellRef -> CmpOp -> Z -> Expr
+  | EAvgIf   : CellRef -> CellRef -> CmpOp -> Z -> CellRef -> Expr.
 
 Inductive Cell : Type :=
   | CEmpty : Cell
@@ -254,6 +286,133 @@ Fixpoint float_pow_nat (x : PrimFloat.float) (n : nat) : PrimFloat.float :=
   | S n' => PrimFloat.mul x (float_pow_nat x n')
   end.
 
+(* Item 79 / item 25: per-cell decision helpers for the counting and
+   IF-aggregate walkers.  Kept outside the mutual fixpoint so the
+   walker bodies have a single match around the recursive call — the
+   guard checker's cost explodes on nested matches whose arms hold
+   recursive calls.  [None] means fuel exhaustion must propagate. *)
+
+(* COUNT / COUNTA contribution of one cell.  [res] is the cell's
+   evaluation result and is only consulted for formula cells. *)
+Definition count_contrib (numeric : bool) (cell : Cell)
+    (res : EvalResult) : option Z :=
+  match cell with
+  | CEmpty => Some 0%Z
+  | CLit _ | CFloat _ => Some 1%Z
+  | CStr _ | CBool _ => Some (if numeric then 0%Z else 1%Z)
+  | CForm _ =>
+    match res with
+    | EFuel => None
+    | EVal _ | EFVal _ => Some 1%Z
+    | EValS _ | EValB _ | EErr => Some (if numeric then 0%Z else 1%Z)
+    end
+  end.
+
+(* SUMIF / COUNTIF / AVERAGEIF contribution of one criteria cell.
+   [use_sum] is [mode_sum && in-grid-guard]; when false in sum mode
+   the matched cell contributes 0 (offset target out of grid). *)
+Definition aggif_contrib (mode_sum use_sum : bool) (op : CmpOp)
+    (lit : Z) (crit sumres : EvalResult) : option Z :=
+  match crit with
+  | EFuel => None
+  | EVal v =>
+    if cmp_holds op v lit then
+      if mode_sum then
+        if use_sum then
+          match sumres with
+          | EFuel => None
+          | EVal sv => Some sv
+          | EFVal _ | EValS _ | EValB _ | EErr => Some 0%Z
+          end
+        else Some 0%Z
+      else Some 1%Z
+    else Some 0%Z
+  | EFVal _ | EValS _ | EValB _ | EErr => Some 0%Z
+  end.
+
+(* AVERAGEIF combiner over the (count, sum) walker results. *)
+Definition avgif_combine (cnt sm : EvalResult) : EvalResult :=
+  match cnt with
+  | EVal n =>
+    if Z.eqb n 0%Z then EErr
+    else
+      match sm with
+      | EVal total => EVal (Z.div total n)
+      | EFuel => EFuel
+      | EFVal _ | EValS _ | EValB _ | EErr => EErr
+      end
+  | EFuel => EFuel
+  | EFVal _ | EValS _ | EValB _ | EErr => EErr
+  end.
+
+(* One walker pair serves every rectangle aggregation.  Keeping a
+   single (walk_cols, walk_rows) pair in the mutual fixpoint matters:
+   the kernel's typechecking cost on this block grows explosively
+   with the number of mutual functions (ten compiled, twelve was
+   unbuildable on 31 GiB), so per-aggregate walker pairs are not an
+   option.  The per-cell semantics lives in [walk_step] below. *)
+Inductive WalkKind : Type :=
+  | WSum    : WalkKind
+  | WMin    : WalkKind
+  | WMax    : WalkKind
+  | WCountN : WalkKind
+  | WCountA : WalkKind
+  | WAggSum : WalkKind
+  | WAggCnt : WalkKind.
+
+(* Only SUMIF's sum mode reads a second, offset cell. *)
+Definition wants_sum (k : WalkKind) : bool :=
+  match k with WAggSum => true | _ => false end.
+
+(* One aggregation step: fold the current cell into [acc].  [res] is
+   the cell's own evaluation, [sumres] the offset cell's (only
+   meaningful under WAggSum with [use_sum] true).  Returns EVal of
+   the new accumulator, EErr on a type error, EFuel to propagate
+   exhaustion. *)
+Definition walk_step (k : WalkKind) (op : CmpOp) (lit : Z)
+    (use_sum : bool) (cell : Cell) (res sumres : EvalResult)
+    (acc : Z) : EvalResult :=
+  match k with
+  | WSum =>
+    match res with
+    | EVal v => EVal (Z.add acc v)
+    | EFuel => EFuel
+    | EFVal _ | EValS _ | EValB _ | EErr => EErr
+    end
+  | WMin =>
+    match res with
+    | EVal v => EVal (Z.min acc v)
+    | EFuel => EFuel
+    | EFVal _ | EValS _ | EValB _ | EErr => EErr
+    end
+  | WMax =>
+    match res with
+    | EVal v => EVal (Z.max acc v)
+    | EFuel => EFuel
+    | EFVal _ | EValS _ | EValB _ | EErr => EErr
+    end
+  | WCountN =>
+    match count_contrib true cell res with
+    | None => EFuel
+    | Some d => EVal (Z.add acc d)
+    end
+  | WCountA =>
+    match count_contrib false cell res with
+    | None => EFuel
+    | Some d => EVal (Z.add acc d)
+    end
+  | WAggSum =>
+    match aggif_contrib true use_sum op lit res sumres with
+    | None => EFuel
+    | Some d => EVal (Z.add acc d)
+    end
+  | WAggCnt =>
+    match aggif_contrib false false op lit res sumres with
+    | None => EFuel
+    | Some d => EVal (Z.add acc d)
+    end
+  end.
+
 Fixpoint eval_expr (fuel : nat) (visited : VisitedSet) (s : Sheet)
                    (e : Expr) : EvalResult :=
   match fuel with
@@ -346,7 +505,7 @@ Fixpoint eval_expr (fuel : nat) (visited : VisitedSet) (s : Sheet)
                 then 1%Z else 0%Z))
         (eval_expr fuel' visited s a) (eval_expr fuel' visited s b)
     | ESum tl br =>
-      sum_rows fuel' visited s
+      walk_rows fuel' WSum CmpEq 0%Z 0 0 visited s
         (cell_col_of tl) (cell_col_of br)
         (cell_row_of tl) (cell_row_of br) 0%Z
     | ECount tl br =>
@@ -363,13 +522,36 @@ Fixpoint eval_expr (fuel : nat) (visited : VisitedSet) (s : Sheet)
        cells).  Degenerate rectangles fall out of the walkers'
        boundary tests as EVal 0 with no special-casing. *)
     | ECountN tl br =>
-      count_rows fuel' true visited s
+      walk_rows fuel' WCountN CmpEq 0%Z 0 0 visited s
         (cell_col_of tl) (cell_col_of br)
         (cell_row_of tl) (cell_row_of br) 0%Z
     | ECountA tl br =>
-      count_rows fuel' false visited s
+      walk_rows fuel' WCountA CmpEq 0%Z 0 0 visited s
         (cell_col_of tl) (cell_col_of br)
         (cell_row_of tl) (cell_row_of br) 0%Z
+    (* Item 25: IF-aggregates.  The sum-range anchor turns into a
+       constant (dc, dr) offset from each criteria cell. *)
+    | ESumIf tl br op lit sumtl =>
+      walk_rows fuel' WAggSum op lit
+        (PrimInt63.sub (cell_col_of sumtl) (cell_col_of tl))
+        (PrimInt63.sub (cell_row_of sumtl) (cell_row_of tl))
+        visited s
+        (cell_col_of tl) (cell_col_of br)
+        (cell_row_of tl) (cell_row_of br) 0%Z
+    | ECountIf tl br op lit =>
+      walk_rows fuel' WAggCnt op lit 0 0 visited s
+        (cell_col_of tl) (cell_col_of br)
+        (cell_row_of tl) (cell_row_of br) 0%Z
+    | EAvgIf tl br op lit sumtl =>
+      let lc := cell_col_of tl in
+      let hc := cell_col_of br in
+      let lr := cell_row_of tl in
+      let hr := cell_row_of br in
+      let dc := PrimInt63.sub (cell_col_of sumtl) lc in
+      let dr := PrimInt63.sub (cell_row_of sumtl) lr in
+      avgif_combine
+        (walk_rows fuel' WAggCnt op lit 0 0 visited s lc hc lr hr 0%Z)
+        (walk_rows fuel' WAggSum op lit dc dr visited s lc hc lr hr 0%Z)
     | EAvg tl br =>
       let lc := cell_col_of tl in
       let hc := cell_col_of br in
@@ -382,7 +564,8 @@ Fixpoint eval_expr (fuel : nat) (visited : VisitedSet) (s : Sheet)
         let count := Uint63.to_Z (PrimInt63.mul cs rs) in
         if Z.eqb count 0%Z then EErr
         else
-          match sum_rows fuel' visited s lc hc lr hr 0%Z with
+          match walk_rows fuel' WSum CmpEq 0%Z 0 0 visited s
+                  lc hc lr hr 0%Z with
           | EVal sum => EVal (Z.div sum count)
           | r => r
           end
@@ -462,7 +645,8 @@ Fixpoint eval_expr (fuel : nat) (visited : VisitedSet) (s : Sheet)
       if orb (PrimInt63.ltb hc lc) (PrimInt63.ltb hr lr) then EErr
       else
         match eval_at_ref fuel' visited s (mkRef lc lr) with
-        | EVal seed => min_rows fuel' visited s lc hc lr hr seed
+        | EVal seed => walk_rows fuel' WMin CmpEq 0%Z 0 0 visited s
+                         lc hc lr hr seed
         | EFuel => EFuel
         | _ => EErr
         end
@@ -474,7 +658,8 @@ Fixpoint eval_expr (fuel : nat) (visited : VisitedSet) (s : Sheet)
       if orb (PrimInt63.ltb hc lc) (PrimInt63.ltb hr lr) then EErr
       else
         match eval_at_ref fuel' visited s (mkRef lc lr) with
-        | EVal seed => max_rows fuel' visited s lc hc lr hr seed
+        | EVal seed => walk_rows fuel' WMax CmpEq 0%Z 0 0 visited s
+                         lc hc lr hr seed
         | EFuel => EFuel
         | _ => EErr
         end
@@ -498,16 +683,40 @@ with eval_at_ref (fuel : nat) (visited : VisitedSet) (s : Sheet)
       end
   end
 
-with sum_cols (fuel : nat) (visited : VisitedSet) (s : Sheet)
-              (col hc : int) (row : int) (acc : Z) : EvalResult :=
+(* The one walker pair (see the WalkKind comment above): [walk_cols]
+   folds one row segment cell by cell through [walk_step]; the
+   second eval_at_ref read targets the offset sum cell only under
+   WAggSum with the in-grid guard true, and re-reads the criteria
+   cell otherwise (its result is then ignored by the step). *)
+with walk_cols (fuel : nat) (k : WalkKind) (op : CmpOp) (lit : Z)
+               (dc dr : int) (visited : VisitedSet) (s : Sheet)
+               (col hc : int) (row : int) (acc : Z) : EvalResult :=
   match fuel with
   | O => EFuel
   | S fuel' =>
     if PrimInt63.ltb hc col then EVal acc
     else
-      match eval_at_ref fuel' visited s (mkRef col row) with
-      | EVal v  => sum_cols fuel' visited s
-                     (PrimInt63.add col 1) hc row (Z.add acc v)
+      (* In-grid guard for the offset sum cell.  Written so the
+         accept-set is identical under Coq's uint63 (where a
+         "negative" offset wraps huge and fails ltb) and the
+         extraction's int64 (where it goes negative and fails
+         leb 0): exactly the in-grid refs pass. *)
+      let use_sum :=
+        andb (wants_sum k)
+          (andb (andb (PrimInt63.leb 0 (PrimInt63.add col dc))
+                      (PrimInt63.ltb (PrimInt63.add col dc) NUM_COLS))
+                (andb (PrimInt63.leb 0 (PrimInt63.add row dr))
+                      (PrimInt63.ltb (PrimInt63.add row dr) NUM_ROWS))) in
+      match walk_step k op lit use_sum
+              (get_cell s (mkRef col row))
+              (eval_at_ref fuel' visited s (mkRef col row))
+              (eval_at_ref fuel' visited s
+                 (if use_sum
+                  then mkRef (PrimInt63.add col dc) (PrimInt63.add row dr)
+                  else mkRef col row))
+              acc with
+      | EVal acc' => walk_cols fuel' k op lit dc dr visited s
+                       (PrimInt63.add col 1) hc row acc'
       | EFVal _ => EErr
       | EValS _ => EErr
       | EValB _ => EErr
@@ -516,153 +725,16 @@ with sum_cols (fuel : nat) (visited : VisitedSet) (s : Sheet)
       end
   end
 
-with sum_rows (fuel : nat) (visited : VisitedSet) (s : Sheet)
-              (lc hc : int) (row hr : int) (acc : Z) : EvalResult :=
+with walk_rows (fuel : nat) (k : WalkKind) (op : CmpOp) (lit : Z)
+               (dc dr : int) (visited : VisitedSet) (s : Sheet)
+               (lc hc : int) (row hr : int) (acc : Z) : EvalResult :=
   match fuel with
   | O => EFuel
   | S fuel' =>
     if PrimInt63.ltb hr row then EVal acc
     else
-      match sum_cols fuel' visited s lc hc row acc with
-      | EVal acc' => sum_rows fuel' visited s lc hc
-                       (PrimInt63.add row 1) hr acc'
-      | EFVal _   => EErr
-      | EValS _   => EErr
-      | EValB _   => EErr
-      | EErr      => EErr
-      | EFuel     => EFuel
-      end
-  end
-
-with min_cols (fuel : nat) (visited : VisitedSet) (s : Sheet)
-              (col hc : int) (row : int) (acc : Z) : EvalResult :=
-  match fuel with
-  | O => EFuel
-  | S fuel' =>
-    if PrimInt63.ltb hc col then EVal acc
-    else
-      match eval_at_ref fuel' visited s (mkRef col row) with
-      | EVal v  => min_cols fuel' visited s
-                     (PrimInt63.add col 1) hc row (Z.min acc v)
-      | EFVal _ => EErr
-      | EValS _ => EErr
-      | EValB _ => EErr
-      | EErr    => EErr
-      | EFuel   => EFuel
-      end
-  end
-
-with min_rows (fuel : nat) (visited : VisitedSet) (s : Sheet)
-              (lc hc : int) (row hr : int) (acc : Z) : EvalResult :=
-  match fuel with
-  | O => EFuel
-  | S fuel' =>
-    if PrimInt63.ltb hr row then EVal acc
-    else
-      match min_cols fuel' visited s lc hc row acc with
-      | EVal acc' => min_rows fuel' visited s lc hc
-                       (PrimInt63.add row 1) hr acc'
-      | EFVal _   => EErr
-      | EValS _   => EErr
-      | EValB _   => EErr
-      | EErr      => EErr
-      | EFuel     => EFuel
-      end
-  end
-
-with max_cols (fuel : nat) (visited : VisitedSet) (s : Sheet)
-              (col hc : int) (row : int) (acc : Z) : EvalResult :=
-  match fuel with
-  | O => EFuel
-  | S fuel' =>
-    if PrimInt63.ltb hc col then EVal acc
-    else
-      match eval_at_ref fuel' visited s (mkRef col row) with
-      | EVal v  => max_cols fuel' visited s
-                     (PrimInt63.add col 1) hc row (Z.max acc v)
-      | EFVal _ => EErr
-      | EValS _ => EErr
-      | EValB _ => EErr
-      | EErr    => EErr
-      | EFuel   => EFuel
-      end
-  end
-
-with max_rows (fuel : nat) (visited : VisitedSet) (s : Sheet)
-              (lc hc : int) (row hr : int) (acc : Z) : EvalResult :=
-  match fuel with
-  | O => EFuel
-  | S fuel' =>
-    if PrimInt63.ltb hr row then EVal acc
-    else
-      match max_cols fuel' visited s lc hc row acc with
-      | EVal acc' => max_rows fuel' visited s lc hc
-                       (PrimInt63.add row 1) hr acc'
-      | EFVal _   => EErr
-      | EValS _   => EErr
-      | EValB _   => EErr
-      | EErr      => EErr
-      | EFuel     => EFuel
-      end
-  end
-
-(* Item 79: one cell-counting step.  [numeric] = true counts numeric
-   cells only (COUNT); false counts every non-empty cell (COUNTA).
-   Formula cells evaluate through [eval_at_ref]: numeric results
-   count toward both modes, typed (string/bool) and error results
-   count toward COUNTA only — matching the Excel convention where
-   COUNT skips errors but COUNTA counts any occupied cell. *)
-with count_cols (fuel : nat) (numeric : bool) (visited : VisitedSet)
-                (s : Sheet) (col hc : int) (row : int) (acc : Z)
-                : EvalResult :=
-  match fuel with
-  | O => EFuel
-  | S fuel' =>
-    if PrimInt63.ltb hc col then EVal acc
-    else
-      match get_cell s (mkRef col row) with
-      | CEmpty   => count_cols fuel' numeric visited s
-                      (PrimInt63.add col 1) hc row acc
-      | CLit _   => count_cols fuel' numeric visited s
-                      (PrimInt63.add col 1) hc row (Z.add acc 1%Z)
-      | CFloat _ => count_cols fuel' numeric visited s
-                      (PrimInt63.add col 1) hc row (Z.add acc 1%Z)
-      | CStr _   => count_cols fuel' numeric visited s
-                      (PrimInt63.add col 1) hc row
-                      (if numeric then acc else Z.add acc 1%Z)
-      | CBool _  => count_cols fuel' numeric visited s
-                      (PrimInt63.add col 1) hc row
-                      (if numeric then acc else Z.add acc 1%Z)
-      | CForm _  =>
-        match eval_at_ref fuel' visited s (mkRef col row) with
-        | EVal _  => count_cols fuel' numeric visited s
-                       (PrimInt63.add col 1) hc row (Z.add acc 1%Z)
-        | EFVal _ => count_cols fuel' numeric visited s
-                       (PrimInt63.add col 1) hc row (Z.add acc 1%Z)
-        | EValS _ => count_cols fuel' numeric visited s
-                       (PrimInt63.add col 1) hc row
-                       (if numeric then acc else Z.add acc 1%Z)
-        | EValB _ => count_cols fuel' numeric visited s
-                       (PrimInt63.add col 1) hc row
-                       (if numeric then acc else Z.add acc 1%Z)
-        | EErr    => count_cols fuel' numeric visited s
-                       (PrimInt63.add col 1) hc row
-                       (if numeric then acc else Z.add acc 1%Z)
-        | EFuel   => EFuel
-        end
-      end
-  end
-
-with count_rows (fuel : nat) (numeric : bool) (visited : VisitedSet)
-                (s : Sheet) (lc hc : int) (row hr : int) (acc : Z)
-                : EvalResult :=
-  match fuel with
-  | O => EFuel
-  | S fuel' =>
-    if PrimInt63.ltb hr row then EVal acc
-    else
-      match count_cols fuel' numeric visited s lc hc row acc with
-      | EVal acc' => count_rows fuel' numeric visited s lc hc
+      match walk_cols fuel' k op lit dc dr visited s lc hc row acc with
+      | EVal acc' => walk_rows fuel' k op lit dc dr visited s lc hc
                        (PrimInt63.add row 1) hr acc'
       | EFVal _   => EErr
       | EValS _   => EErr
@@ -1025,55 +1097,22 @@ Lemma fuel_monotone_all : forall fuel,
      fuel <= fuel' ->
      eval_at_ref fuel visited s r <> EFuel ->
      eval_at_ref fuel' visited s r = eval_at_ref fuel visited s r) /\
-  (forall col hc row acc fuel' visited s,
+  (forall k op lit dc dr col hc row acc fuel' visited s,
      fuel <= fuel' ->
-     sum_cols fuel visited s col hc row acc <> EFuel ->
-     sum_cols fuel' visited s col hc row acc =
-     sum_cols fuel visited s col hc row acc) /\
-  (forall lc hc row hr acc fuel' visited s,
+     walk_cols fuel k op lit dc dr visited s col hc row acc <> EFuel ->
+     walk_cols fuel' k op lit dc dr visited s col hc row acc =
+     walk_cols fuel k op lit dc dr visited s col hc row acc) /\
+  (forall k op lit dc dr lc hc row hr acc fuel' visited s,
      fuel <= fuel' ->
-     sum_rows fuel visited s lc hc row hr acc <> EFuel ->
-     sum_rows fuel' visited s lc hc row hr acc =
-     sum_rows fuel visited s lc hc row hr acc) /\
-  (forall col hc row acc fuel' visited s,
-     fuel <= fuel' ->
-     min_cols fuel visited s col hc row acc <> EFuel ->
-     min_cols fuel' visited s col hc row acc =
-     min_cols fuel visited s col hc row acc) /\
-  (forall lc hc row hr acc fuel' visited s,
-     fuel <= fuel' ->
-     min_rows fuel visited s lc hc row hr acc <> EFuel ->
-     min_rows fuel' visited s lc hc row hr acc =
-     min_rows fuel visited s lc hc row hr acc) /\
-  (forall col hc row acc fuel' visited s,
-     fuel <= fuel' ->
-     max_cols fuel visited s col hc row acc <> EFuel ->
-     max_cols fuel' visited s col hc row acc =
-     max_cols fuel visited s col hc row acc) /\
-  (forall lc hc row hr acc fuel' visited s,
-     fuel <= fuel' ->
-     max_rows fuel visited s lc hc row hr acc <> EFuel ->
-     max_rows fuel' visited s lc hc row hr acc =
-     max_rows fuel visited s lc hc row hr acc) /\
-  (forall numeric col hc row acc fuel' visited s,
-     fuel <= fuel' ->
-     count_cols fuel numeric visited s col hc row acc <> EFuel ->
-     count_cols fuel' numeric visited s col hc row acc =
-     count_cols fuel numeric visited s col hc row acc) /\
-  (forall numeric lc hc row hr acc fuel' visited s,
-     fuel <= fuel' ->
-     count_rows fuel numeric visited s lc hc row hr acc <> EFuel ->
-     count_rows fuel' numeric visited s lc hc row hr acc =
-     count_rows fuel numeric visited s lc hc row hr acc).
+     walk_rows fuel k op lit dc dr visited s lc hc row hr acc <> EFuel ->
+     walk_rows fuel' k op lit dc dr visited s lc hc row hr acc =
+     walk_rows fuel k op lit dc dr visited s lc hc row hr acc).
 Proof.
   induction fuel as [|fuel IH].
-  - split; [|split; [|split; [|split; [|split; [|split; [|split;
-      [|split; [|split]]]]]]]];
+  - split; [|split; [|split]];
       intros until s; intros _ Hnf; simpl in *; congruence.
-  - destruct IH as
-      [IHe [IHr [IHc [IHs [IHmc [IHmr [IHxc [IHxr [IHcc IHcr]]]]]]]]].
-    split; [|split; [|split; [|split; [|split; [|split; [|split;
-      [|split; [|split]]]]]]]].
+  - destruct IH as [IHe [IHr [IHwc IHwr]]].
+    split; [|split; [|split]].
     + (* eval_expr *)
       intros e fuel' visited s Hle Hnf.
       destruct fuel' as [|fuel']; [lia|].
@@ -1114,26 +1153,16 @@ Proof.
           rewrite (IHe e fuel' visited s Hle') by congruence;
           rewrite Ea; reflexivity.
       * (* ESum *)
-        apply IHs; assumption.
+        apply IHwr; assumption.
       * (* EAvg *)
         destruct (orb (PrimInt63.ltb (cell_col_of c0) (cell_col_of c))
                       (PrimInt63.ltb (cell_row_of c0) (cell_row_of c))).
         -- reflexivity.
         -- destruct (Z.eqb _ 0%Z); [reflexivity|].
-           destruct (sum_rows fuel _ _ _ _ _ _ _) eqn:Esr; try congruence.
-           ++ rewrite (IHs _ _ _ _ _ _ _ _ Hle') by congruence.
-              rewrite Esr. reflexivity.
-           ++ (* EFVal *)
-              rewrite (IHs _ _ _ _ _ _ _ _ Hle') by congruence.
-              rewrite Esr. reflexivity.
-           ++ (* EValS *)
-              rewrite (IHs _ _ _ _ _ _ _ _ Hle') by congruence.
-              rewrite Esr. reflexivity.
-           ++ (* EValB *)
-              rewrite (IHs _ _ _ _ _ _ _ _ Hle') by congruence.
-              rewrite Esr. reflexivity.
-           ++ rewrite (IHs _ _ _ _ _ _ _ _ Hle') by congruence.
-              rewrite Esr. reflexivity.
+           destruct (walk_rows fuel _ _ _ _ _ _ _ _ _ _ _ _) eqn:Esr;
+             try congruence;
+             rewrite (IHwr _ _ _ _ _ _ _ _ _ _ _ _ _ Hle') by congruence;
+             rewrite Esr; reflexivity.
       * (* ECount *)
         destruct (orb _ _); reflexivity.
       * (* EIfErr *)
@@ -1197,7 +1226,7 @@ Proof.
           rewrite (IHr _ fuel' visited s Hle') by congruence;
           rewrite Eat;
           try reflexivity.
-        apply IHmr; assumption.
+        apply IHwr; assumption.
       * (* EMax *)
         destruct (orb (PrimInt63.ltb (cell_col_of c0) (cell_col_of c))
                       (PrimInt63.ltb (cell_row_of c0) (cell_row_of c)));
@@ -1208,11 +1237,28 @@ Proof.
           rewrite (IHr _ fuel' visited s Hle') by congruence;
           rewrite Eat;
           try reflexivity.
-        apply IHxr; assumption.
+        apply IHwr; assumption.
       * (* ECountN *)
-        apply IHcr; assumption.
+        apply IHwr; assumption.
       * (* ECountA *)
-        apply IHcr; assumption.
+        apply IHwr; assumption.
+      * (* ESumIf *)
+        apply IHwr; assumption.
+      * (* ECountIf *)
+        apply IHwr; assumption.
+      * (* EAvgIf *)
+        destruct (walk_rows fuel WAggCnt _ _ _ _ _ _ _ _ _ _ _) eqn:E1;
+          simpl in Hnf; try congruence;
+          rewrite (IHwr _ _ _ _ _ _ _ _ _ _ _ _ _ Hle') by congruence;
+          rewrite E1;
+          try reflexivity.
+        simpl.
+        destruct (Z.eqb _ 0%Z); [reflexivity|].
+        destruct (walk_rows fuel WAggSum _ _ _ _ _ _ _ _ _ _ _) eqn:E2;
+          simpl in Hnf; try congruence;
+          rewrite (IHwr _ _ _ _ _ _ _ _ _ _ _ _ _ Hle') by congruence;
+          rewrite E2;
+          reflexivity.
     + (* eval_at_ref *)
       intros r fuel' visited s Hle Hnf.
       destruct fuel' as [|fuel']; [lia|].
@@ -1221,126 +1267,112 @@ Proof.
       destruct (is_visited visited r); [reflexivity|].
       destruct (get_cell s r); try reflexivity.
       apply IHe; assumption.
-    + (* sum_cols *)
-      intros col hc row acc fuel' visited s Hle Hnf.
+    + (* walk_cols *)
+      intros k op lit dc dr col hc row acc fuel' visited s Hle Hnf.
       destruct fuel' as [|fuel']; [lia|].
       assert (Hle' : fuel <= fuel') by lia.
       simpl in Hnf. simpl.
       destruct (PrimInt63.ltb hc col); [reflexivity|].
-      destruct (eval_at_ref fuel visited s (mkRef col row)) eqn:Eat;
-        try congruence.
-      -- rewrite (IHr (mkRef col row) fuel' visited s Hle') by congruence.
-         rewrite Eat.
-         apply IHc; assumption.
-      -- (* EFVal *)
-         rewrite (IHr (mkRef col row) fuel' visited s Hle') by congruence.
-         rewrite Eat. reflexivity.
-      -- (* EValS *)
-         rewrite (IHr (mkRef col row) fuel' visited s Hle') by congruence.
-         rewrite Eat. reflexivity.
-      -- (* EValB *)
-         rewrite (IHr (mkRef col row) fuel' visited s Hle') by congruence.
-         rewrite Eat. reflexivity.
-      -- rewrite (IHr (mkRef col row) fuel' visited s Hle') by congruence.
-         rewrite Eat. reflexivity.
-    + (* sum_rows *)
-      intros lc hc row hr acc fuel' visited s Hle Hnf.
+      destruct k; simpl in Hnf; simpl.
+      * (* WSum *)
+        destruct (eval_at_ref fuel visited s (mkRef col row)) eqn:E1;
+          simpl in Hnf; try congruence;
+          rewrite (IHr (mkRef col row) fuel' visited s Hle') by congruence;
+          rewrite E1;
+          simpl;
+          first [ apply IHwc; assumption | reflexivity ].
+      * (* WMin *)
+        destruct (eval_at_ref fuel visited s (mkRef col row)) eqn:E1;
+          simpl in Hnf; try congruence;
+          rewrite (IHr (mkRef col row) fuel' visited s Hle') by congruence;
+          rewrite E1;
+          simpl;
+          first [ apply IHwc; assumption | reflexivity ].
+      * (* WMax *)
+        destruct (eval_at_ref fuel visited s (mkRef col row)) eqn:E1;
+          simpl in Hnf; try congruence;
+          rewrite (IHr (mkRef col row) fuel' visited s Hle') by congruence;
+          rewrite E1;
+          simpl;
+          first [ apply IHwc; assumption | reflexivity ].
+      * (* WCountN: count_contrib consults the evaluation result only
+           for formula cells; everywhere else conversion discards it,
+           so the eval_at_ref rewrite is attempted but optional (it is
+           unprovable exactly when the result is also ignored). *)
+        destruct (get_cell s (mkRef col row)) eqn:Hc;
+          destruct (eval_at_ref fuel visited s (mkRef col row)) eqn:E1;
+          simpl in Hnf; try congruence;
+          try (rewrite (IHr (mkRef col row) fuel' visited s Hle')
+                 by congruence;
+               rewrite E1);
+          simpl; apply IHwc; assumption.
+      * (* WCountA *)
+        destruct (get_cell s (mkRef col row)) eqn:Hc;
+          destruct (eval_at_ref fuel visited s (mkRef col row)) eqn:E1;
+          simpl in Hnf; try congruence;
+          try (rewrite (IHr (mkRef col row) fuel' visited s Hle')
+                 by congruence;
+               rewrite E1);
+          simpl; apply IHwc; assumption.
+      * (* WAggSum: the guard picks the second read's target *)
+        destruct (andb (andb (PrimInt63.leb 0 (PrimInt63.add col dc))
+                             (PrimInt63.ltb (PrimInt63.add col dc) NUM_COLS))
+                       (andb (PrimInt63.leb 0 (PrimInt63.add row dr))
+                             (PrimInt63.ltb (PrimInt63.add row dr) NUM_ROWS)))
+          eqn:Eg.
+        -- (* guard ok: distinct criteria and sum reads *)
+           destruct (eval_at_ref fuel visited s (mkRef col row)) eqn:E1;
+             simpl in Hnf; try congruence;
+             rewrite (IHr (mkRef col row) fuel' visited s Hle')
+               by congruence;
+             rewrite E1;
+             try (simpl; apply IHwc; assumption).
+           (* EVal: expose the predicate with simpl first, then case
+              on it — the matched branch forces the sum read. *)
+           simpl.
+           destruct (cmp_holds op z lit) eqn:Ec.
+           ++ destruct (eval_at_ref fuel visited s
+                          (mkRef (PrimInt63.add col dc)
+                                 (PrimInt63.add row dr))) eqn:E2;
+                simpl in Hnf; try congruence;
+                rewrite (IHr _ fuel' visited s Hle') by congruence;
+                rewrite E2;
+                simpl; apply IHwc; assumption.
+           ++ apply IHwc; assumption.
+        -- (* guard failed: the second read re-targets the criteria
+              cell, so the one rewrite covers both occurrences *)
+           destruct (eval_at_ref fuel visited s (mkRef col row)) eqn:E1;
+             simpl in Hnf; try congruence;
+             rewrite (IHr (mkRef col row) fuel' visited s Hle')
+               by congruence;
+             rewrite E1;
+             simpl;
+             try (apply IHwc; assumption);
+             destruct (cmp_holds _ _ _);
+             simpl; apply IHwc; assumption.
+      * (* WAggCnt: the second read re-targets the criteria cell *)
+        destruct (eval_at_ref fuel visited s (mkRef col row)) eqn:E1;
+          simpl in Hnf; try congruence;
+          rewrite (IHr (mkRef col row) fuel' visited s Hle') by congruence;
+          rewrite E1;
+          simpl;
+          try (apply IHwc; assumption);
+          destruct (cmp_holds _ _ _);
+          simpl; apply IHwc; assumption.
+    + (* walk_rows *)
+      intros k op lit dc dr lc hc row hr acc fuel' visited s Hle Hnf.
       destruct fuel' as [|fuel']; [lia|].
       assert (Hle' : fuel <= fuel') by lia.
       simpl in Hnf. simpl.
       destruct (PrimInt63.ltb hr row); [reflexivity|].
-      destruct (sum_cols fuel visited s lc hc row acc) eqn:Esc;
-        try congruence.
-      -- rewrite (IHc lc hc row acc fuel' visited s Hle') by congruence.
-         rewrite Esc.
-         apply IHs; assumption.
-      -- (* EFVal *)
-         rewrite (IHc lc hc row acc fuel' visited s Hle') by congruence.
-         rewrite Esc. reflexivity.
-      -- (* EValS *)
-         rewrite (IHc lc hc row acc fuel' visited s Hle') by congruence.
-         rewrite Esc. reflexivity.
-      -- (* EValB *)
-         rewrite (IHc lc hc row acc fuel' visited s Hle') by congruence.
-         rewrite Esc. reflexivity.
-      -- rewrite (IHc lc hc row acc fuel' visited s Hle') by congruence.
-         rewrite Esc. reflexivity.
-    + (* min_cols *)
-      intros col hc row acc fuel' visited s Hle Hnf.
-      destruct fuel' as [|fuel']; [lia|].
-      assert (Hle' : fuel <= fuel') by lia.
-      simpl in Hnf. simpl.
-      destruct (PrimInt63.ltb hc col); [reflexivity|].
-      destruct (eval_at_ref fuel visited s (mkRef col row)) eqn:Eat;
+      destruct (walk_cols fuel k op lit dc dr visited s lc hc row acc)
+        eqn:Esc;
         try congruence;
-        rewrite (IHr (mkRef col row) fuel' visited s Hle') by congruence;
-        rewrite Eat;
-        try reflexivity.
-      apply IHmc; assumption.
-    + (* min_rows *)
-      intros lc hc row hr acc fuel' visited s Hle Hnf.
-      destruct fuel' as [|fuel']; [lia|].
-      assert (Hle' : fuel <= fuel') by lia.
-      simpl in Hnf. simpl.
-      destruct (PrimInt63.ltb hr row); [reflexivity|].
-      destruct (min_cols fuel visited s lc hc row acc) eqn:Esc;
-        try congruence;
-        rewrite (IHmc lc hc row acc fuel' visited s Hle') by congruence;
-        rewrite Esc;
-        try reflexivity.
-      apply IHmr; assumption.
-    + (* max_cols *)
-      intros col hc row acc fuel' visited s Hle Hnf.
-      destruct fuel' as [|fuel']; [lia|].
-      assert (Hle' : fuel <= fuel') by lia.
-      simpl in Hnf. simpl.
-      destruct (PrimInt63.ltb hc col); [reflexivity|].
-      destruct (eval_at_ref fuel visited s (mkRef col row)) eqn:Eat;
-        try congruence;
-        rewrite (IHr (mkRef col row) fuel' visited s Hle') by congruence;
-        rewrite Eat;
-        try reflexivity.
-      apply IHxc; assumption.
-    + (* max_rows *)
-      intros lc hc row hr acc fuel' visited s Hle Hnf.
-      destruct fuel' as [|fuel']; [lia|].
-      assert (Hle' : fuel <= fuel') by lia.
-      simpl in Hnf. simpl.
-      destruct (PrimInt63.ltb hr row); [reflexivity|].
-      destruct (max_cols fuel visited s lc hc row acc) eqn:Esc;
-        try congruence;
-        rewrite (IHxc lc hc row acc fuel' visited s Hle') by congruence;
-        rewrite Esc;
-        try reflexivity.
-      apply IHxr; assumption.
-    + (* count_cols *)
-      intros numeric col hc row acc fuel' visited s Hle Hnf.
-      destruct fuel' as [|fuel']; [lia|].
-      assert (Hle' : fuel <= fuel') by lia.
-      simpl in Hnf. simpl.
-      destruct (PrimInt63.ltb hc col); [reflexivity|].
-      destruct (get_cell s (mkRef col row)) eqn:Hc;
-        try (apply IHcc; assumption).
-      (* CForm: the cell evaluates through eval_at_ref before the
-         walk continues; every value-shaped arm recurses. *)
-      destruct (eval_at_ref fuel visited s (mkRef col row)) eqn:Eat;
-        try congruence;
-        rewrite (IHr (mkRef col row) fuel' visited s Hle') by congruence;
-        rewrite Eat;
-        apply IHcc; assumption.
-    + (* count_rows *)
-      intros numeric lc hc row hr acc fuel' visited s Hle Hnf.
-      destruct fuel' as [|fuel']; [lia|].
-      assert (Hle' : fuel <= fuel') by lia.
-      simpl in Hnf. simpl.
-      destruct (PrimInt63.ltb hr row); [reflexivity|].
-      destruct (count_cols fuel numeric visited s lc hc row acc) eqn:Esc;
-        try congruence;
-        rewrite (IHcc numeric lc hc row acc fuel' visited s Hle')
+        rewrite (IHwc k op lit dc dr lc hc row acc fuel' visited s Hle')
           by congruence;
         rewrite Esc;
         try reflexivity.
-      apply IHcr; assumption.
+      apply IHwr; assumption.
 Qed.
 
 Theorem eval_fuel_monotone :
@@ -1379,28 +1411,28 @@ Proof.
   exact Hev.
 Qed.
 
-Theorem sum_cols_fuel_monotone :
-  forall fuel col hc row acc fuel' visited s v,
+Theorem walk_cols_fuel_monotone :
+  forall fuel k op lit dc dr col hc row acc fuel' visited s v,
     fuel <= fuel' ->
-    sum_cols fuel visited s col hc row acc = EVal v ->
-    sum_cols fuel' visited s col hc row acc = EVal v.
+    walk_cols fuel k op lit dc dr visited s col hc row acc = EVal v ->
+    walk_cols fuel' k op lit dc dr visited s col hc row acc = EVal v.
 Proof.
-  intros fuel col hc row acc fuel' visited s v Hle Hev.
+  intros fuel k op lit dc dr col hc row acc fuel' visited s v Hle Hev.
   rewrite (proj1 (proj2 (proj2 (fuel_monotone_all fuel)))
-             col hc row acc fuel' visited s Hle)
+             k op lit dc dr col hc row acc fuel' visited s Hle)
     by (rewrite Hev; congruence).
   exact Hev.
 Qed.
 
-Theorem sum_rows_fuel_monotone :
-  forall fuel lc hc row hr acc fuel' visited s v,
+Theorem walk_rows_fuel_monotone :
+  forall fuel k op lit dc dr lc hc row hr acc fuel' visited s v,
     fuel <= fuel' ->
-    sum_rows fuel visited s lc hc row hr acc = EVal v ->
-    sum_rows fuel' visited s lc hc row hr acc = EVal v.
+    walk_rows fuel k op lit dc dr visited s lc hc row hr acc = EVal v ->
+    walk_rows fuel' k op lit dc dr visited s lc hc row hr acc = EVal v.
 Proof.
-  intros fuel lc hc row hr acc fuel' visited s v Hle Hev.
-  rewrite (proj1 (proj2 (proj2 (proj2 (fuel_monotone_all fuel))))
-             lc hc row hr acc fuel' visited s Hle)
+  intros fuel k op lit dc dr lc hc row hr acc fuel' visited s v Hle Hev.
+  rewrite (proj2 (proj2 (proj2 (fuel_monotone_all fuel)))
+             k op lit dc dr lc hc row hr acc fuel' visited s Hle)
     by (rewrite Hev; congruence).
   exact Hev.
 Qed.

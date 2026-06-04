@@ -151,6 +151,10 @@ Definition trans (st : State) : State + option Z :=
      counting aggregates bail out like EAvg / EMin / EMax. *)
   | PCEval _ (ECountN _ _) => inr None
   | PCEval _ (ECountA _ _) => inr None
+  (* Item 25: IF-aggregates bail out the same way. *)
+  | PCEval _ (ESumIf _ _ _ _ _) => inr None
+  | PCEval _ (ECountIf _ _ _ _) => inr None
+  | PCEval _ (EAvgIf _ _ _ _ _) => inr None
   | PCSumStep visited lc hc col row hr acc =>
       if PrimInt63.ltb hr row then
         inl (mkSt (st_sheet st) (PCApply (Some acc)) (st_stack st))

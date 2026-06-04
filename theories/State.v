@@ -287,6 +287,34 @@ Fixpoint show_expr (e : Expr) : PrimString.string :=
       (PrimString.cat (cell_label tl)
         (PrimString.cat ":"
           (PrimString.cat (cell_label br) ")")))
+  | ESumIf tl br op lit sumtl =>
+    PrimString.cat "SUMIF("
+      (PrimString.cat (cell_label tl)
+        (PrimString.cat ":"
+          (PrimString.cat (cell_label br)
+            (PrimString.cat ","
+              (PrimString.cat (show_cmp op)
+                (PrimString.cat (string_of_z lit)
+                  (PrimString.cat ","
+                    (PrimString.cat (cell_label sumtl) ")"))))))))
+  | ECountIf tl br op lit =>
+    PrimString.cat "COUNTIF("
+      (PrimString.cat (cell_label tl)
+        (PrimString.cat ":"
+          (PrimString.cat (cell_label br)
+            (PrimString.cat ","
+              (PrimString.cat (show_cmp op)
+                (PrimString.cat (string_of_z lit) ")"))))))
+  | EAvgIf tl br op lit sumtl =>
+    PrimString.cat "AVERAGEIF("
+      (PrimString.cat (cell_label tl)
+        (PrimString.cat ":"
+          (PrimString.cat (cell_label br)
+            (PrimString.cat ","
+              (PrimString.cat (show_cmp op)
+                (PrimString.cat (string_of_z lit)
+                  (PrimString.cat ","
+                    (PrimString.cat (cell_label sumtl) ")"))))))))
   | EIfErr a fb =>
     PrimString.cat "IFERROR("
       (PrimString.cat (show_expr a)

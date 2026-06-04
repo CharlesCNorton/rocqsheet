@@ -60,6 +60,11 @@ assert_eval A11 4
 assert_eval B11 4
 assert_eval C11 6
 
+# Item 25: IF-aggregates over the Refs row (A1..D1 all evaluate to 100).
+assert_eval D11 4
+assert_eval E11 400
+assert_eval F11 100
+
 # --print-csv produces non-empty output.
 csv_lines=$("$BIN" --headless --load "$FIX" --print-csv | wc -l)
 if [ "$csv_lines" -lt 1 ]; then

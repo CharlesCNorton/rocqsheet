@@ -30,6 +30,11 @@ Fixpoint expr_references (r : CellRef) (e : Expr) : bool :=
   | EMin tl br | EMax tl br
   | ECountN tl br | ECountA tl br =>
     orb (cellref_eqb r tl) (cellref_eqb r br)
+  | ECountIf tl br _ _ =>
+    orb (cellref_eqb r tl) (cellref_eqb r br)
+  | ESumIf tl br _ _ sumtl | EAvgIf tl br _ _ sumtl =>
+    orb (cellref_eqb r tl)
+        (orb (cellref_eqb r br) (cellref_eqb r sumtl))
   | EFloat _ | EStr _ | EBool _ => false
   end.
 

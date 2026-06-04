@@ -47,6 +47,9 @@ Fixpoint replace_int_in_expr (from to : Z) (e : Expr) : Expr :=
   | EMax tl br => EMax tl br
   | ECountN tl br => ECountN tl br
   | ECountA tl br => ECountA tl br
+  | ESumIf tl br op lit sumtl => ESumIf tl br op lit sumtl
+  | ECountIf tl br op lit => ECountIf tl br op lit
+  | EAvgIf tl br op lit sumtl => EAvgIf tl br op lit sumtl
   end.
 
 Theorem replace_idempotent_when_equal :
