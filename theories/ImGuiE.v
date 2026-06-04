@@ -76,6 +76,7 @@ Inductive imguiE : Type -> Type :=
   | ECtrlKeyPressed   : PrimString.string -> imguiE bool
   | ECtrlShiftKeyPressed : PrimString.string -> imguiE bool
   | EKeyPressed       : PrimString.string -> imguiE bool
+  | ECtrlArrowPressed : PrimString.string -> imguiE bool
   | ESameLine         : imguiE unit
   | EFbarRefLabel     : PrimString.string -> imguiE unit
   (* Renders a tab bar.  [names] supplies the per-tab labels; the tab
@@ -174,6 +175,8 @@ Definition ctrl_shift_key_pressed (k : PrimString.string)
   : itree imguiE bool := trigger (ECtrlShiftKeyPressed k).
 Definition key_pressed (k : PrimString.string) : itree imguiE bool :=
   trigger (EKeyPressed k).
+Definition ctrl_arrow_pressed (k : PrimString.string) : itree imguiE bool :=
+  trigger (ECtrlArrowPressed k).
 Definition imgui_same_line : itree imguiE unit := trigger ESameLine.
 Definition fbar_ref_label (s : PrimString.string) : itree imguiE unit :=
   trigger (EFbarRefLabel s).
@@ -241,6 +244,7 @@ Crane Extract Inductive imguiE => ""
     "imgui_helpers::ctrl_key_pressed(%a0)"
     "imgui_helpers::ctrl_shift_key_pressed(%a0)"
     "imgui_helpers::key_pressed(%a0)"
+    "imgui_helpers::ctrl_arrow_pressed(%a0)"
     "imgui_helpers::same_line()"
     "imgui_helpers::fbar_ref_label(%a0)"
     "imgui_helpers::tab_bar_select(%a0, %a1, %a2)"
@@ -332,6 +336,8 @@ Crane Extract Inlined Constant ctrl_shift_key_pressed =>
   "imgui_helpers::ctrl_shift_key_pressed(%a0)" From "imgui_helpers.h".
 Crane Extract Inlined Constant key_pressed =>
   "imgui_helpers::key_pressed(%a0)" From "imgui_helpers.h".
+Crane Extract Inlined Constant ctrl_arrow_pressed =>
+  "imgui_helpers::ctrl_arrow_pressed(%a0)" From "imgui_helpers.h".
 Crane Extract Inlined Constant imgui_same_line =>
   "imgui_helpers::same_line()" From "imgui_helpers.h".
 Crane Extract Inlined Constant fbar_ref_label =>

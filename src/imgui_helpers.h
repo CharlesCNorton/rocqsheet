@@ -430,12 +430,28 @@ inline bool ctrl_shift_key_pressed(const std::string& k) {
 }
 
 inline bool key_pressed(const std::string& k) {
-  if (k == "Up")    return ImGui::IsKeyPressed(ImGuiKey_UpArrow);
-  if (k == "Down")  return ImGui::IsKeyPressed(ImGuiKey_DownArrow);
-  if (k == "Left")  return ImGui::IsKeyPressed(ImGuiKey_LeftArrow);
-  if (k == "Right") return ImGui::IsKeyPressed(ImGuiKey_RightArrow);
-  if (k == "Tab")   return ImGui::IsKeyPressed(ImGuiKey_Tab);
+  if (k == "Up")        return ImGui::IsKeyPressed(ImGuiKey_UpArrow);
+  if (k == "Down")      return ImGui::IsKeyPressed(ImGuiKey_DownArrow);
+  if (k == "Left")      return ImGui::IsKeyPressed(ImGuiKey_LeftArrow);
+  if (k == "Right")     return ImGui::IsKeyPressed(ImGuiKey_RightArrow);
+  if (k == "Tab")       return ImGui::IsKeyPressed(ImGuiKey_Tab);
+  if (k == "Home")      return ImGui::IsKeyPressed(ImGuiKey_Home);
+  if (k == "End")       return ImGui::IsKeyPressed(ImGuiKey_End);
+  if (k == "PageUp")    return ImGui::IsKeyPressed(ImGuiKey_PageUp);
+  if (k == "PageDown")  return ImGui::IsKeyPressed(ImGuiKey_PageDown);
+  if (k == "Delete")    return ImGui::IsKeyPressed(ImGuiKey_Delete);
+  if (k == "Enter")     return ImGui::IsKeyPressed(ImGuiKey_Enter);
   return false;
+}
+
+// Like [key_pressed] but checks that Ctrl is also held (and Shift is
+// not).  Returns true only when the named arrow key was just pressed
+// with Ctrl held.  Allows the navigation handler to bind Ctrl+arrow
+// to a separate jump-to-edge action.
+inline bool ctrl_arrow_pressed(const std::string& k) {
+  if (!ImGui::GetIO().KeyCtrl) return false;
+  if (ImGui::GetIO().KeyShift) return false;
+  return key_pressed(k);
 }
 
 // ----- Formula bar reference label -------------------------------------

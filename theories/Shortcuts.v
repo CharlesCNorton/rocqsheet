@@ -48,6 +48,99 @@ Definition do_up    (ls : loop_state) : loop_state :=
 Definition do_down  (ls : loop_state) : loop_state :=
   move_selection 0 1 ls.
 
+(* PageUp / PageDown move 25 rows at a time. *)
+Definition do_page_up (ls : loop_state) : loop_state :=
+  move_selection 0 (PrimInt63.sub 0 25) ls.
+Definition do_page_down (ls : loop_state) : loop_state :=
+  move_selection 0 25 ls.
+
+(* Home moves to column 0 of the current row. *)
+Definition do_home (ls : loop_state) : loop_state :=
+  match ls_selected ls with
+  | None => ls
+  | Some r => select_cell ls (mkRef 0 (cell_row_of r))
+  end.
+
+(* End moves to the last non-empty column of the current row.  Falls
+   back to column 0 when the entire row is empty. *)
+Fixpoint last_nonempty_in_row
+    (s : Sheet) (row col : int) (fuel : nat) (best : int) : int :=
+  match fuel with
+  | O => best
+  | S fuel' =>
+    if PrimInt63.leb (int_of_nat num_cols_nat) col then best
+    else
+      let cell := get_cell s (mkRef col row) in
+      let best' :=
+        match cell with
+        | CEmpty => best
+        | _ => col
+        end in
+      last_nonempty_in_row s row (PrimInt63.add col 1) fuel' best'
+  end.
+
+Definition do_end (ls : loop_state) : loop_state :=
+  match ls_selected ls with
+  | None => ls
+  | Some r =>
+    let row := cell_row_of r in
+    let last := last_nonempty_in_row (ls_sheet ls) row 0 270 0 in
+    select_cell ls (mkRef last row)
+  end.
+
+(* Ctrl+arrow jumps to the next non-empty cell in the direction,
+   stopping at the grid edge.  Empty cells are stepped over. *)
+Fixpoint scan_until_nonempty
+    (s : Sheet) (col row dc dr : int) (fuel : nat) : int * int :=
+  match fuel with
+  | O => (col, row)
+  | S fuel' =>
+    let nc := PrimInt63.add col dc in
+    let nr := PrimInt63.add row dr in
+    if PrimInt63.ltb nc 0 then (col, row)
+    else if PrimInt63.leb (int_of_nat num_cols_nat) nc then (col, row)
+    else if PrimInt63.ltb nr 0 then (col, row)
+    else if PrimInt63.leb (int_of_nat num_rows_nat) nr then (col, row)
+    else
+      match get_cell s (mkRef nc nr) with
+      | CEmpty => scan_until_nonempty s nc nr dc dr fuel'
+      | _ => (nc, nr)
+      end
+  end.
+
+Definition do_ctrl_arrow (dc dr : int) (ls : loop_state) : loop_state :=
+  match ls_selected ls with
+  | None => ls
+  | Some r =>
+    let '(nc, nr) :=
+      scan_until_nonempty (ls_sheet ls) (cell_col_of r) (cell_row_of r)
+                          dc dr 300 in
+    select_cell ls (mkRef nc nr)
+  end.
+
+Definition do_ctrl_up    : loop_state -> loop_state :=
+  do_ctrl_arrow 0 (PrimInt63.sub 0 1).
+Definition do_ctrl_down  : loop_state -> loop_state := do_ctrl_arrow 0 1.
+Definition do_ctrl_left  : loop_state -> loop_state :=
+  do_ctrl_arrow (PrimInt63.sub 0 1) 0.
+Definition do_ctrl_right : loop_state -> loop_state := do_ctrl_arrow 1 0.
+
+(* Delete clears the selected cell without writing to clipboard. *)
+Definition do_clear_cell (ls : loop_state) : loop_state :=
+  match ls_selected ls with
+  | None => ls
+  | Some r => commit_to ls r ""
+  end.
+
+(* Ctrl+X cuts: copy to OS clipboard, then clear. *)
+Definition do_cut (ls : loop_state) : itree imguiE loop_state :=
+  match ls_selected ls with
+  | None => Ret ls
+  | Some r =>
+    _ <- clipboard_set (fbar_for_cell (ls_edit_buf ls) (ls_sheet ls) r) ;;
+    Ret (commit_to ls r "")
+  end.
+
 Definition handle_shortcuts (ls : loop_state) : itree imguiE loop_state :=
   z <- ctrl_key_pressed "z" ;;
   let ls1 := cond_apply z do_undo ls in
@@ -77,4 +170,27 @@ Definition handle_shortcuts (ls : loop_state) : itree imguiE loop_state :=
   ls13 <- (if p then do_pdf_export ls12 else Ret ls12) ;;
   shift_s <- ctrl_shift_key_pressed "s" ;;
   ls14 <- (if shift_s then do_save_as ls13 else Ret ls13) ;;
-  Ret ls14.
+  (* Item 64 — Home / End / PageUp / PageDown. *)
+  pu <- key_pressed "PageUp" ;;
+  let ls15 := cond_apply pu do_page_up ls14 in
+  pd <- key_pressed "PageDown" ;;
+  let ls16 := cond_apply pd do_page_down ls15 in
+  hk <- key_pressed "Home" ;;
+  let ls17 := cond_apply hk do_home ls16 in
+  ek <- key_pressed "End" ;;
+  let ls18 := cond_apply ek do_end ls17 in
+  (* Item 62 — Ctrl+arrow jumps to next non-empty cell. *)
+  cu <- ctrl_arrow_pressed "Up" ;;
+  let ls19 := cond_apply cu do_ctrl_up ls18 in
+  cd <- ctrl_arrow_pressed "Down" ;;
+  let ls20 := cond_apply cd do_ctrl_down ls19 in
+  cl <- ctrl_arrow_pressed "Left" ;;
+  let ls21 := cond_apply cl do_ctrl_left ls20 in
+  cr <- ctrl_arrow_pressed "Right" ;;
+  let ls22 := cond_apply cr do_ctrl_right ls21 in
+  (* Item 73 — Delete clears the selected cell; Ctrl+X copies then clears. *)
+  del <- key_pressed "Delete" ;;
+  let ls23 := cond_apply del do_clear_cell ls22 in
+  x <- ctrl_key_pressed "x" ;;
+  ls24 <- (if x then do_cut ls23 else Ret ls23) ;;
+  Ret ls24.
