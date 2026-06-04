@@ -256,6 +256,7 @@ Definition build_save_string (ls : loop_state) : PrimString.string :=
 Definition do_save (ls : loop_state) : itree imguiE loop_state :=
   let _ := tt in
   _ <- file_save_atomic save_path (build_save_string ls) ;;
+  recent_record save_path ;;
   Ret ls.
 
 Definition do_save_as (ls : loop_state) : itree imguiE loop_state :=
@@ -264,6 +265,7 @@ Definition do_save_as (ls : loop_state) : itree imguiE loop_state :=
     then save_path
     else ls_fbar_text ls in
   _ <- file_save_atomic path (build_save_string ls) ;;
+  recent_record path ;;
   Ret ls.
 
 Definition csv_path : PrimString.string := "rocqsheet.csv".
@@ -749,13 +751,13 @@ Fixpoint apply_load_lines
         end
   end.
 
-Definition do_load (ls : loop_state) : itree imguiE loop_state :=
-  res <- file_read save_path ;;
+(* Internal: load from a given path.  Used by [do_load] (default path)
+   and by [do_load_path] (Open Recent submenu entry). *)
+Definition do_load_from
+    (ls : loop_state) (path : PrimString.string) : itree imguiE loop_state :=
+  res <- file_read path ;;
   let '(content, ok) := res in
   if ok then
-    (* Reset edit_buf, merges, charts, formats to empty so the directives
-       in the file are the only source of those fields.  Sheet names
-       and other_sheets get reseeded as the S=/N=/cell lines come in. *)
     let cleared := mkLoop new_sheet None "" nil nil
                           (trim_undo
                             ((ls_sheet ls, "load file"%pstring) :: ls_undo ls))
@@ -764,9 +766,19 @@ Definition do_load (ls : loop_state) : itree imguiE loop_state :=
                           (ls_other_sheets ls) (ls_active ls)
                           nil nil (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls) in
     let len := PrimString.length content in
-    Ret (apply_load_lines cleared content len 0
-                          (S (S (nat_of_int len))))
+    let loaded := apply_load_lines cleared content len 0
+                                   (S (S (nat_of_int len))) in
+    recent_record path ;;
+    Ret loaded
   else Ret ls.
+
+Definition do_load (ls : loop_state) : itree imguiE loop_state :=
+  do_load_from ls save_path.
+
+(* Item 86: Open Recent dispatcher — used by the matching submenu. *)
+Definition do_load_recent
+    (ls : loop_state) (path : PrimString.string) : itree imguiE loop_state :=
+  do_load_from ls path.
 
 Definition do_copy (ls : loop_state) : itree imguiE unit :=
   match ls_selected ls with

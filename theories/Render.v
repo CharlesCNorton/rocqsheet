@@ -248,6 +248,41 @@ Definition advance_after_tab (ls : loop_state) : loop_state :=
     select_cell ls (mkRef new_c (cell_row_of r))
   end.
 
+(* Item 64: count '(' and ')' in the formula-bar text.  The byte-
+   exact scan is fine because '(' and ')' are single-byte ASCII even
+   under any multi-byte encoding we'd care about. *)
+Fixpoint parens_balance_aux (s : PrimString.string) (i : int)
+                            (len : int) (fuel : nat) (oc : Z * Z) : Z * Z :=
+  let '(o, c) := oc in
+  match fuel with
+  | O => (o, c)
+  | S fuel' =>
+    if PrimInt63.leb len i then (o, c)
+    else
+      let b := PrimString.get s i in
+      let oc' :=
+        if PrimInt63.eqb b 40%uint63 then (Z.add o 1%Z, c)
+        else if PrimInt63.eqb b 41%uint63 then (o, Z.add c 1%Z)
+        else (o, c) in
+      parens_balance_aux s (PrimInt63.add i 1) len fuel' oc'
+  end.
+
+Definition parens_balance (s : PrimString.string) : Z * Z :=
+  parens_balance_aux s 0 (PrimString.length s) 4096 (0%Z, 0%Z).
+
+(* Item 64: scan the formula-bar text and compute (open, close)
+   parenthesis counts.  Equal counts + nonzero ≡ balanced; anything
+   else surfaces a small indicator next to the input. *)
+Definition parens_indicator (txt : PrimString.string) : PrimString.string :=
+  let p := parens_balance txt in
+  let opens := fst p in
+  let closes := snd p in
+  if Z.eqb opens closes then
+    if Z.eqb opens 0%Z then ""%pstring
+    else "()"%pstring
+  else if Z.ltb closes opens then "(...?"%pstring
+  else "?)..."%pstring.
+
 Definition render_formula_bar (ls : loop_state) : itree imguiE loop_state :=
   let label :=
     match ls_selected ls with
@@ -258,8 +293,111 @@ Definition render_formula_bar (ls : loop_state) : itree imguiE loop_state :=
   imgui_same_line ;;
   res <- imgui_input_text "##fbar" (ls_fbar_text ls) ;;
   let '(new_text, enter) := res in
+  imgui_same_line ;;
+  imgui_text (parens_indicator new_text) ;;
   let ls1 := update_fbar ls new_text in
   Ret (if enter then advance_after_enter (do_commit ls1) else ls1).
+
+(* ----- Status bar (item 51) -------------------------------- *)
+(* Per-frame aggregate over the active sheet: sum, count, avg, min,
+   max, non-empty count.  Surfaced at the bottom of the main window
+   so the user does not have to type a [SUM(...)] formula into a
+   scratch cell to see the total.  When [ls_selected] resolves to a
+   numeric cell, that cell's value and label are appended.  Once the
+   selection model is widened to a range (item 50), this driver
+   becomes the range-aggregate path. *)
+
+Record sheet_agg : Type := mkAgg {
+  ag_count    : nat;
+  ag_nonempty : nat;
+  ag_sum      : Z;
+  ag_min      : Z;
+  ag_max      : Z;
+  ag_has_any  : bool
+}.
+
+Definition empty_agg : sheet_agg :=
+  mkAgg 0 0 0%Z 0%Z 0%Z false.
+
+Definition merge_z (a : sheet_agg) (v : Z) : sheet_agg :=
+  if ag_has_any a then
+    mkAgg (S (ag_count a))
+          (S (ag_nonempty a))
+          (Z.add (ag_sum a) v)
+          (if Z.ltb v (ag_min a) then v else ag_min a)
+          (if Z.ltb (ag_max a) v then v else ag_max a)
+          true
+  else
+    mkAgg 1 1 v v v true.
+
+Definition merge_nonempty (a : sheet_agg) : sheet_agg :=
+  mkAgg (ag_count a) (S (ag_nonempty a)) (ag_sum a)
+        (ag_min a) (ag_max a) (ag_has_any a).
+
+Fixpoint walk_sheet_aux (s : Sheet) (idx : int) (fuel : nat)
+                       (acc : sheet_agg) : sheet_agg :=
+  match fuel with
+  | O => acc
+  | S fuel' =>
+    if PrimInt63.leb GRID_SIZE idx then acc
+    else
+      let acc' :=
+        match PrimArray.get s idx with
+        | CEmpty   => acc
+        | CLit n   => merge_z acc n
+        | CFloat _ => merge_nonempty acc
+        | CStr _   => merge_nonempty acc
+        | CBool _  => merge_nonempty acc
+        | CForm e =>
+          match eval_expr DEFAULT_FUEL empty_visited s e with
+          | EVal v => merge_z acc v
+          | EFVal _ | EValS _ | EValB _ => merge_nonempty acc
+          | _ => acc
+          end
+        end in
+      walk_sheet_aux s (PrimInt63.add idx 1) fuel' acc'
+  end.
+
+Definition sheet_aggregate (s : Sheet) : sheet_agg :=
+  walk_sheet_aux s 0 60000 empty_agg.
+
+Definition agg_avg (a : sheet_agg) : Z :=
+  if Nat.eqb (ag_count a) 0 then 0%Z
+  else Z.div (ag_sum a) (Z.of_nat (ag_count a)).
+
+Definition status_bar_text (ls : loop_state) : PrimString.string :=
+  let a := sheet_aggregate (ls_sheet ls) in
+  let agg :=
+    if ag_has_any a then
+      PrimString.cat "Sum: "%pstring (
+      PrimString.cat (string_of_z (ag_sum a)) (
+      PrimString.cat " | Avg: "%pstring (
+      PrimString.cat (string_of_z (agg_avg a)) (
+      PrimString.cat " | Count: "%pstring (
+      PrimString.cat (string_of_z (Z.of_nat (ag_count a))) (
+      PrimString.cat " | Non-empty: "%pstring (
+      PrimString.cat (string_of_z (Z.of_nat (ag_nonempty a))) (
+      PrimString.cat " | Min: "%pstring (
+      PrimString.cat (string_of_z (ag_min a)) (
+      PrimString.cat " | Max: "%pstring (
+      string_of_z (ag_max a))))))))))))
+    else
+      "Sheet is empty"%pstring in
+  match ls_selected ls with
+  | None => agg
+  | Some r =>
+    let '(disp, _) :=
+      cell_display (ls_sheet ls) (ls_merges ls) (ls_parse_errs ls)
+                   (ls_formats ls) r in
+    PrimString.cat "Sel: "%pstring (
+    PrimString.cat (cell_label r) (
+    PrimString.cat " = "%pstring (
+    PrimString.cat disp (
+    PrimString.cat "    "%pstring agg))))
+  end.
+
+Definition render_status_bar (ls : loop_state) : itree imguiE unit :=
+  imgui_text (status_bar_text ls).
 
 (* ----- PDF emission ---------------------------------------- *)
 

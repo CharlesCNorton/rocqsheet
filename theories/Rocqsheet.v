@@ -230,6 +230,24 @@ Definition combine_bins (op : PrimString.string -> PrimString.string -> EvalResu
   | _, _          => EErr
   end.
 
+(* Item 37: small Z -> PrimFloat conversion + nat-exponent power so
+   [EPow va vb] with [vb < 0] can produce [EFVal (1 / va^|vb|)]
+   instead of [EErr].  Z.pow is integer; PrimFloat has no native
+   pow, so we iterate. *)
+Definition float_of_z (z : Z) : PrimFloat.float :=
+  match z with
+  | Z0     => PrimFloat.of_uint63 0%uint63
+  | Zpos p => PrimFloat.of_uint63 (Uint63.of_Z (Zpos p))
+  | Zneg p => PrimFloat.opp
+                (PrimFloat.of_uint63 (Uint63.of_Z (Zpos p)))
+  end.
+
+Fixpoint float_pow_nat (x : PrimFloat.float) (n : nat) : PrimFloat.float :=
+  match n with
+  | O    => PrimFloat.of_uint63 1%uint63
+  | S n' => PrimFloat.mul x (float_pow_nat x n')
+  end.
+
 Fixpoint eval_expr (fuel : nat) (visited : VisitedSet) (s : Sheet)
                    (e : Expr) : EvalResult :=
   match fuel with
@@ -292,9 +310,17 @@ Fixpoint eval_expr (fuel : nat) (visited : VisitedSet) (s : Sheet)
                       else EVal (Z.modulo va vb))
         (eval_expr fuel' visited s a) (eval_expr fuel' visited s b)
     | EPow a b =>
+      (* Item 37: negative exponents now yield [1 / a^|b|] as a float
+         (when [a <> 0]); previously they returned [EErr]. *)
       combine_bin
-        (fun va vb => if Z.ltb vb 0%Z then EErr
-                      else EVal (Z.pow va vb))
+        (fun va vb =>
+          if Z.ltb vb 0%Z then
+            if Z.eqb va 0%Z then EErr
+            else
+              let n := Z.to_nat (Z.opp vb) in
+              let pw := float_pow_nat (float_of_z va) n in
+              EFVal (PrimFloat.div (PrimFloat.of_uint63 1%uint63) pw)
+          else EVal (Z.pow va vb))
         (eval_expr fuel' visited s a) (eval_expr fuel' visited s b)
     | ENot a =>
       match eval_expr fuel' visited s a with

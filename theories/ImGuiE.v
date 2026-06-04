@@ -71,6 +71,12 @@ Inductive imguiE : Type -> Type :=
      caller now holds the lock and is safe to write; [false] when
      another process holds it. *)
   | EFileLock         : PrimString.string -> imguiE bool
+  (* Item 86: maintain a per-user "Open Recent" file at
+     ~/.config/rocqsheet/recent.  [ERecentRecord p] prepends [p],
+     dedupes, caps the list at 10, atomically rewrites the file.
+     [ERecentList] returns the current list (newest first). *)
+  | ERecentRecord     : PrimString.string -> imguiE unit
+  | ERecentList       : imguiE (list PrimString.string)
   | EClipboardGet     : imguiE PrimString.string
   | EClipboardSet     : PrimString.string -> imguiE unit
   | ECtrlKeyPressed   : PrimString.string -> imguiE bool
@@ -165,6 +171,10 @@ Definition file_save_atomic (path : PrimString.string) (content : PrimString.str
   : itree imguiE bool := trigger (EFileSaveAtomic path content).
 Definition file_lock (path : PrimString.string) : itree imguiE bool :=
   trigger (EFileLock path).
+Definition recent_record (path : PrimString.string) : itree imguiE unit :=
+  trigger (ERecentRecord path).
+Definition recent_list : itree imguiE (list PrimString.string) :=
+  trigger ERecentList.
 Definition clipboard_get : itree imguiE PrimString.string :=
   trigger EClipboardGet.
 Definition clipboard_set (s : PrimString.string) : itree imguiE unit :=
@@ -239,6 +249,8 @@ Crane Extract Inductive imguiE => ""
     "imgui_helpers::file_write(%a0, %a1)"
     "imgui_helpers::file_save_atomic(%a0, %a1)"
     "imgui_helpers::file_lock(%a0)"
+    "recent_helpers::record(%a0)"
+    "recent_helpers::list()"
     "imgui_helpers::clipboard_get()"
     "imgui_helpers::clipboard_set(%a0)"
     "imgui_helpers::ctrl_key_pressed(%a0)"
@@ -250,7 +262,7 @@ Crane Extract Inductive imguiE => ""
     "imgui_helpers::tab_bar_select(%a0, %a1, %a2)"
     "chart_helpers::chart_render(%a0, %a1, %a2)"
     "pdf_helpers::emit_pdf(%a0, %a1)" ]
-  From "imgui_helpers.h".
+  From "imgui_helpers.h" "recent_helpers.h".
 
 Crane Extract Inlined Constant glfw_should_close =>
   "imgui_helpers::should_close()" From "imgui_helpers.h".
@@ -326,6 +338,10 @@ Crane Extract Inlined Constant file_save_atomic =>
   "imgui_helpers::file_save_atomic(%a0, %a1)" From "imgui_helpers.h".
 Crane Extract Inlined Constant file_lock =>
   "imgui_helpers::file_lock(%a0)" From "imgui_helpers.h".
+Crane Extract Inlined Constant recent_record =>
+  "recent_helpers::record(%a0)" From "recent_helpers.h".
+Crane Extract Inlined Constant recent_list =>
+  "recent_helpers::list()" From "recent_helpers.h".
 Crane Extract Inlined Constant clipboard_get =>
   "imgui_helpers::clipboard_get()" From "imgui_helpers.h".
 Crane Extract Inlined Constant clipboard_set =>

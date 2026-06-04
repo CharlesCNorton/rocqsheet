@@ -46,6 +46,9 @@ Definition process_frame (ls : loop_state) : itree imguiE (bool * loop_state) :=
     imgui_separator ;;
     ls3 <- render_tab_bar ls2 ;;
     ls4 <- render_grid ls3 ;;
+    (* Item 51: selection summary + sheet aggregate at bottom. *)
+    imgui_separator ;;
+    render_status_bar ls4 ;;
     imgui_end_window ;;
     (* Pin Charts to a bottom strip on first launch so it doesn't
        cover rows 1-22 of the grid; subsequent frames respect any

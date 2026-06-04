@@ -19,6 +19,19 @@ Import Rocqsheet.
 Open Scope itree_scope.
 Local Open Scope pstring_scope.
 
+(* Item 86: walk the recent-paths list and render one menu item per
+   entry, dispatching to [do_load_recent] on click. *)
+Fixpoint recent_menu_items
+    (ls : loop_state) (xs : list PrimString.string)
+  : itree imguiE loop_state :=
+  match xs with
+  | nil => Ret ls
+  | p :: rest =>
+    clicked <- imgui_menu_item p true ;;
+    ls' <- (if clicked then do_load_recent ls p else Ret ls) ;;
+    recent_menu_items ls' rest
+  end.
+
 Definition file_menu (ls : loop_state) : itree imguiE loop_state :=
   new_clicked <- imgui_menu_item "New" true ;;
   let ls0 := cond_apply new_clicked do_clear ls in
@@ -28,8 +41,16 @@ Definition file_menu (ls : loop_state) : itree imguiE loop_state :=
   ls1a <- (if save_as_clicked then do_save_as ls1 else Ret ls1) ;;
   load_clicked <- imgui_menu_item "Open" true ;;
   ls2 <- (if load_clicked then do_load ls1a else Ret ls1a) ;;
+  (* Open Recent submenu. *)
+  recent_open <- imgui_begin_menu "Open Recent" ;;
+  ls2a <- (if recent_open then
+             paths <- recent_list ;;
+             ls' <- recent_menu_items ls2 paths ;;
+             imgui_end_menu ;;
+             Ret ls'
+           else Ret ls2) ;;
   pdf_clicked <- imgui_menu_item "Export to PDF" true ;;
-  ls3 <- (if pdf_clicked then do_pdf_export ls2 else Ret ls2) ;;
+  ls3 <- (if pdf_clicked then do_pdf_export ls2a else Ret ls2a) ;;
   csv_clicked <- imgui_menu_item "Export to CSV (formula bar = path)" true ;;
   ls4 <- (if csv_clicked then do_export_csv ls3 else Ret ls3) ;;
   html_clicked <- imgui_menu_item "Export to HTML (formula bar = path)" true ;;
