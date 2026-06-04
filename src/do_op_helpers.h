@@ -75,7 +75,10 @@ inline LoopState commit_new_sheet(LoopState ls, Sheet new_sheet,
     ls.ls_active,
     std::move(ls.ls_charts),
     std::move(ls.ls_merges),
-    std::move(ls.ls_sheet_names)};
+    std::move(ls.ls_sheet_names),
+    ls.ls_show_formulas,
+    ls.ls_zoom,
+    ls.ls_auto_recalc};
 }
 
 // do_undo: pop ls_undo's head pair onto (ls_sheet, ...), push the
@@ -107,7 +110,10 @@ inline LoopState do_undo(LoopState ls) {
     ls.ls_active,
     std::move(ls.ls_charts),
     std::move(ls.ls_merges),
-    std::move(ls.ls_sheet_names)};
+    std::move(ls.ls_sheet_names),
+    ls.ls_show_formulas,
+    ls.ls_zoom,
+    ls.ls_auto_recalc};
   // Note: do_undo pushes onto ls_redo (not ls_undo), so we do not
   // trim here -- ls_redo is bounded by however many undos came before.
 }
@@ -141,7 +147,10 @@ inline LoopState do_redo(LoopState ls) {
     ls.ls_active,
     std::move(ls.ls_charts),
     std::move(ls.ls_merges),
-    std::move(ls.ls_sheet_names)};
+    std::move(ls.ls_sheet_names),
+    ls.ls_show_formulas,
+    ls.ls_zoom,
+    ls.ls_auto_recalc};
 }
 
 // do_clear: replace ls_sheet with [empty_sheet], reset ls_selected /
@@ -167,7 +176,10 @@ inline LoopState do_clear(LoopState ls, Sheet empty_sheet) {
     ls.ls_active,
     std::move(ls.ls_charts),
     std::move(ls.ls_merges),
-    std::move(ls.ls_sheet_names)};
+    std::move(ls.ls_sheet_names),
+    ls.ls_show_formulas,
+    ls.ls_zoom,
+    ls.ls_auto_recalc};
 }
 
 // do_merge_right shape: install [new_merges] in place of ls.ls_merges

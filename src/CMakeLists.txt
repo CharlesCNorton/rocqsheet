@@ -62,6 +62,7 @@ add_executable(rocqsheet
   chart_helpers.cpp
   pdf_helpers.cpp
   tab_bar_helpers.cpp
+  recent_helpers.cpp
   ${GEN_DIR}/rocqsheet.cpp)
 target_include_directories(rocqsheet PRIVATE
   ${GEN_DIR}
@@ -82,6 +83,7 @@ add_executable(formula_test
   chart_helpers.cpp
   pdf_helpers.cpp
   tab_bar_helpers.cpp
+  recent_helpers.cpp
   ${GEN_DIR}/rocqsheet.cpp)
 target_include_directories(formula_test PRIVATE
   ${GEN_DIR}
@@ -98,6 +100,7 @@ add_executable(kernel_test
   chart_helpers.cpp
   pdf_helpers.cpp
   tab_bar_helpers.cpp
+  recent_helpers.cpp
   ${GEN_DIR}/rocqsheet.cpp)
 target_include_directories(kernel_test PRIVATE
   ${GEN_DIR}
@@ -114,6 +117,7 @@ add_executable(torture_test
   chart_helpers.cpp
   pdf_helpers.cpp
   tab_bar_helpers.cpp
+  recent_helpers.cpp
   ${GEN_DIR}/rocqsheet.cpp)
 target_include_directories(torture_test PRIVATE
   ${GEN_DIR}

@@ -138,8 +138,16 @@ void test_div_mod_zero_neg_pow() {
   s = form(s, 2, 0, S::Expr::emod(S::Expr::eref(S::CellRef{0, 0}),
                                    S::Expr::eint(0)));
   check("mod-by-0 → EErr", is_err(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{2, 0})));
+  // Item 37: 2^-3 = 1/8 as a float (EFVal 0.125); 0^-3 stays EErr.
   s = form(s, 3, 0, S::Expr::epow(S::Expr::eint(2), S::Expr::eint(-3)));
-  check("neg-pow → EErr", is_err(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{3, 0})));
+  {
+    auto r = S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{3, 0});
+    bool ok = std::holds_alternative<S::EvalResult::EFVal>(r.v()) &&
+              std::get<S::EvalResult::EFVal>(r.v()).d_a0 == 0.125;
+    check("neg-pow → EFVal 1/8", ok);
+  }
+  s = form(s, 5, 0, S::Expr::epow(S::Expr::eint(0), S::Expr::eint(-3)));
+  check("0^neg → EErr", is_err(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{5, 0})));
   // Pow with 0 exponent is 1.
   s = form(s, 4, 0, S::Expr::epow(S::Expr::eint(0), S::Expr::eint(0)));
   check_int("pow 0^0", as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{4, 0})), 1);

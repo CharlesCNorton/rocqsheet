@@ -18,6 +18,8 @@
 #include <filesystem>
 #include <system_error>
 
+template <typename T> struct List;
+
 namespace recent_helpers {
 
 constexpr std::size_t MAX_RECENT = 10;
@@ -86,15 +88,10 @@ inline void record(const std::string& path) {
   write_lines_atomic(next);
 }
 
-inline ::List<std::string> list() {
-  auto xs = read_lines();
-  if (xs.size() > MAX_RECENT) xs.resize(MAX_RECENT);
-  ::List<std::string> out;
-  for (auto it = xs.rbegin(); it != xs.rend(); ++it) {
-    out = ::List<std::string>::cons(*it, out);
-  }
-  return out;
-}
+// Defined in recent_helpers.cpp where the full [List<std::string>]
+// template body is visible (this header is included by the generated
+// code before the List template is defined).
+::List<std::string> list();
 
 }  // namespace recent_helpers
 
