@@ -148,7 +148,54 @@ Definition do_toggle_show_formulas (ls : loop_state) : loop_state :=
          (ls_undo ls) (ls_redo ls) (ls_formats ls)
          (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
          (ls_merges ls) (ls_sheet_names ls)
-         (negb (ls_show_formulas ls)).
+         (negb (ls_show_formulas ls)) (ls_zoom ls) (ls_auto_recalc ls).
+
+(* Item 73: toggle Auto-Recalc. *)
+Definition do_toggle_auto_recalc (ls : loop_state) : loop_state :=
+  mkLoop (ls_sheet ls) (ls_selected ls) (ls_fbar_text ls)
+         (ls_edit_buf ls) (ls_parse_errs ls)
+         (ls_undo ls) (ls_redo ls) (ls_formats ls)
+         (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
+         (ls_merges ls) (ls_sheet_names ls)
+         (ls_show_formulas ls) (ls_zoom ls) (negb (ls_auto_recalc ls)).
+
+(* Item 60: zoom helpers.  Clamp to [50, 300] in steps of 10. *)
+Definition zoom_min : Z := 50%Z.
+Definition zoom_max : Z := 300%Z.
+Definition zoom_step : Z := 10%Z.
+
+Definition clamp_zoom (z : Z) : Z :=
+  if Z.ltb z zoom_min then zoom_min
+  else if Z.ltb zoom_max z then zoom_max
+  else z.
+
+Definition do_zoom_in (ls : loop_state) : loop_state :=
+  mkLoop (ls_sheet ls) (ls_selected ls) (ls_fbar_text ls)
+         (ls_edit_buf ls) (ls_parse_errs ls)
+         (ls_undo ls) (ls_redo ls) (ls_formats ls)
+         (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
+         (ls_merges ls) (ls_sheet_names ls)
+         (ls_show_formulas ls)
+         (clamp_zoom (Z.add (ls_zoom ls) zoom_step))
+         (ls_auto_recalc ls).
+
+Definition do_zoom_out (ls : loop_state) : loop_state :=
+  mkLoop (ls_sheet ls) (ls_selected ls) (ls_fbar_text ls)
+         (ls_edit_buf ls) (ls_parse_errs ls)
+         (ls_undo ls) (ls_redo ls) (ls_formats ls)
+         (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
+         (ls_merges ls) (ls_sheet_names ls)
+         (ls_show_formulas ls)
+         (clamp_zoom (Z.sub (ls_zoom ls) zoom_step))
+         (ls_auto_recalc ls).
+
+Definition do_zoom_reset (ls : loop_state) : loop_state :=
+  mkLoop (ls_sheet ls) (ls_selected ls) (ls_fbar_text ls)
+         (ls_edit_buf ls) (ls_parse_errs ls)
+         (ls_undo ls) (ls_redo ls) (ls_formats ls)
+         (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
+         (ls_merges ls) (ls_sheet_names ls)
+         (ls_show_formulas ls) 100%Z (ls_auto_recalc ls).
 
 Definition handle_shortcuts (ls : loop_state) : itree imguiE loop_state :=
   z <- ctrl_key_pressed "z" ;;
@@ -205,4 +252,11 @@ Definition handle_shortcuts (ls : loop_state) : itree imguiE loop_state :=
   (* Item 68 — Ctrl+` toggles Show Formulas mode. *)
   tilde <- ctrl_key_pressed "`" ;;
   let ls25 := cond_apply tilde do_toggle_show_formulas ls24 in
-  Ret ls25.
+  (* Item 60 — Ctrl+= zoom in, Ctrl+- zoom out, Ctrl+0 reset. *)
+  zin <- ctrl_key_pressed "=" ;;
+  let ls26 := cond_apply zin do_zoom_in ls25 in
+  zout <- ctrl_key_pressed "-" ;;
+  let ls27 := cond_apply zout do_zoom_out ls26 in
+  zres <- ctrl_key_pressed "0" ;;
+  let ls28 := cond_apply zres do_zoom_reset ls27 in
+  Ret ls28.

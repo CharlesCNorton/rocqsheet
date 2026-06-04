@@ -333,7 +333,7 @@ Definition do_replace_user (ls : loop_state) : loop_state :=
            (trim_undo ((before, "replace"%pstring) :: ls_undo ls)) nil
            (ls_formats ls)
            (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
-           (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls)
+           (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls)
   end.
 
 Fixpoint parse_uint_aux (fuel : nat) (s : PrimString.string) (len i : int)
@@ -407,7 +407,7 @@ Definition apply_sheet_rename
                       (ls_undo ls) (ls_redo ls) (ls_formats ls)
                       (ls_other_sheets ls) (ls_active ls)
                       (ls_charts ls) (ls_merges ls) new_names
-                      (ls_show_formulas ls) in
+                      (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls) in
     (ls', next_i).
 
 (* Parse a single uint terminated by [stop_char] starting at [i].
@@ -499,7 +499,7 @@ Definition apply_format_line
                (ls_undo ls) (ls_redo ls)
                new_fmts
                (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
-               (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) in
+               (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls) in
       (ls', next_i)
     end end end end end end end.
 
@@ -544,7 +544,7 @@ Definition apply_merge_line
                  (ls_edit_buf ls) (ls_parse_errs ls)
                  (ls_undo ls) (ls_redo ls) (ls_formats ls)
                  (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
-                 new_merges (ls_sheet_names ls) (ls_show_formulas ls) in
+                 new_merges (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls) in
         (ls', next_i)
       else (ls, next_i)
     end end end end.
@@ -607,7 +607,7 @@ Definition apply_chart_line
                    (ls_edit_buf ls) (ls_parse_errs ls)
                    (ls_undo ls) (ls_redo ls) (ls_formats ls)
                    (ls_other_sheets ls) (ls_active ls) new_charts
-                   (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) in
+                   (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls) in
           (ls', next_i)
         else (ls, next_i)
       end end end end.
@@ -651,7 +651,7 @@ Definition apply_edit_line
                    new_eb (ls_parse_errs ls)
                    (ls_undo ls) (ls_redo ls) (ls_formats ls)
                    (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
-                   (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) in
+                   (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls) in
           (ls', next_i)
         else (ls, next_i)
     end end.
@@ -762,7 +762,7 @@ Definition do_load (ls : loop_state) : itree imguiE loop_state :=
                           nil
                           nil
                           (ls_other_sheets ls) (ls_active ls)
-                          nil nil (ls_sheet_names ls) (ls_show_formulas ls) in
+                          nil nil (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls) in
     let len := PrimString.length content in
     Ret (apply_load_lines cleared content len 0
                           (S (S (nat_of_int len))))

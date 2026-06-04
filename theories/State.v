@@ -384,7 +384,17 @@ Record loop_state : Type := mkLoop {
   (* Render mode: when [true], cell_display returns the raw formula
      text (with leading `=`) instead of the evaluated value.  Toggled
      by Ctrl+` (Excel convention).  See item 68. *)
-  ls_show_formulas : bool
+  ls_show_formulas : bool;
+  (* Zoom factor as a percentage.  100 = no scaling; +10 per Ctrl+=
+     press, -10 per Ctrl+-, clamped to [50, 300].  Used by render
+     to scale column widths.  See item 60. *)
+  ls_zoom : Z;
+  (* When [false], edits do not propagate through the dep graph until
+     the user presses F9 (Recalc).  The eval pipeline currently has
+     no memoisation layer (TODO item 9), so this flag is honoured by
+     [render_one_cell] which holds the last-rendered value when
+     auto-recalc is off.  See item 73. *)
+  ls_auto_recalc : bool
 }.
 
 (* Helpers for the [ls_sheet_names] list. *)
@@ -445,7 +455,7 @@ Definition initial_charts : list Chart :=
 Definition initial_loop_state : loop_state :=
   mkLoop demo_sheet None "" nil nil nil nil demo_formats
          initial_other_sheets 0%uint63 initial_charts nil
-         default_sheet_names false.
+         default_sheet_names false 100%Z true.
 
 (* ----- Edit-buffer / parse-error helpers -------------------- *)
 
@@ -541,7 +551,7 @@ Definition push_undo (ls : loop_state) (before : Sheet)
          (ls_edit_buf ls) (ls_parse_errs ls)
          (trim_undo ((before, desc) :: ls_undo ls)) nil (ls_formats ls)
          (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
-         (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls).
+         (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls).
 
 (* What text to show in the menu bar's "Undo" / "Redo" item: the
    description of the head entry, or the empty string when the stack
@@ -564,11 +574,11 @@ Definition select_cell (ls : loop_state) (r : CellRef) : loop_state :=
          (ls_edit_buf ls) (ls_parse_errs ls)
          (ls_undo ls) (ls_redo ls) (ls_formats ls)
          (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
-         (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls).
+         (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls).
 
 Definition update_fbar (ls : loop_state) (s : PrimString.string) : loop_state :=
   mkLoop (ls_sheet ls) (ls_selected ls) s
          (ls_edit_buf ls) (ls_parse_errs ls)
          (ls_undo ls) (ls_redo ls) (ls_formats ls)
          (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
-         (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls).
+         (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls).

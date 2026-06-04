@@ -96,13 +96,26 @@ Fixpoint clipper_loop
       Ret ls
   end.
 
-Fixpoint setup_columns (c : nat) (count : nat) : itree imguiE unit :=
+(* Item 60: scale column widths by ls_zoom%.  Base width 80 at 100%
+   zoom; clamped at runtime to [40, 240] so the grid stays usable
+   even at extreme zoom levels. *)
+Definition zoomed_col_width (zoom_pct : Z) : Z :=
+  let raw := Z.div (Z.mul 80%Z zoom_pct) 100%Z in
+  if Z.ltb raw 40%Z then 40%Z
+  else if Z.ltb 240%Z raw then 240%Z
+  else raw.
+
+Fixpoint setup_columns_z
+    (c : nat) (count : nat) (w : int) : itree imguiE unit :=
   match count with
   | O => Ret tt
   | S count' =>
-    imgui_table_setup_column (col_label_nat c) 80 ;;
-    setup_columns (S c) count'
+    imgui_table_setup_column (col_label_nat c) w ;;
+    setup_columns_z (S c) count' w
   end.
+
+Definition setup_columns (ls : loop_state) (count : nat) : itree imguiE unit :=
+  setup_columns_z 0 count (Uint63.of_Z (zoomed_col_width (ls_zoom ls))).
 
 Definition num_cols_nat : nat := 260.
 Definition num_rows_nat : nat := 200.
@@ -191,7 +204,7 @@ Definition render_grid (ls : loop_state) : itree imguiE loop_state :=
   if ok then
     imgui_table_setup_freeze 1 1 ;;
     imgui_table_setup_column "" 32 ;;
-    setup_columns 0 num_cols_nat ;;
+    setup_columns ls num_cols_nat ;;
     imgui_table_headers_row ;;
     imgui_clipper_begin (int_of_nat num_rows_nat) ;;
     ls' <- clipper_loop 8 ls num_cols_nat ;;

@@ -88,7 +88,7 @@ Definition commit_to (ls : loop_state) (r : CellRef) (txt : PrimString.string)
     mkLoop new_sheet (ls_selected ls) (ls_fbar_text ls)
            new_eb new_pe (trim_undo ((before, "edit cell"%pstring) :: ls_undo ls)) nil (ls_formats ls)
            (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
-           (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls)
+           (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls)
   else if starts_with_eq txt then
     let body := strip_leading_eq txt in
     match parse_formula body with
@@ -99,14 +99,14 @@ Definition commit_to (ls : loop_state) (r : CellRef) (txt : PrimString.string)
       mkLoop new_sheet (ls_selected ls) (ls_fbar_text ls)
              new_eb new_pe (trim_undo ((before, "edit cell"%pstring) :: ls_undo ls)) nil (ls_formats ls)
              (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
-             (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls)
+             (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls)
     | None =>
       let new_eb := put_edit (ls_edit_buf ls) r txt in
       let new_pe := add_ref (ls_parse_errs ls) r in
       mkLoop before (ls_selected ls) (ls_fbar_text ls)
              new_eb new_pe (ls_undo ls) (ls_redo ls) (ls_formats ls)
              (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
-             (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls)
+             (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls)
     end
   else
     match parse_int_literal txt with
@@ -117,14 +117,14 @@ Definition commit_to (ls : loop_state) (r : CellRef) (txt : PrimString.string)
       mkLoop new_sheet (ls_selected ls) (ls_fbar_text ls)
              new_eb new_pe (trim_undo ((before, "edit cell"%pstring) :: ls_undo ls)) nil (ls_formats ls)
              (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
-             (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls)
+             (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls)
     | None =>
       let new_eb := put_edit (ls_edit_buf ls) r txt in
       let new_pe := add_ref (ls_parse_errs ls) r in
       mkLoop before (ls_selected ls) (ls_fbar_text ls)
              new_eb new_pe (ls_undo ls) (ls_redo ls) (ls_formats ls)
              (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
-             (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls)
+             (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls)
     end.
 
 Definition do_commit (ls : loop_state) : loop_state :=
@@ -141,7 +141,7 @@ Definition do_undo (ls : loop_state) : loop_state :=
            (ls_edit_buf ls) (ls_parse_errs ls)
            rest ((ls_sheet ls, desc) :: ls_redo ls) (ls_formats ls)
            (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
-           (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls)
+           (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls)
   end.
 
 Definition do_redo (ls : loop_state) : loop_state :=
@@ -153,7 +153,7 @@ Definition do_redo (ls : loop_state) : loop_state :=
            (trim_undo ((ls_sheet ls, desc) :: ls_undo ls)) rest
            (ls_formats ls)
            (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
-           (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls)
+           (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls)
   end.
 
 Definition do_clear (ls : loop_state) : loop_state :=
@@ -163,7 +163,7 @@ Definition do_clear (ls : loop_state) : loop_state :=
                   ((ls_sheet ls, "clear sheet"%pstring) :: ls_undo ls))
                 nil (ls_formats ls)
                 (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
-                (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls)
+                (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls)
   end.
 
 Definition lookup_sheet_or_new
@@ -183,7 +183,7 @@ Definition switch_to_sheet (ls : loop_state) (new_idx : int) : loop_state :=
     let new_other := assoc_int_remove stored new_idx in
     mkLoop new_sh None "" nil nil nil nil (ls_formats ls)
            new_other new_idx (ls_charts ls) (ls_merges ls)
-           (ls_sheet_names ls) (ls_show_formulas ls).
+           (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls).
 
 Definition cond_apply (b : bool) (f : loop_state -> loop_state)
     (ls : loop_state) : loop_state :=
@@ -219,7 +219,7 @@ Definition do_insert_row (ls : loop_state) : loop_state :=
            (trim_undo ((before, "insert row"%pstring) :: ls_undo ls)) nil
            (ls_formats ls)
            (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
-           (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls)
+           (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls)
   end.
 
 Definition do_delete_row (ls : loop_state) : loop_state :=
@@ -233,7 +233,7 @@ Definition do_delete_row (ls : loop_state) : loop_state :=
            (trim_undo ((before, "delete row"%pstring) :: ls_undo ls)) nil
            (ls_formats ls)
            (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
-           (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls)
+           (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls)
   end.
 
 Definition do_swap_with_next_row (ls : loop_state) : loop_state :=
@@ -251,7 +251,7 @@ Definition do_swap_with_next_row (ls : loop_state) : loop_state :=
              (trim_undo ((before, "swap rows"%pstring) :: ls_undo ls)) nil
              (ls_formats ls)
              (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
-             (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls)
+             (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls)
   end.
 
 Crane Extract Inlined Constant do_insert_row =>
@@ -300,7 +300,7 @@ Definition do_replace_zero_one (ls : loop_state) : loop_state :=
          (trim_undo ((before, "replace 0 -> 1"%pstring) :: ls_undo ls)) nil
          (ls_formats ls)
          (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
-         (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls).
+         (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls).
 
 Definition do_merge_right (ls : loop_state) : loop_state :=
   match ls_selected ls with
@@ -314,5 +314,5 @@ Definition do_merge_right (ls : loop_state) : loop_state :=
              (ls_edit_buf ls) (ls_parse_errs ls)
              (ls_undo ls) (ls_redo ls) (ls_formats ls)
              (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
-             (add_merge (ls_merges ls) r br) (ls_sheet_names ls) (ls_show_formulas ls)
+             (add_merge (ls_merges ls) r br) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls)
   end.

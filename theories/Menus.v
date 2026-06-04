@@ -12,6 +12,7 @@ From Rocqsheet Require Import State.
 From Rocqsheet Require Import Edit.
 From Rocqsheet Require Import SaveLoad.
 From Rocqsheet Require Import Render.
+From Rocqsheet Require Import Shortcuts.
 Import ListNotations.
 Import Rocqsheet.
 
@@ -66,6 +67,34 @@ Definition edit_menu (ls : loop_state) : itree imguiE loop_state :=
   let ls_x := cond_apply rep_clicked do_replace_user ls_m in
   Ret ls_x.
 
+(* View menu: Show Formulas + Auto-Recalc toggles, Zoom controls.
+   Implements item 60 (Zoom) + item 68 (Show Formulas) +
+   item 73 (Auto-Recalc) at the menu level. *)
+Definition view_menu (ls : loop_state) : itree imguiE loop_state :=
+  let sf_label :=
+    if ls_show_formulas ls
+    then "[x] Show Formulas (Ctrl+`)"%pstring
+    else "[ ] Show Formulas (Ctrl+`)"%pstring in
+  sf_clicked <- imgui_menu_item sf_label true ;;
+  let ls1 := cond_apply sf_clicked do_toggle_show_formulas ls in
+  let ar_label :=
+    if ls_auto_recalc ls1
+    then "[x] Auto-Recalc"%pstring
+    else "[ ] Auto-Recalc"%pstring in
+  ar_clicked <- imgui_menu_item ar_label true ;;
+  let ls2 := cond_apply ar_clicked do_toggle_auto_recalc ls1 in
+  let z_label :=
+    PrimString.cat "Zoom: "%pstring
+      (PrimString.cat (string_of_z (ls_zoom ls2)) "%"%pstring) in
+  _ <- imgui_menu_item z_label false ;;
+  zi_clicked <- imgui_menu_item "Zoom In  (Ctrl+=)"%pstring true ;;
+  let ls3 := cond_apply zi_clicked do_zoom_in ls2 in
+  zo_clicked <- imgui_menu_item "Zoom Out (Ctrl+-)"%pstring true ;;
+  let ls4 := cond_apply zo_clicked do_zoom_out ls3 in
+  zr_clicked <- imgui_menu_item "Reset Zoom (Ctrl+0)"%pstring true ;;
+  let ls5 := cond_apply zr_clicked do_zoom_reset ls4 in
+  Ret ls5.
+
 Definition render_menu_bar (ls : loop_state) : itree imguiE loop_state :=
   open <- imgui_begin_menu_bar ;;
   if open then
@@ -77,6 +106,10 @@ Definition render_menu_bar (ls : loop_state) : itree imguiE loop_state :=
     ls2 <- (if edit_open then
               ls'' <- edit_menu ls1 ;; imgui_end_menu ;; Ret ls''
             else Ret ls1) ;;
+    view_open <- imgui_begin_menu "View" ;;
+    ls3 <- (if view_open then
+              ls''' <- view_menu ls2 ;; imgui_end_menu ;; Ret ls'''
+            else Ret ls2) ;;
     imgui_end_menu_bar ;;
-    Ret ls2
+    Ret ls3
   else Ret ls.
