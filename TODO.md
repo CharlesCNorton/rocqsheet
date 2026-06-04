@@ -21,7 +21,7 @@
 19. Add a per-cell coercion table that promotes a `CStr "5"` to `CLit 5` (and `CDate "2026-01-01"` to its epoch-day `CLit`) at evaluation time when the consuming operator wants an integer or date — currently a numeric formula referencing a string-typed cell fails with `EErr`.
 20. Add a `CDate : int -> Cell` constructor (epoch days) plus parser support for `YYYY-MM-DD` literals and a NumberFormat `NFDate` family — currently dates are stored as strings or integers with no semantic.
 21. Ship `VLOOKUP`, `HLOOKUP`, `INDEX`, `MATCH` with proper exact / approximate match semantics — currently lookup must be hand-rolled out of `EIf` chains.
-22. Ship `UPPER`, `LOWER`, `TRIM`, `REPLACE`, `SPLIT`, `FIND`, plus a `REGEX_MATCH` / `REGEX_REPLACE` pair backed by a Coq-extracted Thompson-NFA engine — currently the only string ops are `CONCAT` / `LEN` / `SUBSTR`.
+22. Ship `SPLIT` plus a `REGEX_MATCH` / `REGEX_REPLACE` pair backed by a Coq-extracted Thompson-NFA engine — `UPPER` / `LOWER` / `TRIM` / `FIND` / `REPLACE` shipped; SPLIT needs spill semantics (one source cell writing several destinations) and the regex pair needs the NFA engine built first.
 23. Ship `MEDIAN`, `MODE`, `RANK`, `PERCENTILE` over ranges — `VAR` / `VARP` / `STDEV` / `STDEVP` shipped via the WalkKind walkers; the order-statistics half needs the range materialized into a sortable list rather than folded through a single Z accumulator.
 24. Ship `PMT`, `NPV`, `IRR`, `FV`, `PV` financial formulas with the standard Excel signatures and discount-rate handling — currently the workbook cannot model loans, investments, or DCFs.
 25. Ship `TODAY`, `NOW`, `DATEDIF`, `WEEKDAY`, `EDATE`, `EOMONTH` operating on the new `CDate` type — currently date math is not expressible.
