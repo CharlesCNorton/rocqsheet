@@ -26,7 +26,7 @@
 24. Add a `CDate : int -> Cell` constructor (epoch days) plus parser support for `YYYY-MM-DD` literals and a NumberFormat `NFDate` family — currently dates are stored as strings or integers with no semantic.
 25. Ship `VLOOKUP`, `HLOOKUP`, `INDEX`, `MATCH` with proper exact / approximate match semantics — currently lookup must be hand-rolled out of `EIf` chains.
 26. Ship `UPPER`, `LOWER`, `TRIM`, `REPLACE`, `SPLIT`, `FIND`, plus a `REGEX_MATCH` / `REGEX_REPLACE` pair backed by a Coq-extracted Thompson-NFA engine — currently the only string ops are `CONCAT` / `LEN` / `SUBSTR`.
-27. Ship `STDEV`, `VAR`, `MEDIAN`, `MODE`, `RANK`, `PERCENTILE` over ranges — currently any statistical work requires a separate tool.
+27. Ship `MEDIAN`, `MODE`, `RANK`, `PERCENTILE` over ranges — `VAR` / `VARP` / `STDEV` / `STDEVP` shipped via the WalkKind walkers; the order-statistics half needs the range materialized into a sortable list rather than folded through a single Z accumulator.
 28. Ship `PMT`, `NPV`, `IRR`, `FV`, `PV` financial formulas with the standard Excel signatures and discount-rate handling — currently the workbook cannot model loans, investments, or DCFs.
 29. Ship `TODAY`, `NOW`, `DATEDIF`, `WEEKDAY`, `EDATE`, `EOMONTH` operating on the new `CDate` type — currently date math is not expressible.
 30. Ship `RAND` and `RANDBETWEEN` driven by a deterministic PRNG seeded from a new `ls_seed` field, so saved workbooks reproduce their random values bit-identically across reloads — currently there is no source of randomness.
