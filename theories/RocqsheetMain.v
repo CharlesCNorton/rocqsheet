@@ -100,7 +100,10 @@ Crane Extraction "rocqsheet" rocqsheet_run smoke eval_cell
   (* The status-bar aggregate's per-cell step and seed are reached
      only from the iterative C++ override, so they must be explicit
      extraction roots or the emitter prunes them. *)
-  Render.agg_cell_step Render.empty_agg.
+  Render.agg_cell_step Render.empty_agg
+  (* Likewise the CSV scanner step, reached only from the
+     csv_helpers::run_impl loop. *)
+  Csv.csv_step Csv.csv_import.
 
 (* --- Loop-state correctness ------------------------------------- *)
 

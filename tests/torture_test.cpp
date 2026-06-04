@@ -431,6 +431,42 @@ void test_var_stdev() {
         is_err(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{3, 5})));
 }
 
+// Item 4: CSV import through the extracted scanner and its iterative
+// C++ driver.
+void test_csv_import() {
+  auto sh = Csv::csv_import("7,hi\n\"a,b\",-3\n", S::new_sheet,
+                            S::CellRef{1, 1});
+  auto c00 = S::get_cell(sh, S::CellRef{1, 1});
+  check("csv lit", std::holds_alternative<S::Cell::CLit>(c00.v()) &&
+                       std::get<S::Cell::CLit>(c00.v()).d_a0 == 7);
+  auto c10 = S::get_cell(sh, S::CellRef{2, 1});
+  check("csv str", std::holds_alternative<S::Cell::CStr>(c10.v()) &&
+                       std::get<S::Cell::CStr>(c10.v()).d_a0 == "hi");
+  auto c01 = S::get_cell(sh, S::CellRef{1, 2});
+  check("csv quoted comma",
+        std::holds_alternative<S::Cell::CStr>(c01.v()) &&
+            std::get<S::Cell::CStr>(c01.v()).d_a0 == "a,b");
+  auto c11 = S::get_cell(sh, S::CellRef{2, 2});
+  check("csv negative",
+        std::holds_alternative<S::Cell::CLit>(c11.v()) &&
+            std::get<S::Cell::CLit>(c11.v()).d_a0 == -3);
+  // CRLF rows and the trailing field without a final newline.
+  auto crlf = Csv::csv_import("1\r\n2", S::new_sheet, S::CellRef{0, 0});
+  auto r1 = S::get_cell(crlf, S::CellRef{0, 1});
+  check("csv crlf + trailing",
+        std::holds_alternative<S::Cell::CLit>(r1.v()) &&
+            std::get<S::Cell::CLit>(r1.v()).d_a0 == 2);
+  // A ~120KB input exercises the iterative driver; per-character
+  // extracted recursion would overflow the stack here.
+  std::string big;
+  for (int i = 0; i < 60000; ++i) big += "1,";
+  big += "9\n";
+  auto wide = Csv::csv_import(big, S::new_sheet, S::CellRef{0, 0});
+  auto last = S::get_cell(wide, S::CellRef{259, 0});
+  check("csv 120KB survives",
+        std::holds_alternative<S::Cell::CLit>(last.v()));
+}
+
 void test_boolean_ops() {
   auto s = put(S::new_sheet, 0, 0, S::Cell::cbool(true));
   s = put(s, 1, 0, S::Cell::cbool(false));
@@ -613,6 +649,7 @@ int main() {
   test_count_counta();
   test_if_aggregates();
   test_var_stdev();
+  test_csv_import();
   test_boolean_ops();
   test_string_ops();
   test_correspondence_corpus();

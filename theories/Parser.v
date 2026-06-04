@@ -21,10 +21,11 @@ Crane Extract Inlined Constant Uint63Axioms.of_Z => "%a0".
 Open Scope int63_scope.
 Local Open Scope pstring_scope.
 
-(* PrimString.char63 maps to char in C++ extraction; in Rocq we
-   treat it as an int63 and compare against the ASCII codepoints
-   we recognise. *)
-Axiom char_to_int : PrimString.char63 -> int.
+(* PrimString.char63 is definitionally int63, so the conversion is
+   the identity in Coq — keeping scanner terms computable by
+   vm_compute — while the extraction override keeps the explicit
+   C++ char -> int64 cast. *)
+Definition char_to_int (c : PrimString.char63) : int := c.
 Crane Extract Inlined Constant char_to_int =>
   "static_cast<int64_t>(static_cast<unsigned char>(%a0))".
 

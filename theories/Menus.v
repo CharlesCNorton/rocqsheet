@@ -49,8 +49,12 @@ Definition file_menu (ls : loop_state) : itree imguiE loop_state :=
              imgui_end_menu ;;
              Ret ls'
            else Ret ls2) ;;
+  (* Item 4: CSV import at the selected anchor. *)
+  import_csv_clicked <- imgui_menu_item
+    "Import CSV (formula bar = path)" true ;;
+  ls2b <- (if import_csv_clicked then do_import_csv ls2a else Ret ls2a) ;;
   pdf_clicked <- imgui_menu_item "Export to PDF" true ;;
-  ls3 <- (if pdf_clicked then do_pdf_export ls2a else Ret ls2a) ;;
+  ls3 <- (if pdf_clicked then do_pdf_export ls2b else Ret ls2b) ;;
   csv_clicked <- imgui_menu_item "Export to CSV (formula bar = path)" true ;;
   ls4 <- (if csv_clicked then do_export_csv ls3 else Ret ls3) ;;
   html_clicked <- imgui_menu_item "Export to HTML (formula bar = path)" true ;;

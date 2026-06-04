@@ -300,6 +300,33 @@ Definition do_export_csv (ls : loop_state) : itree imguiE loop_state :=
   _ <- file_save_atomic path (Csv.to_csv (ls_sheet ls)) ;;
   Ret ls.
 
+(* Item 4: import a CSV file into the active sheet at the selected
+   anchor (A1 when nothing is selected).  Same formula-bar path
+   convention as the CSV export; one undo entry covers the whole
+   import. *)
+Definition do_import_csv (ls : loop_state) : itree imguiE loop_state :=
+  let path :=
+    if all_whitespace (ls_fbar_text ls) then csv_path
+    else ls_fbar_text ls in
+  res <- file_read path ;;
+  let '(content, ok) := res in
+  if ok then
+    let anchor :=
+      match ls_selected ls with
+      | Some r => r
+      | None => mkRef 0 0
+      end in
+    let before := ls_sheet ls in
+    Ret (mkLoop (Csv.csv_import content before anchor)
+           (ls_selected ls) (ls_fbar_text ls)
+           (ls_edit_buf ls) (ls_parse_errs ls)
+           (trim_undo ((before, "import csv"%pstring) :: ls_undo ls)) nil
+           (ls_formats ls)
+           (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
+           (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls)
+           (ls_zoom ls) (ls_auto_recalc ls) true)
+  else Ret ls.
+
 (* Export the active sheet as a <table>-based HTML document.  Same
    path conventions as the CSV export. *)
 Definition do_export_html (ls : loop_state) : itree imguiE loop_state :=
