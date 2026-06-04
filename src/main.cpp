@@ -405,7 +405,30 @@ int main(int argc, char** argv) {
     }
   }
 
+  // Item 100: drag-and-drop file open.  GLFW's drop callback fires
+  // outside our frame loop; capture the path in a static, then
+  // [apply_save_blob] at the top of the next frame.  Empty paths
+  // are ignored.  Only the first file of a multi-file drop is used.
+  static std::string g_pending_drop;
+  glfwSetDropCallback(win, [](GLFWwindow*, int count, const char** paths) {
+    if (count >= 1 && paths && paths[0]) {
+      g_pending_drop = paths[0];
+    }
+  });
+
   while (true) {
+    if (!g_pending_drop.empty()) {
+      std::string content;
+      if (slurp_file(g_pending_drop, content)) {
+        ls = apply_save_blob(std::move(ls), content);
+        std::fprintf(stderr, "Loaded dropped %s (%zu bytes)\n",
+                     g_pending_drop.c_str(), content.size());
+      } else {
+        std::fprintf(stderr, "Could not read dropped %s\n",
+                     g_pending_drop.c_str());
+      }
+      g_pending_drop.clear();
+    }
     auto step = process_frame(std::move(ls));
     if (step.first) break;
     ls = std::move(step.second);
