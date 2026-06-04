@@ -380,7 +380,11 @@ Record loop_state : Type := mkLoop {
   ls_active       : int;
   ls_charts       : list Chart;
   ls_merges       : MergeList;
-  ls_sheet_names  : list PrimString.string
+  ls_sheet_names  : list PrimString.string;
+  (* Render mode: when [true], cell_display returns the raw formula
+     text (with leading `=`) instead of the evaluated value.  Toggled
+     by Ctrl+` (Excel convention).  See item 68. *)
+  ls_show_formulas : bool
 }.
 
 (* Helpers for the [ls_sheet_names] list. *)
@@ -441,7 +445,7 @@ Definition initial_charts : list Chart :=
 Definition initial_loop_state : loop_state :=
   mkLoop demo_sheet None "" nil nil nil nil demo_formats
          initial_other_sheets 0%uint63 initial_charts nil
-         default_sheet_names.
+         default_sheet_names false.
 
 (* ----- Edit-buffer / parse-error helpers -------------------- *)
 
@@ -537,7 +541,7 @@ Definition push_undo (ls : loop_state) (before : Sheet)
          (ls_edit_buf ls) (ls_parse_errs ls)
          (trim_undo ((before, desc) :: ls_undo ls)) nil (ls_formats ls)
          (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
-         (ls_merges ls) (ls_sheet_names ls).
+         (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls).
 
 (* What text to show in the menu bar's "Undo" / "Redo" item: the
    description of the head entry, or the empty string when the stack
@@ -560,11 +564,11 @@ Definition select_cell (ls : loop_state) (r : CellRef) : loop_state :=
          (ls_edit_buf ls) (ls_parse_errs ls)
          (ls_undo ls) (ls_redo ls) (ls_formats ls)
          (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
-         (ls_merges ls) (ls_sheet_names ls).
+         (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls).
 
 Definition update_fbar (ls : loop_state) (s : PrimString.string) : loop_state :=
   mkLoop (ls_sheet ls) (ls_selected ls) s
          (ls_edit_buf ls) (ls_parse_errs ls)
          (ls_undo ls) (ls_redo ls) (ls_formats ls)
          (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
-         (ls_merges ls) (ls_sheet_names ls).
+         (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls).

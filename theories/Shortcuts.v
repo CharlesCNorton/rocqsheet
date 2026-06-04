@@ -141,6 +141,15 @@ Definition do_cut (ls : loop_state) : itree imguiE loop_state :=
     Ret (commit_to ls r "")
   end.
 
+(* Item 68: toggle Show Formulas render mode. *)
+Definition do_toggle_show_formulas (ls : loop_state) : loop_state :=
+  mkLoop (ls_sheet ls) (ls_selected ls) (ls_fbar_text ls)
+         (ls_edit_buf ls) (ls_parse_errs ls)
+         (ls_undo ls) (ls_redo ls) (ls_formats ls)
+         (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
+         (ls_merges ls) (ls_sheet_names ls)
+         (negb (ls_show_formulas ls)).
+
 Definition handle_shortcuts (ls : loop_state) : itree imguiE loop_state :=
   z <- ctrl_key_pressed "z" ;;
   let ls1 := cond_apply z do_undo ls in
@@ -193,4 +202,7 @@ Definition handle_shortcuts (ls : loop_state) : itree imguiE loop_state :=
   let ls23 := cond_apply del do_clear_cell ls22 in
   x <- ctrl_key_pressed "x" ;;
   ls24 <- (if x then do_cut ls23 else Ret ls23) ;;
-  Ret ls24.
+  (* Item 68 — Ctrl+` toggles Show Formulas mode. *)
+  tilde <- ctrl_key_pressed "`" ;;
+  let ls25 := cond_apply tilde do_toggle_show_formulas ls24 in
+  Ret ls25.

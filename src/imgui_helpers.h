@@ -418,6 +418,7 @@ inline void clipboard_set(const std::string& s) {
 inline bool ctrl_key_pressed(const std::string& k) {
   if (!ImGui::GetIO().KeyCtrl) return false;
   if (ImGui::GetIO().KeyShift) return false;
+  if (k == "`") return ImGui::IsKeyPressed(ImGuiKey_GraveAccent);
   if (k.size() == 1) {
     char c = k[0];
     if (c >= 'a' && c <= 'z') c -= 32;

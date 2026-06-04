@@ -11,6 +11,7 @@ From Crane Require Import Monads.ITree.
 From Rocqsheet Require Import Rocqsheet.
 From Rocqsheet Require Import ImGuiE.
 From Rocqsheet Require Import Formatting.
+From Rocqsheet Require Import Merges.
 From Rocqsheet Require Import Charts.
 From Rocqsheet Require Import Pdf.
 From Rocqsheet Require Import State.
@@ -25,9 +26,18 @@ Local Open Scope pstring_scope.
 Definition render_one_cell
     (ls : loop_state) (c r : nat) : itree imguiE loop_state :=
   let ref := ref_at c r in
-  let '(disp, is_err) :=
+  let '(disp_raw, is_err) :=
     cell_display (ls_sheet ls) (ls_merges ls) (ls_parse_errs ls)
                  (ls_formats ls) ref in
+  (* Item 68: when Show Formulas mode is on, replace each cell's
+     evaluated value with its source text (the `=A1+B1` etc.).  We
+     keep the parse-error tag so [#PARSE] still surfaces visibly. *)
+  let disp :=
+    if ls_show_formulas ls then
+      let resolved := resolve (ls_merges ls) ref in
+      let raw := show_cell (get_cell (ls_sheet ls) resolved) in
+      if mem_ref (ls_parse_errs ls) ref then disp_raw else raw
+    else disp_raw in
   let selected :=
     match ls_selected ls with
     | None => false
