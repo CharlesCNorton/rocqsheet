@@ -14,6 +14,8 @@ From Rocqsheet Require Import Parser.
 From Rocqsheet Require Import ImGuiE.
 From Rocqsheet Require Import Formatting.
 From Rocqsheet Require Import NumberFormat.
+From Rocqsheet Require Import Merges.
+From Rocqsheet Require Import Charts.
 From Rocqsheet Require Import State.
 From Rocqsheet Require Import Edit.
 Import ListNotations.
@@ -157,11 +159,97 @@ Fixpoint save_all_formats_aux (fm : FormatMap) (acc : PrimString.string)
     save_all_formats_aux rest (PrimString.cat acc (save_format_line e))
   end.
 
+(* Save-format version.  Bumped whenever a new directive line type
+   changes the on-disk schema; loaders check this and refuse to read
+   future-version files. *)
+Definition save_format_version : Z := 2%Z.
+
+(* Emit one [M=tl_col,tl_row,br_col,br_row] line per merge region so
+   merged regions survive save/load. *)
+Definition save_merge_line (m : MergeRegion) : PrimString.string :=
+  let tl := fst m in
+  let br := snd m in
+  PrimString.cat "M=" (
+  PrimString.cat (string_of_z (Uint63.to_Z (cell_col_of tl))) (
+  PrimString.cat comma (
+  PrimString.cat (string_of_z (Uint63.to_Z (cell_row_of tl))) (
+  PrimString.cat comma (
+  PrimString.cat (string_of_z (Uint63.to_Z (cell_col_of br))) (
+  PrimString.cat comma (
+  PrimString.cat (string_of_z (Uint63.to_Z (cell_row_of br))) newline))))))).
+
+Fixpoint save_all_merges_aux (ms : MergeList) (acc : PrimString.string)
+  : PrimString.string :=
+  match ms with
+  | nil => acc
+  | m :: rest =>
+    save_all_merges_aux rest (PrimString.cat acc (save_merge_line m))
+  end.
+
+(* Map [ChartKind] to a single token used in the save line. *)
+Definition save_chart_kind_token (k : ChartKind) : PrimString.string :=
+  match k with
+  | ChartLine    => "L"
+  | ChartBar     => "B"
+  | ChartPie     => "P"
+  | ChartScatter => "S"
+  end.
+
+(* Emit one [C=kind,tl_col,tl_row,br_col,br_row] line per chart so
+   chart layouts survive save/load.  Titles are not serialised yet
+   because [chart_title : list nat] is a placeholder field. *)
+Definition save_chart_line (c : Chart) : PrimString.string :=
+  PrimString.cat "C=" (
+  PrimString.cat (save_chart_kind_token (chart_kind c)) (
+  PrimString.cat comma (
+  PrimString.cat (string_of_z (Uint63.to_Z (cell_col_of (chart_tl c)))) (
+  PrimString.cat comma (
+  PrimString.cat (string_of_z (Uint63.to_Z (cell_row_of (chart_tl c)))) (
+  PrimString.cat comma (
+  PrimString.cat (string_of_z (Uint63.to_Z (cell_col_of (chart_br c)))) (
+  PrimString.cat comma (
+  PrimString.cat (string_of_z (Uint63.to_Z (cell_row_of (chart_br c)))) newline))))))))).
+
+Fixpoint save_all_charts_aux (cs : list Chart) (acc : PrimString.string)
+  : PrimString.string :=
+  match cs with
+  | nil => acc
+  | c :: rest =>
+    save_all_charts_aux rest (PrimString.cat acc (save_chart_line c))
+  end.
+
+(* Emit one [E=col,row,raw_text] line per edit-buffer entry so the
+   user-typed formula source (not its last-evaluated literal) is what
+   reloads. *)
+Definition save_edit_line (e : CellRef * PrimString.string) : PrimString.string :=
+  let r := fst e in
+  PrimString.cat "E=" (
+  PrimString.cat (string_of_z (Uint63.to_Z (cell_col_of r))) (
+  PrimString.cat comma (
+  PrimString.cat (string_of_z (Uint63.to_Z (cell_row_of r))) (
+  PrimString.cat comma (
+  PrimString.cat (snd e) newline))))).
+
+Fixpoint save_all_edits_aux (eb : list (CellRef * PrimString.string))
+                            (acc : PrimString.string)
+  : PrimString.string :=
+  match eb with
+  | nil => acc
+  | e :: rest =>
+    save_all_edits_aux rest (PrimString.cat acc (save_edit_line e))
+  end.
+
 Definition build_save_string (ls : loop_state) : PrimString.string :=
   PrimString.cat "# Rocqsheet save file" (
   PrimString.cat newline (
+  PrimString.cat "V=" (
+  PrimString.cat (string_of_z save_format_version) (
+  PrimString.cat newline (
   PrimString.cat (save_all_formats_aux (ls_formats ls) "")
-  (save_all_sheets_aux ls 0 16 ""))).
+  (PrimString.cat (save_all_merges_aux (ls_merges ls) "")
+  (PrimString.cat (save_all_charts_aux (ls_charts ls) "")
+  (PrimString.cat (save_all_edits_aux (ls_edit_buf ls) "")
+  (save_all_sheets_aux ls 0 16 ""))))))))).
 
 Definition do_save (ls : loop_state) : itree imguiE loop_state :=
   let _ := tt in
@@ -390,6 +478,183 @@ Definition apply_format_line
       (ls', next_i)
     end end end end end end end.
 
+(* Apply an [M=tl_col,tl_row,br_col,br_row] line.  Out-of-bounds
+   coordinates are silently dropped; the loader stays at the next
+   newline so subsequent directives are still consumed. *)
+Definition apply_merge_line
+    (ls : loop_state) (txt : PrimString.string) (len i : int) (fuel : nat)
+  : loop_state * int :=
+  let eq_pos := PrimInt63.add i 1 in
+  if PrimInt63.leb len eq_pos then (ls, len)
+  else if negb (PrimInt63.eqb (char_to_int (PrimString.get txt eq_pos)) 61)
+  then (ls, PrimInt63.add (find_eol_aux txt len i fuel) 1)
+  else
+    let p0 := PrimInt63.add eq_pos 1 in
+    match parse_uint_field txt len p0 44 fuel with
+    | None => (ls, PrimInt63.add (find_eol_aux txt len i fuel) 1)
+    | Some (tlc, p1) =>
+    match parse_uint_field txt len p1 44 fuel with
+    | None => (ls, PrimInt63.add (find_eol_aux txt len i fuel) 1)
+    | Some (tlr, p2) =>
+    match parse_uint_field txt len p2 44 fuel with
+    | None => (ls, PrimInt63.add (find_eol_aux txt len i fuel) 1)
+    | Some (brc, p3) =>
+    match parse_uint_aux fuel txt len p3 0%Z false with
+    | None => (ls, PrimInt63.add (find_eol_aux txt len i fuel) 1)
+    | Some (brr, k) =>
+      let eol := find_eol_aux txt len k fuel in
+      let next_i := if PrimInt63.ltb eol len
+                    then PrimInt63.add eol 1 else eol in
+      let in_bounds :=
+        andb (Z.leb 0 tlc) (andb (Z.ltb tlc 260)
+        (andb (Z.leb 0 tlr) (andb (Z.ltb tlr 200)
+        (andb (Z.leb 0 brc) (andb (Z.ltb brc 260)
+        (andb (Z.leb 0 brr) (Z.ltb brr 200))))))) in
+      if in_bounds then
+        let tl := mkRef (Uint63.of_Z tlc) (Uint63.of_Z tlr) in
+        let br := mkRef (Uint63.of_Z brc) (Uint63.of_Z brr) in
+        let new_merges := add_merge (ls_merges ls) tl br in
+        let ls' :=
+          mkLoop (ls_sheet ls) (ls_selected ls) (ls_fbar_text ls)
+                 (ls_edit_buf ls) (ls_parse_errs ls)
+                 (ls_undo ls) (ls_redo ls) (ls_formats ls)
+                 (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
+                 new_merges (ls_sheet_names ls) in
+        (ls', next_i)
+      else (ls, next_i)
+    end end end end.
+
+(* Parse a chart-kind token: 'L' = ChartLine, 'B' = ChartBar,
+   'P' = ChartPie, 'S' = ChartScatter.  Defaults to ChartLine if the
+   byte is unrecognised. *)
+Definition parse_chart_kind (b : int) : ChartKind :=
+  if PrimInt63.eqb b 76      then ChartLine
+  else if PrimInt63.eqb b 66 then ChartBar
+  else if PrimInt63.eqb b 80 then ChartPie
+  else if PrimInt63.eqb b 83 then ChartScatter
+  else ChartLine.
+
+(* Apply a [C=kind,tl_col,tl_row,br_col,br_row] line. *)
+Definition apply_chart_line
+    (ls : loop_state) (txt : PrimString.string) (len i : int) (fuel : nat)
+  : loop_state * int :=
+  let eq_pos := PrimInt63.add i 1 in
+  if PrimInt63.leb len eq_pos then (ls, len)
+  else if negb (PrimInt63.eqb (char_to_int (PrimString.get txt eq_pos)) 61)
+  then (ls, PrimInt63.add (find_eol_aux txt len i fuel) 1)
+  else
+    let kind_pos := PrimInt63.add eq_pos 1 in
+    if PrimInt63.leb len kind_pos then (ls, len)
+    else
+      let kind := parse_chart_kind (char_to_int (PrimString.get txt kind_pos)) in
+      let after_kind := PrimInt63.add kind_pos 1 in
+      (* Skip the comma after the kind byte. *)
+      let after_comma :=
+        if andb (PrimInt63.ltb after_kind len)
+                (PrimInt63.eqb (char_to_int (PrimString.get txt after_kind)) 44)
+        then PrimInt63.add after_kind 1 else after_kind in
+      match parse_uint_field txt len after_comma 44 fuel with
+      | None => (ls, PrimInt63.add (find_eol_aux txt len i fuel) 1)
+      | Some (tlc, p1) =>
+      match parse_uint_field txt len p1 44 fuel with
+      | None => (ls, PrimInt63.add (find_eol_aux txt len i fuel) 1)
+      | Some (tlr, p2) =>
+      match parse_uint_field txt len p2 44 fuel with
+      | None => (ls, PrimInt63.add (find_eol_aux txt len i fuel) 1)
+      | Some (brc, p3) =>
+      match parse_uint_aux fuel txt len p3 0%Z false with
+      | None => (ls, PrimInt63.add (find_eol_aux txt len i fuel) 1)
+      | Some (brr, k) =>
+        let eol := find_eol_aux txt len k fuel in
+        let next_i := if PrimInt63.ltb eol len
+                      then PrimInt63.add eol 1 else eol in
+        let in_bounds :=
+          andb (Z.leb 0 tlc) (andb (Z.ltb tlc 260)
+          (andb (Z.leb 0 tlr) (andb (Z.ltb tlr 200)
+          (andb (Z.leb 0 brc) (andb (Z.ltb brc 260)
+          (andb (Z.leb 0 brr) (Z.ltb brr 200))))))) in
+        if in_bounds then
+          let tl := mkRef (Uint63.of_Z tlc) (Uint63.of_Z tlr) in
+          let br := mkRef (Uint63.of_Z brc) (Uint63.of_Z brr) in
+          let new_charts := mkChart kind tl br [] :: ls_charts ls in
+          let ls' :=
+            mkLoop (ls_sheet ls) (ls_selected ls) (ls_fbar_text ls)
+                   (ls_edit_buf ls) (ls_parse_errs ls)
+                   (ls_undo ls) (ls_redo ls) (ls_formats ls)
+                   (ls_other_sheets ls) (ls_active ls) new_charts
+                   (ls_merges ls) (ls_sheet_names ls) in
+          (ls', next_i)
+        else (ls, next_i)
+      end end end end.
+
+(* Apply an [E=col,row,raw_text] line, storing the user-typed source
+   into ls_edit_buf without re-evaluating it.  This is what makes the
+   formula bar show the original [=A1+B1] instead of its last
+   evaluated literal after a reload. *)
+Definition apply_edit_line
+    (ls : loop_state) (txt : PrimString.string) (len i : int) (fuel : nat)
+  : loop_state * int :=
+  let eq_pos := PrimInt63.add i 1 in
+  if PrimInt63.leb len eq_pos then (ls, len)
+  else if negb (PrimInt63.eqb (char_to_int (PrimString.get txt eq_pos)) 61)
+  then (ls, PrimInt63.add (find_eol_aux txt len i fuel) 1)
+  else
+    let p0 := PrimInt63.add eq_pos 1 in
+    match parse_uint_field txt len p0 44 fuel with
+    | None => (ls, PrimInt63.add (find_eol_aux txt len i fuel) 1)
+    | Some (col_z, p1) =>
+    match parse_uint_aux fuel txt len p1 0%Z false with
+    | None => (ls, PrimInt63.add (find_eol_aux txt len i fuel) 1)
+    | Some (row_z, k) =>
+      if PrimInt63.leb len k then (ls, len)
+      else if negb (PrimInt63.eqb (char_to_int (PrimString.get txt k)) 44)
+      then (ls, PrimInt63.add (find_eol_aux txt len i fuel) 1)
+      else
+        let k1 := PrimInt63.add k 1 in
+        let eol := find_eol_aux txt len k1 fuel in
+        let raw := PrimString.sub txt k1 (PrimInt63.sub eol k1) in
+        let next_i := if PrimInt63.ltb eol len
+                      then PrimInt63.add eol 1 else eol in
+        let in_bounds :=
+          andb (Z.leb 0 col_z) (andb (Z.ltb col_z 260)
+          (andb (Z.leb 0 row_z) (Z.ltb row_z 200))) in
+        if in_bounds then
+          let r := mkRef (Uint63.of_Z col_z) (Uint63.of_Z row_z) in
+          let new_eb := put_edit (ls_edit_buf ls) r raw in
+          let ls' :=
+            mkLoop (ls_sheet ls) (ls_selected ls) (ls_fbar_text ls)
+                   new_eb (ls_parse_errs ls)
+                   (ls_undo ls) (ls_redo ls) (ls_formats ls)
+                   (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
+                   (ls_merges ls) (ls_sheet_names ls) in
+          (ls', next_i)
+        else (ls, next_i)
+    end end.
+
+(* Skip a [V=<n>] version line.  Version numbers higher than the
+   current schema cause [apply_load_lines] to abort early via the
+   sentinel [(ls, len)] return. *)
+Definition apply_version_line
+    (txt : PrimString.string) (len i : int) (fuel : nat)
+  : bool * int :=
+  let eq_pos := PrimInt63.add i 1 in
+  if PrimInt63.leb len eq_pos then (false, len)
+  else if negb (PrimInt63.eqb (char_to_int (PrimString.get txt eq_pos)) 61)
+  then (true, PrimInt63.add (find_eol_aux txt len i fuel) 1)
+  else
+    let n_start := PrimInt63.add eq_pos 1 in
+    match parse_uint_aux fuel txt len n_start 0%Z false with
+    | None =>
+        (* Treat malformed version as a comment (skip line, keep loading). *)
+        (true, PrimInt63.add (find_eol_aux txt len i fuel) 1)
+    | Some (ver, _) =>
+        let eol := find_eol_aux txt len n_start fuel in
+        let next_i := if PrimInt63.ltb eol len
+                      then PrimInt63.add eol 1 else eol in
+        let ok := Z.leb ver save_format_version in
+        (ok, next_i)
+    end.
+
 Fixpoint apply_load_lines
     (ls : loop_state) (txt : PrimString.string) (len i : int) (fuel : nat)
   : loop_state :=
@@ -404,6 +669,10 @@ Fixpoint apply_load_lines
         apply_load_lines ls txt len next fuel'
       else if PrimInt63.eqb c 10 then
         apply_load_lines ls txt len (PrimInt63.add i 1) fuel'
+      else if PrimInt63.eqb c 86 (* 'V' *) then
+        let '(ok, next) := apply_version_line txt len i fuel' in
+        if ok then apply_load_lines ls txt len next fuel'
+        else ls (* Future-version file: stop reading without applying anything more. *)
       else if PrimInt63.eqb c 83 (* 'S' *) then
         let '(ls', next) := apply_sheet_switch ls txt len i fuel' in
         apply_load_lines ls' txt len next fuel'
@@ -412,6 +681,15 @@ Fixpoint apply_load_lines
         apply_load_lines ls' txt len next fuel'
       else if PrimInt63.eqb c 70 (* 'F' *) then
         let '(ls', next) := apply_format_line ls txt len i fuel' in
+        apply_load_lines ls' txt len next fuel'
+      else if PrimInt63.eqb c 77 (* 'M' *) then
+        let '(ls', next) := apply_merge_line ls txt len i fuel' in
+        apply_load_lines ls' txt len next fuel'
+      else if PrimInt63.eqb c 67 (* 'C' *) then
+        let '(ls', next) := apply_chart_line ls txt len i fuel' in
+        apply_load_lines ls' txt len next fuel'
+      else if PrimInt63.eqb c 69 (* 'E' *) then
+        let '(ls', next) := apply_edit_line ls txt len i fuel' in
         apply_load_lines ls' txt len next fuel'
       else
         match parse_uint_aux fuel' txt len i 0%Z false with
@@ -450,13 +728,16 @@ Definition do_load (ls : loop_state) : itree imguiE loop_state :=
   res <- file_read save_path ;;
   let '(content, ok) := res in
   if ok then
+    (* Reset edit_buf, merges, charts, formats to empty so the directives
+       in the file are the only source of those fields.  Sheet names
+       and other_sheets get reseeded as the S=/N=/cell lines come in. *)
     let cleared := mkLoop new_sheet None "" nil nil
                           (trim_undo
                             ((ls_sheet ls, "load file"%pstring) :: ls_undo ls))
                           nil
-                          (ls_formats ls)
+                          nil
                           (ls_other_sheets ls) (ls_active ls)
-                          (ls_charts ls) (ls_merges ls) (ls_sheet_names ls) in
+                          nil nil (ls_sheet_names ls) in
     let len := PrimString.length content in
     Ret (apply_load_lines cleared content len 0
                           (S (S (nat_of_int len))))
