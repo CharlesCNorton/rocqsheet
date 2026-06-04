@@ -236,6 +236,39 @@ Definition do_delete_row (ls : loop_state) : loop_state :=
            (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls)
   end.
 
+(* Item 61: column analogues of do_insert_row / do_delete_row.
+   Inserts a fresh column at the selected cell's column position
+   (shifts every cell at col >= c one column right; drops the
+   rightmost column).  Delete is the inverse. *)
+
+Definition do_insert_col (ls : loop_state) : loop_state :=
+  match ls_selected ls with
+  | None => ls
+  | Some r =>
+    let before := ls_sheet ls in
+    let new_sheet := insert_col before (cell_col_of r) in
+    mkLoop new_sheet (ls_selected ls) (ls_fbar_text ls)
+           (ls_edit_buf ls) (ls_parse_errs ls)
+           (trim_undo ((before, "insert column"%pstring) :: ls_undo ls)) nil
+           (ls_formats ls)
+           (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
+           (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls)
+  end.
+
+Definition do_delete_col (ls : loop_state) : loop_state :=
+  match ls_selected ls with
+  | None => ls
+  | Some r =>
+    let before := ls_sheet ls in
+    let new_sheet := delete_col before (cell_col_of r) in
+    mkLoop new_sheet (ls_selected ls) (ls_fbar_text ls)
+           (ls_edit_buf ls) (ls_parse_errs ls)
+           (trim_undo ((before, "delete column"%pstring) :: ls_undo ls)) nil
+           (ls_formats ls)
+           (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
+           (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls)
+  end.
+
 Definition do_swap_with_next_row (ls : loop_state) : loop_state :=
   match ls_selected ls with
   | None => ls
@@ -264,6 +297,14 @@ Crane Extract Inlined Constant do_delete_row =>
 
 Crane Extract Inlined Constant do_swap_with_next_row =>
   "(::do_op_helpers::commit_via_selection<loop_state, Rocqsheet::Sheet, List<std::pair<Rocqsheet::Sheet, std::string>>>(%a0, std::string(""swap rows""), [](const Rocqsheet::Sheet& __s, const Rocqsheet::CellRef& __r) { int64_t __row = Rocqsheet::cell_row_of(__r); int64_t __next = (__row + 1) & 0x7FFFFFFFFFFFFFFFLL; return (Rocqsheet::NUM_ROWS <= __next) ? __s : Sorting::swap_rows(__s, __row, __next); }))"
+  From "do_op_helpers.h".
+
+Crane Extract Inlined Constant do_insert_col =>
+  "(::do_op_helpers::commit_via_selection<loop_state, Rocqsheet::Sheet, List<std::pair<Rocqsheet::Sheet, std::string>>>(%a0, std::string(""insert column""), [](const Rocqsheet::Sheet& __s, const Rocqsheet::CellRef& __r) { return Shift::insert_col(__s, Rocqsheet::cell_col_of(__r)); }))"
+  From "do_op_helpers.h".
+
+Crane Extract Inlined Constant do_delete_col =>
+  "(::do_op_helpers::commit_via_selection<loop_state, Rocqsheet::Sheet, List<std::pair<Rocqsheet::Sheet, std::string>>>(%a0, std::string(""delete column""), [](const Rocqsheet::Sheet& __s, const Rocqsheet::CellRef& __r) { return Shift::delete_col(__s, Rocqsheet::cell_col_of(__r)); }))"
   From "do_op_helpers.h".
 
 (* Walk every cell of the sheet by index, lifting [replace_int_in_expr]

@@ -231,6 +231,23 @@ Definition advance_after_enter (ls : loop_state) : loop_state :=
     select_cell ls (mkRef (cell_col_of r) new_r)
   end.
 
+(* Item 53 (Tab half): advance selection one column right, clamped at
+   the last column.  Invoked from [handle_shortcuts] when the user
+   presses Tab — we read the key before ImGui's focus-cycling handler
+   acts on it, so the formula-bar text is committed and the selection
+   walks across the row. *)
+Definition advance_after_tab (ls : loop_state) : loop_state :=
+  match ls_selected ls with
+  | None => ls
+  | Some r =>
+    let c1 := PrimInt63.add (cell_col_of r) 1 in
+    let new_c :=
+      if PrimInt63.leb (int_of_nat num_cols_nat) c1
+      then PrimInt63.sub (int_of_nat num_cols_nat) 1
+      else c1 in
+    select_cell ls (mkRef new_c (cell_row_of r))
+  end.
+
 Definition render_formula_bar (ls : loop_state) : itree imguiE loop_state :=
   let label :=
     match ls_selected ls with

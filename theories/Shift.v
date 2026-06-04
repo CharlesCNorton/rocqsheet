@@ -182,3 +182,79 @@ Theorem delete_row_preserves_below_smoke :
   let s := set_cell new_sheet (mkRef 0 2%uint63) (CLit 8%Z) in
   get_cell (delete_row s 5%uint63) (mkRef 0 2%uint63) = CLit 8%Z.
 Proof. vm_compute. reflexivity. Qed.
+
+(* --- Insert / delete column at the data level ------------------ *)
+(* Item 61: column-shift analogues of insert_row / delete_row.
+   [insert_col s c] shifts every cell at col >= c one column right
+   (dropping the rightmost column) and zeros out column c.  [delete_col]
+   is the inverse: drops column c, shifts every col > c one to the left,
+   and zeros out the rightmost column. *)
+
+Fixpoint insert_col_aux (fuel : nat) (src acc : Sheet)
+                        (c idx : int) : Sheet :=
+  match fuel with
+  | O => acc
+  | S fuel' =>
+    if PrimInt63.leb GRID_SIZE idx then acc
+    else
+      let row := PrimInt63.div idx NUM_COLS in
+      let col := PrimInt63.mod idx NUM_COLS in
+      let new_cell :=
+        if PrimInt63.ltb col c then PrimArray.get src idx
+        else if PrimInt63.eqb col c then CEmpty
+        else
+          let src_idx := PrimInt63.add
+                           (PrimInt63.mul row NUM_COLS)
+                           (PrimInt63.sub col 1) in
+          PrimArray.get src src_idx in
+      insert_col_aux fuel' src (PrimArray.set acc idx new_cell)
+                     c (PrimInt63.add idx 1)
+  end.
+
+Definition insert_col (s : Sheet) (c : int) : Sheet :=
+  insert_col_aux 60000 s s c 0.
+
+Fixpoint delete_col_aux (fuel : nat) (src acc : Sheet)
+                        (c idx : int) : Sheet :=
+  match fuel with
+  | O => acc
+  | S fuel' =>
+    if PrimInt63.leb GRID_SIZE idx then acc
+    else
+      let row := PrimInt63.div idx NUM_COLS in
+      let col := PrimInt63.mod idx NUM_COLS in
+      let new_cell :=
+        if PrimInt63.ltb col c then PrimArray.get src idx
+        else if PrimInt63.eqb col (PrimInt63.sub NUM_COLS 1) then CEmpty
+        else
+          let src_idx := PrimInt63.add
+                           (PrimInt63.mul row NUM_COLS)
+                           (PrimInt63.add col 1) in
+          PrimArray.get src src_idx in
+      delete_col_aux fuel' src (PrimArray.set acc idx new_cell)
+                     c (PrimInt63.add idx 1)
+  end.
+
+Definition delete_col (s : Sheet) (c : int) : Sheet :=
+  delete_col_aux 60000 s s c 0.
+
+Theorem insert_col_shifts_right_smoke :
+  let s := set_cell new_sheet (mkRef 5%uint63 0) (CLit 21%Z) in
+  get_cell (insert_col s 3%uint63) (mkRef 6%uint63 0) = CLit 21%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem insert_col_at_c_is_empty_smoke :
+  let s := set_cell new_sheet (mkRef 5%uint63 4%uint63) (CLit 99%Z) in
+  get_cell (insert_col s 5%uint63) (mkRef 5%uint63 4%uint63) = CEmpty.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem delete_col_drops_c_smoke :
+  let s := set_cell new_sheet (mkRef 5%uint63 0) (CLit 13%Z) in
+  let s' := set_cell s (mkRef 6%uint63 0) (CLit 17%Z) in
+  get_cell (delete_col s' 5%uint63) (mkRef 5%uint63 0) = CLit 17%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem delete_col_preserves_left_smoke :
+  let s := set_cell new_sheet (mkRef 2%uint63 0) (CLit 8%Z) in
+  get_cell (delete_col s 5%uint63) (mkRef 2%uint63 0) = CLit 8%Z.
+Proof. vm_compute. reflexivity. Qed.

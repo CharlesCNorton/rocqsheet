@@ -59,8 +59,12 @@ Definition edit_menu (ls : loop_state) : itree imguiE loop_state :=
   let ls_i := cond_apply ins_clicked do_insert_row ls_p in
   del_clicked <- imgui_menu_item "Delete Row" has_sel ;;
   let ls_d := cond_apply del_clicked do_delete_row ls_i in
+  ins_col_clicked <- imgui_menu_item "Insert Column" has_sel ;;
+  let ls_ic := cond_apply ins_col_clicked do_insert_col ls_d in
+  del_col_clicked <- imgui_menu_item "Delete Column" has_sel ;;
+  let ls_dc := cond_apply del_col_clicked do_delete_col ls_ic in
   swp_clicked <- imgui_menu_item "Swap With Row Below" has_sel ;;
-  let ls_s := cond_apply swp_clicked do_swap_with_next_row ls_d in
+  let ls_s := cond_apply swp_clicked do_swap_with_next_row ls_dc in
   mrg_clicked <- imgui_menu_item "Merge Cell Right" has_sel ;;
   let ls_m := cond_apply mrg_clicked do_merge_right ls_s in
   rep_clicked <- imgui_menu_item "Replace (formula bar = FROM|TO)" true ;;

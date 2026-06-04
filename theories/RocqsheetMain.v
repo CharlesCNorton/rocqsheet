@@ -76,7 +76,8 @@ Definition rocqsheet_run : itree imguiE c_int :=
 
 Crane Extraction "rocqsheet" rocqsheet_run smoke eval_cell
   parse_formula parse_int_literal replace_int_in_expr
-  Shift.insert_row Shift.delete_row Sorting.swap_rows.
+  Shift.insert_row Shift.delete_row Shift.insert_col Shift.delete_col
+  Sorting.swap_rows.
 
 (* --- Loop-state correctness ------------------------------------- *)
 

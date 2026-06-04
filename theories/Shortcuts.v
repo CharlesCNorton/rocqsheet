@@ -197,6 +197,11 @@ Definition do_zoom_reset (ls : loop_state) : loop_state :=
          (ls_merges ls) (ls_sheet_names ls)
          (ls_show_formulas ls) 100%Z (ls_auto_recalc ls).
 
+(* Item 53 (Tab half) helper: commit the current edit, then advance
+   the selection one column right.  See [handle_shortcuts] below. *)
+Definition tab_commit_advance (ls : loop_state) : loop_state :=
+  advance_after_tab (do_commit ls).
+
 Definition handle_shortcuts (ls : loop_state) : itree imguiE loop_state :=
   z <- ctrl_key_pressed "z" ;;
   let ls1 := cond_apply z do_undo ls in
@@ -259,4 +264,15 @@ Definition handle_shortcuts (ls : loop_state) : itree imguiE loop_state :=
   let ls27 := cond_apply zout do_zoom_out ls26 in
   zres <- ctrl_key_pressed "0" ;;
   let ls28 := cond_apply zres do_zoom_reset ls27 in
-  Ret ls28.
+  (* Item 53 (Tab half) — commit, then move selection one column right.
+     Wrapped as one pure step so cond_apply can hand the extracted
+     C++ a function pointer (loop_state has no default ctor, so a raw
+     [if .. then .. else ..] won't extract cleanly). *)
+  tab <- key_pressed "Tab" ;;
+  let ls29 := cond_apply tab tab_commit_advance ls28 in
+  (* Item 61 — Ctrl+Shift+I inserts a column, Ctrl+Shift+D deletes one. *)
+  ins_col <- ctrl_shift_key_pressed "i" ;;
+  let ls30 := cond_apply ins_col do_insert_col ls29 in
+  del_col <- ctrl_shift_key_pressed "d" ;;
+  let ls31 := cond_apply del_col do_delete_col ls30 in
+  Ret ls31.

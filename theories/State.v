@@ -500,7 +500,11 @@ Definition add_ref (xs : list CellRef) (r : CellRef) : list CellRef :=
 
 Definition err_marker : PrimString.string := "#ERR".
 Definition parse_marker : PrimString.string := "#PARSE".
+(* Item 66: distinguish fuel exhaustion from genuine evaluation errors. *)
+Definition fuel_marker : PrimString.string := "#FUEL".
 
+(* Three-state display: text, is-error (renders red), is-fuel (renders
+   amber).  The renderer surfaces the two as separate visual classes. *)
 Definition cell_display (s : Sheet) (ms : MergeList) (errs : list CellRef)
                         (fm : FormatMap) (r : CellRef)
   : PrimString.string * bool :=
@@ -521,7 +525,7 @@ Definition cell_display (s : Sheet) (ms : MergeList) (errs : list CellRef)
       | EValS sv => (sv, false)
       | EValB b  => ((if b then "TRUE" else "FALSE"), false)
       | EErr     => (err_marker, true)
-      | EFuel    => (err_marker, true)
+      | EFuel    => (fuel_marker, true)
       end
     end.
 
