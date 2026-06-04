@@ -88,9 +88,11 @@ Definition edit_menu (ls : loop_state) : itree imguiE loop_state :=
   let ls_s := cond_apply swp_clicked do_swap_with_next_row ls_dc in
   mrg_clicked <- imgui_menu_item "Merge Cell Right" has_sel ;;
   let ls_m := cond_apply mrg_clicked do_merge_right ls_s in
-  rep_clicked <- imgui_menu_item "Replace (formula bar = FROM|TO)" true ;;
-  let ls_x := cond_apply rep_clicked do_replace_user ls_m in
-  Ret ls_x.
+  (* Item 39: the menu entry opens the Find / Replace modal; the
+     per-frame modal pump applies the committed pair. *)
+  rep_clicked <- imgui_menu_item "Find / Replace... (Ctrl+H)" true ;;
+  (if rep_clicked then modal_open "Find / Replace" else Ret tt) ;;
+  Ret ls_m.
 
 (* View menu: Show Formulas + Auto-Recalc toggles, Zoom controls.
    Implements item 60 (Zoom) + item 68 (Show Formulas) +

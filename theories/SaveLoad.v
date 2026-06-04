@@ -338,6 +338,33 @@ Definition do_replace_user (ls : loop_state) : loop_state :=
            (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls)
   end.
 
+(* Item 39: apply the Find / Replace modal's committed pair.  Both
+   fields must parse as integer literals; otherwise the commit is a
+   no-op (the modal stays dismissed and the sheet untouched). *)
+Definition do_replace_pair (ls : loop_state)
+    (ftxt ttxt : PrimString.string) : loop_state :=
+  match parse_int_literal ftxt, parse_int_literal ttxt with
+  | Some f, Some t =>
+    let before := ls_sheet ls in
+    mkLoop (replace_in_sheet f t before) (ls_selected ls) (ls_fbar_text ls)
+           (ls_edit_buf ls) (ls_parse_errs ls)
+           (trim_undo ((before, "replace"%pstring) :: ls_undo ls)) nil
+           (ls_formats ls)
+           (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
+           (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls)
+           (ls_zoom ls) (ls_auto_recalc ls)
+  | _, _ => ls
+  end.
+
+(* Item 36 / 39: per-frame modal pump.  Renders every registered
+   modal; the active one (armed via [modal_open]) draws and reports
+   the user's answer on its commit frame. *)
+Definition render_modals (ls : loop_state) : itree imguiE loop_state :=
+  res <- modal_find_replace ;;
+  let '(done, ft) := res in
+  let '(ftxt, ttxt) := ft in
+  Ret (if done then do_replace_pair ls ftxt ttxt else ls).
+
 Fixpoint parse_uint_aux (fuel : nat) (s : PrimString.string) (len i : int)
     (acc : Z) (any : bool) : option (Z * int) :=
   match fuel with

@@ -77,6 +77,18 @@ Inductive imguiE : Type -> Type :=
      [ERecentList] returns the current list (newest first). *)
   | ERecentRecord     : PrimString.string -> imguiE unit
   | ERecentList       : imguiE (list PrimString.string)
+  (* Item 36: reusable modal framework.  Popup visibility and the
+     text-input buffers live C++-side in modal_helpers; the tree sees
+     each modal as an effect reporting the user's committed answer.
+     [EModalOpen id] arms the popup named [id]. *)
+  | EModalOpen        : PrimString.string -> imguiE unit
+  (* Render a confirm modal (id, message).  Returns 0 while pending
+     or closed, 1 on the OK frame, 2 on the Cancel frame. *)
+  | EModalConfirm     : PrimString.string -> PrimString.string -> imguiE Z
+  (* Item 39: render the Find / Replace modal.  Returns
+     (done, (find_text, replace_text)); [done] is true exactly on
+     the frame Replace All is clicked. *)
+  | EModalFindReplace : imguiE (bool * (PrimString.string * PrimString.string))
   | EClipboardGet     : imguiE PrimString.string
   | EClipboardSet     : PrimString.string -> imguiE unit
   | ECtrlKeyPressed   : PrimString.string -> imguiE bool
@@ -175,6 +187,13 @@ Definition recent_record (path : PrimString.string) : itree imguiE unit :=
   trigger (ERecentRecord path).
 Definition recent_list : itree imguiE (list PrimString.string) :=
   trigger ERecentList.
+Definition modal_open (id : PrimString.string) : itree imguiE unit :=
+  trigger (EModalOpen id).
+Definition modal_confirm (id msg : PrimString.string) : itree imguiE Z :=
+  trigger (EModalConfirm id msg).
+Definition modal_find_replace
+  : itree imguiE (bool * (PrimString.string * PrimString.string)) :=
+  trigger EModalFindReplace.
 Definition clipboard_get : itree imguiE PrimString.string :=
   trigger EClipboardGet.
 Definition clipboard_set (s : PrimString.string) : itree imguiE unit :=
@@ -251,6 +270,9 @@ Crane Extract Inductive imguiE => ""
     "imgui_helpers::file_lock(%a0)"
     "recent_helpers::record(%a0)"
     "recent_helpers::list()"
+    "modal_helpers::open(%a0)"
+    "modal_helpers::confirm(%a0, %a1)"
+    "modal_helpers::find_replace()"
     "imgui_helpers::clipboard_get()"
     "imgui_helpers::clipboard_set(%a0)"
     "imgui_helpers::ctrl_key_pressed(%a0)"
@@ -262,7 +284,7 @@ Crane Extract Inductive imguiE => ""
     "imgui_helpers::tab_bar_select(%a0, %a1, %a2)"
     "chart_helpers::chart_render(%a0, %a1, %a2)"
     "pdf_helpers::emit_pdf(%a0, %a1)" ]
-  From "imgui_helpers.h" "recent_helpers.h".
+  From "imgui_helpers.h" "recent_helpers.h" "modal_helpers.h".
 
 Crane Extract Inlined Constant glfw_should_close =>
   "imgui_helpers::should_close()" From "imgui_helpers.h".
@@ -342,6 +364,12 @@ Crane Extract Inlined Constant recent_record =>
   "recent_helpers::record(%a0)" From "recent_helpers.h".
 Crane Extract Inlined Constant recent_list =>
   "recent_helpers::list()" From "recent_helpers.h".
+Crane Extract Inlined Constant modal_open =>
+  "modal_helpers::open(%a0)" From "modal_helpers.h".
+Crane Extract Inlined Constant modal_confirm =>
+  "modal_helpers::confirm(%a0, %a1)" From "modal_helpers.h".
+Crane Extract Inlined Constant modal_find_replace =>
+  "modal_helpers::find_replace()" From "modal_helpers.h".
 Crane Extract Inlined Constant clipboard_get =>
   "imgui_helpers::clipboard_get()" From "imgui_helpers.h".
 Crane Extract Inlined Constant clipboard_set =>

@@ -334,6 +334,23 @@ Definition merge_nonempty (a : sheet_agg) : sheet_agg :=
   mkAgg (ag_count a) (S (ag_nonempty a)) (ag_sum a)
         (ag_min a) (ag_max a) (ag_has_any a).
 
+(* One cell's contribution to the status-bar aggregate. *)
+Definition agg_cell_step (s : Sheet) (acc : sheet_agg) (idx : int)
+  : sheet_agg :=
+  match PrimArray.get s idx with
+  | CEmpty   => acc
+  | CLit n   => merge_z acc n
+  | CFloat _ => merge_nonempty acc
+  | CStr _   => merge_nonempty acc
+  | CBool _  => merge_nonempty acc
+  | CForm e =>
+    match eval_expr DEFAULT_FUEL empty_visited s e with
+    | EVal v => merge_z acc v
+    | EFVal _ | EValS _ | EValB _ => merge_nonempty acc
+    | _ => acc
+    end
+  end.
+
 Fixpoint walk_sheet_aux (s : Sheet) (idx : int) (fuel : nat)
                        (acc : sheet_agg) : sheet_agg :=
   match fuel with
@@ -341,25 +358,21 @@ Fixpoint walk_sheet_aux (s : Sheet) (idx : int) (fuel : nat)
   | S fuel' =>
     if PrimInt63.leb GRID_SIZE idx then acc
     else
-      let acc' :=
-        match PrimArray.get s idx with
-        | CEmpty   => acc
-        | CLit n   => merge_z acc n
-        | CFloat _ => merge_nonempty acc
-        | CStr _   => merge_nonempty acc
-        | CBool _  => merge_nonempty acc
-        | CForm e =>
-          match eval_expr DEFAULT_FUEL empty_visited s e with
-          | EVal v => merge_z acc v
-          | EFVal _ | EValS _ | EValB _ => merge_nonempty acc
-          | _ => acc
-          end
-        end in
-      walk_sheet_aux s (PrimInt63.add idx 1) fuel' acc'
+      walk_sheet_aux s (PrimInt63.add idx 1) fuel'
+        (agg_cell_step s acc idx)
   end.
 
 Definition sheet_aggregate (s : Sheet) : sheet_agg :=
   walk_sheet_aux s 0 60000 empty_agg.
+
+(* The extracted recursive walk overflows the stack (one C++ frame
+   per grid cell, every frame); the override below keeps the Coq
+   Fixpoint as the executable spec and runs the same per-cell step
+   through an iterative C++ loop, mirroring the
+   find_replace_helpers::replace_in_sheet_impl pattern. *)
+Crane Extract Inlined Constant sheet_aggregate =>
+  "::status_helpers::aggregate_impl(::Rocqsheet::GRID_SIZE, Render::empty_agg, [&](sheet_agg _acc, int64_t _idx) { return Render::agg_cell_step(%a0, std::move(_acc), _idx); })"
+  From "status_helpers.h".
 
 Definition agg_avg (a : sheet_agg) : Z :=
   if Nat.eqb (ag_count a) 0 then 0%Z

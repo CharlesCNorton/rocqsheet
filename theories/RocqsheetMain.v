@@ -49,15 +49,18 @@ Definition process_frame (ls : loop_state) : itree imguiE (bool * loop_state) :=
     (* Item 51: selection summary + sheet aggregate at bottom. *)
     imgui_separator ;;
     render_status_bar ls4 ;;
+    (* Item 36 / 39: per-frame modal pump, inside the main window so
+       the popup ID scope is stable. *)
+    ls4b <- render_modals ls4 ;;
     imgui_end_window ;;
     (* Pin Charts to a bottom strip on first launch so it doesn't
        cover rows 1-22 of the grid; subsequent frames respect any
        drag/resize the user does. *)
     imgui_next_window_initial_pos_size 10%Z 600%Z 1260%Z 190%Z ;;
     imgui_begin_window "Charts" ;;
-    render_charts ls4 ;;
+    render_charts ls4b ;;
     imgui_end_window ;;
-    ls5 <- handle_shortcuts ls4 ;;
+    ls5 <- handle_shortcuts ls4b ;;
     imgui_render_frame ;;
     Ret (false, ls5).
 
@@ -80,7 +83,11 @@ Definition rocqsheet_run : itree imguiE c_int :=
 Crane Extraction "rocqsheet" rocqsheet_run smoke eval_cell
   parse_formula parse_int_literal replace_int_in_expr
   Shift.insert_row Shift.delete_row Shift.insert_col Shift.delete_col
-  Sorting.swap_rows.
+  Sorting.swap_rows
+  (* The status-bar aggregate's per-cell step and seed are reached
+     only from the iterative C++ override, so they must be explicit
+     extraction roots or the emitter prunes them. *)
+  Render.agg_cell_step Render.empty_agg.
 
 (* --- Loop-state correctness ------------------------------------- *)
 

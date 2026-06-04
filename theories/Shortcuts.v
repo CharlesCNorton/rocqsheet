@@ -225,8 +225,11 @@ Definition handle_shortcuts (ls : loop_state) : itree imguiE loop_state :=
   let ls10 := cond_apply t do_swap_with_next_row ls9 in
   m <- ctrl_key_pressed "m" ;;
   let ls11 := cond_apply m do_merge_right ls10 in
+  (* Item 39: Ctrl+H opens the Find / Replace modal; the per-frame
+     modal pump in process_frame applies the committed pair. *)
   h <- ctrl_key_pressed "h" ;;
-  let ls12 := cond_apply h do_replace_user ls11 in
+  (if h then modal_open "Find / Replace" else Ret tt) ;;
+  let ls12 := ls11 in
   p <- ctrl_key_pressed "p" ;;
   ls13 <- (if p then do_pdf_export ls12 else Ret ls12) ;;
   shift_s <- ctrl_shift_key_pressed "s" ;;
