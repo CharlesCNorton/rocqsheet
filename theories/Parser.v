@@ -4,6 +4,7 @@
    to PrimInt63 comparisons. *)
 
 From Corelib Require Import PrimString PrimInt63 Uint63Axioms.
+From Corelib Require PrimFloat.
 From Stdlib Require Import List Bool BinInt ZArith.
 From Stdlib.Numbers.Cyclic.Int63 Require Import Uint63 Sint63.
 From Crane Require Extraction.
@@ -90,7 +91,12 @@ Inductive token : Type :=
   | TIfs
   | TSwitch
   | TCounta
-  | TRangeSize.
+  | TRangeSize
+  (* Item 89: literal tokens for the three non-integer Cell types. *)
+  | TFloat : PrimFloat.float -> token
+  | TStr : PrimString.string -> token
+  | TTrue
+  | TFalse.
 
 (* INT64_MAX / 10 = 922337203685477580; one extra digit must not
    exceed (INT64_MAX mod 10) = 7.  The negated form accepts one extra
@@ -217,6 +223,21 @@ Definition read_ref (fuel : nat) (s : PrimString.string) (len i : int)
     else None
   else None.
 
+(* Item 89: scan forward for the closing double-quote of a string
+   literal.  Returns the index of the quote character itself, or
+   None when the literal is unterminated. *)
+Fixpoint find_quote (fuel : nat) (s : PrimString.string) (len i : int)
+    : option int :=
+  match fuel with
+  | O => None
+  | S fuel' =>
+    if PrimInt63.ltb i len then
+      if PrimInt63.eqb (char_to_int (PrimString.get s i)) 34
+      then Some i
+      else find_quote fuel' s len (PrimInt63.add i 1)
+    else None
+  end.
+
 (* Walk through the string emitting tokens.  Fuel is the number of
    characters; reaching it without consuming the whole string is a
    tokenizer bug. *)
@@ -263,10 +284,38 @@ Fixpoint tokenize_aux
         tokenize_aux fuel' s len (PrimInt63.add i 1) (TPow :: acc)
       else if PrimInt63.eqb n 58 then
         tokenize_aux fuel' s len (PrimInt63.add i 1) (TColon :: acc)
+      else if PrimInt63.eqb n 34 then
+        (* Item 89: double-quoted string literal.  The payload is the
+           raw byte span between the quotes; no escape sequences. *)
+        let start := PrimInt63.add i 1 in
+        match find_quote fuel s len start with
+        | None => None
+        | Some j =>
+          let payload := PrimString.sub s start (PrimInt63.sub j start) in
+          tokenize_aux fuel' s len (PrimInt63.add j 1) (TStr payload :: acc)
+        end
       else if is_digit c then
         match read_int fuel s len i with
         | None => None
-        | Some (v, i') => tokenize_aux fuel' s len i' (TInt v :: acc)
+        | Some (v, i') =>
+          (* Item 89: a '.' followed by at least one digit makes the
+             literal a float.  [read_int] rejects an empty fraction,
+             so "1." stays a tokenize error.  The fraction's digit
+             count drives the 10^k scale divisor. *)
+          if andb (PrimInt63.ltb i' len)
+                  (PrimInt63.eqb (char_to_int (PrimString.get s i')) 46) then
+            let fstart := PrimInt63.add i' 1 in
+            match read_int fuel s len fstart with
+            | None => None
+            | Some (fv, i'') =>
+              let k := nat_of_int (PrimInt63.sub i'' fstart) in
+              let scale := float_pow_nat (PrimFloat.of_uint63 10%uint63) k in
+              let f := PrimFloat.add (float_of_z v)
+                         (PrimFloat.div (float_of_z fv) scale) in
+              tokenize_aux fuel' s len i'' (TFloat f :: acc)
+            end
+          else
+            tokenize_aux fuel' s len i' (TInt v :: acc)
         end
       else if is_alpha c then
         let c0 := to_upper_int (char_to_int c) in
@@ -371,12 +420,32 @@ Fixpoint tokenize_aux
           tokenize_aux fuel' s len i4 (TMax :: acc)
         else
           let two_letter_kw_lp := lparen i2 in
+          (* Item 89: TRUE / FALSE bare keyword literals.  The boundary
+             check (next char not alphanumeric) keeps "TRUEX" flowing
+             into the read_ref fallback where it fails as before. *)
+          let alnum_at j :=
+            if PrimInt63.ltb j len then
+              let cj := PrimString.get s j in
+              is_alpha cj || is_digit cj
+            else false in
           if PrimInt63.eqb c0 73 && PrimInt63.eqb c1u 70 && two_letter_kw_lp
           then
             tokenize_aux fuel' s len i3 (TIf :: acc)
           else if PrimInt63.eqb c0 79 && PrimInt63.eqb c1u 82 && two_letter_kw_lp
           then
             tokenize_aux fuel' s len i3 (TOr :: acc)
+          else if PrimInt63.eqb c0 84 && PrimInt63.eqb c1u 82 &&
+                  PrimInt63.eqb c2u 85 && PrimInt63.eqb c3u 69 &&
+                  negb (alnum_at i4)
+          then
+            (* "TRUE" *)
+            tokenize_aux fuel' s len i4 (TTrue :: acc)
+          else if PrimInt63.eqb c0 70 && PrimInt63.eqb c1u 65 &&
+                  PrimInt63.eqb c2u 76 && PrimInt63.eqb c3u 83 &&
+                  PrimInt63.eqb c4u 69 && negb (alnum_at i5)
+          then
+            (* "FALSE" *)
+            tokenize_aux fuel' s len i5 (TFalse :: acc)
           else
             match read_ref fuel s len i with
             | None => None
@@ -550,6 +619,10 @@ with parse_factor (fuel : nat) (toks : list token)
     match toks with
     | TMinus :: rest =>
       match parse_factor fuel' rest with
+      (* Item 89: negate a float literal in place so "-2.5" yields
+         [EFloat (-2.5)] instead of the integer-typed [ESub] that
+         would degrade to EErr at evaluation. *)
+      | Some (EFloat f, rest') => Some (EFloat (PrimFloat.opp f), rest')
       | Some (e, rest') => Some (ESub (EInt 0%Z) e, rest')
       | None => None
       end
@@ -560,6 +633,12 @@ with parse_factor (fuel : nat) (toks : list token)
       end
     | TInt n :: rest => Some (EInt n, rest)
     | TRef r :: rest => Some (ERef r, rest)
+    (* Item 89: literal tokens map directly onto the existing
+       EFloat / EStr / EBool constructors. *)
+    | TFloat f :: rest => Some (EFloat f, rest)
+    | TStr sv :: rest => Some (EStr sv, rest)
+    | TTrue :: rest => Some (EBool true, rest)
+    | TFalse :: rest => Some (EBool false, rest)
     | TIf :: rest =>
       match parse_top fuel' rest with
       | Some (cnd, TComma :: rest1) =>

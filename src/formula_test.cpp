@@ -73,7 +73,6 @@ int main() {
   want_fail("trailing-op", "1+");
   want_fail("double-op", "1++1");
   want_fail("bare-letter", "A");
-  want_fail("decimal", "1.5");
   want_fail("hex", "0x10");
   want_fail("paren-only", "(");
   want_fail("close-only", ")");
@@ -120,6 +119,26 @@ int main() {
   want_fail("if-no-paren", "IF A1,B1,C1");
   want_fail("if-bare",     "IF");
   want_fail("eq-trailing", "A1=");
+
+  // Item 89: float / string / bool literals.
+  want_ok("float",           "1.5");
+  want_ok("float-pi",        "3.14");
+  want_ok("float-zero-frac", "2.0");
+  want_ok("neg-float",       "-2.5");
+  want_ok("float-arith",     "1.5+2.5");
+  want_fail("trailing-dot",  "1.");
+  want_fail("bare-dot",      ".5");
+  want_ok("true",            "TRUE");
+  want_ok("false",           "FALSE");
+  want_ok("true-lower",      "true");
+  want_ok("false-mixed",     "False");
+  want_fail("true-suffix",   "TRUEX");
+  want_fail("false-suffix",  "FALSE1");
+  want_ok("string",          "\"hello\"");
+  want_ok("string-empty",    "\"\"");
+  want_ok("string-spaces",   "\"two words\"");
+  want_ok("string-concat-shape", "IF(A1,\"yes\",\"no\")");
+  want_fail("string-unterminated", "\"abc");
 
   if (failures == 0) std::printf("OK (all parser cases pass)\n");
   else std::printf("FAILED (%d)\n", failures);

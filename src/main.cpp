@@ -279,9 +279,34 @@ int run_headless(const std::string& load_path,
         cur = cell.d_a1.get();
       }
     }
-    auto v = formula::eval_iter(ls.ls_sheet, r);
-    if (v.has_value()) {
+    // Integer fast path: the iterative evaluator survives reference
+    // chains that would blow the recursive extracted eval_cell's
+    // stack (see kernel_test's 9000-deep chain).
+    if (auto v = formula::eval_iter(ls.ls_sheet, r)) {
       std::cout << *v << '\n';
+      return 0;
+    }
+    // Item 89: nullopt covers typed results as well as errors, so
+    // fall through to the extracted [eval_cell] where float / string
+    // / bool results surface with their values instead of degrading
+    // to #ERR through the integer-only [formula::eval_iter] contract.
+    auto res = Rocqsheet::eval_cell(Rocqsheet::DEFAULT_FUEL, ls.ls_sheet, r);
+    const auto& rv = res.v();
+    if (std::holds_alternative<Rocqsheet::EvalResult::EVal>(rv)) {
+      std::cout << std::get<Rocqsheet::EvalResult::EVal>(rv).d_a0 << '\n';
+    } else if (std::holds_alternative<Rocqsheet::EvalResult::EFVal>(rv)) {
+      char buf[64];
+      std::snprintf(buf, sizeof buf, "%g",
+                    std::get<Rocqsheet::EvalResult::EFVal>(rv).d_a0);
+      std::cout << buf << '\n';
+    } else if (std::holds_alternative<Rocqsheet::EvalResult::EValS>(rv)) {
+      std::cout << std::get<Rocqsheet::EvalResult::EValS>(rv).d_a0 << '\n';
+    } else if (std::holds_alternative<Rocqsheet::EvalResult::EValB>(rv)) {
+      std::cout << (std::get<Rocqsheet::EvalResult::EValB>(rv).d_a0
+                        ? "TRUE" : "FALSE")
+                << '\n';
+    } else if (std::holds_alternative<Rocqsheet::EvalResult::EFuel>(rv)) {
+      std::cout << "#FUEL\n";
     } else {
       std::cout << "#ERR\n";
     }

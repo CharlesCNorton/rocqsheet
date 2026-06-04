@@ -47,6 +47,14 @@ assert_eval D1 100
 # Empty cell on the active sheet renders as 0.
 assert_eval Z99 0
 
+# Item 89 literals (row 10 of the Refs sheet) + item 37 neg-pow float.
+assert_eval A10 TRUE
+assert_eval B10 FALSE
+assert_eval C10 3.14
+assert_eval D10 -2.5
+assert_eval E10 hello
+assert_eval F10 0.125
+
 # --print-csv produces non-empty output.
 csv_lines=$("$BIN" --headless --load "$FIX" --print-csv | wc -l)
 if [ "$csv_lines" -lt 1 ]; then

@@ -93,7 +93,18 @@ Definition commit_to (ls : loop_state) (r : CellRef) (txt : PrimString.string)
     let body := strip_leading_eq txt in
     match parse_formula body with
     | Some e =>
-      let new_sheet := set_cell before r (CForm e) in
+      (* Item 89: a formula that is just a literal collapses into the
+         matching Cell constructor — "=TRUE" lands as [CBool true],
+         "=3.14" as [CFloat], "="hello"" as [CStr] — so the save
+         format and renderer see a plain value, not a formula. *)
+      let new_cell :=
+        match e with
+        | EBool b  => CBool b
+        | EFloat f => CFloat f
+        | EStr sv  => CStr sv
+        | _        => CForm e
+        end in
+      let new_sheet := set_cell before r new_cell in
       let new_eb := put_edit (ls_edit_buf ls) r txt in
       let new_pe := remove_ref (ls_parse_errs ls) r in
       mkLoop new_sheet (ls_selected ls) (ls_fbar_text ls)
