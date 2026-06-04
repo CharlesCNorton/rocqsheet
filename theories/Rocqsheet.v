@@ -279,6 +279,49 @@ Theorem str_replace_smoke :
   str_replace "abcdef"%pstring 2%Z 3%Z "XY"%pstring = "aXYef"%pstring.
 Proof. vm_compute. reflexivity. Qed.
 
+(* Item 19 (string half): parse a decimal integer with an optional
+   leading minus.  Used by combine_bin to coerce EValS operands in
+   integer contexts ("5" + 2 = 7).  Whole-string match only: any
+   non-digit rejects.  Accumulation saturates via the Z.mul/Z.add
+   extraction overrides. *)
+Fixpoint str_to_z_aux (s : PrimString.string) (len i : int)
+    (acc : Z) (seen : bool) (fuel : nat) : option Z :=
+  match fuel with
+  | O => if seen then Some acc else None
+  | S fuel' =>
+    if PrimInt63.leb len i then (if seen then Some acc else None)
+    else
+      let c := PrimString.get s i in
+      if andb (PrimInt63.leb 48 c) (PrimInt63.leb c 57)
+      then str_to_z_aux s len (PrimInt63.add i 1)
+             (Z.add (Z.mul acc 10%Z) (Uint63.to_Z (PrimInt63.sub c 48)))
+             true fuel'
+      else None
+  end.
+
+Definition str_to_z (s : PrimString.string) : option Z :=
+  let len := PrimString.length s in
+  if PrimInt63.eqb len 0 then None
+  else if PrimInt63.eqb (PrimString.get s 0) 45
+  then
+    match str_to_z_aux s len 1 0%Z false STR_FUEL with
+    | Some v => Some (Z.opp v)
+    | None => None
+    end
+  else str_to_z_aux s len 0 0%Z false STR_FUEL.
+
+Theorem str_to_z_smoke : str_to_z "42"%pstring = Some 42%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem str_to_z_neg : str_to_z "-7"%pstring = Some (-7)%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem str_to_z_reject : str_to_z "4x"%pstring = None.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem str_to_z_empty : str_to_z ""%pstring = None.
+Proof. vm_compute. reflexivity. Qed.
+
 (* ----- Items 23 / 24: order statistics and NPV over list Z -------- *)
 (* The range is materialized into a list by the walk_list walkers in
    the evaluation fixpoint; these combiners are pure list functions
@@ -591,8 +634,9 @@ Inductive EvalResult : Type :=
   | EFuel : EvalResult.
 
 (* Combine two binary [Z] operands into a single result, preserving
-   error and fuel propagation.  A float operand in this integer
-   context degrades to [EErr] (type mismatch). *)
+   error and fuel propagation.  Item 19: a string operand that parses
+   as a decimal integer coerces ("5" + 2 = 7); any other non-integer
+   operand degrades to [EErr] (type mismatch). *)
 Definition combine_bin (op : Z -> Z -> EvalResult)
                        (ra rb : EvalResult) : EvalResult :=
   match ra, rb with
@@ -601,6 +645,21 @@ Definition combine_bin (op : Z -> Z -> EvalResult)
   | EErr, _       => EErr
   | _, EErr       => EErr
   | EVal va, EVal vb => op va vb
+  | EValS sa, EVal vb =>
+    match str_to_z sa with
+    | Some va => op va vb
+    | None => EErr
+    end
+  | EVal va, EValS sb =>
+    match str_to_z sb with
+    | Some vb => op va vb
+    | None => EErr
+    end
+  | EValS sa, EValS sb =>
+    match str_to_z sa, str_to_z sb with
+    | Some va, Some vb => op va vb
+    | _, _ => EErr
+    end
   | _, _          => EErr
   end.
 

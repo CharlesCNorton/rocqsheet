@@ -580,6 +580,23 @@ void test_lookups() {
             as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{4, 6})), 3000);
 }
 
+// Item 19 (string half): numeric strings coerce in integer contexts.
+void test_string_coercion() {
+  auto s = put(S::new_sheet, 0, 0, S::Cell::cstr("5"));
+  s = put(s, 1, 0, S::Cell::cstr("x"));
+  s = form(s, 2, 0, S::Expr::eadd(S::Expr::eref(S::CellRef{0, 0}),
+                                  S::Expr::eint(2)));
+  check_int("\"5\"+2",
+            as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{2, 0})), 7);
+  s = form(s, 3, 0, S::Expr::emul(S::Expr::estr("-3"), S::Expr::estr("4")));
+  check_int("\"-3\"*\"4\"",
+            as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{3, 0})), -12);
+  s = form(s, 4, 0, S::Expr::eadd(S::Expr::eref(S::CellRef{1, 0}),
+                                  S::Expr::eint(2)));
+  check("\"x\"+2 → EErr",
+        is_err(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{4, 0})));
+}
+
 void test_boolean_ops() {
   auto s = put(S::new_sheet, 0, 0, S::Cell::cbool(true));
   s = put(s, 1, 0, S::Cell::cbool(false));
@@ -766,6 +783,7 @@ int main() {
   test_string_funcs();
   test_order_stats_npv();
   test_lookups();
+  test_string_coercion();
   test_boolean_ops();
   test_string_ops();
   test_correspondence_corpus();
