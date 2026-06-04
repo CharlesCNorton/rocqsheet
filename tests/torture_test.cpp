@@ -467,6 +467,40 @@ void test_csv_import() {
         std::holds_alternative<S::Cell::CLit>(last.v()));
 }
 
+// Item 22: UPPER / LOWER / TRIM / FIND / REPLACE.
+void test_string_funcs() {
+  auto s = put(S::new_sheet, 0, 0, S::Cell::cstr("  Hello, World  "));
+  auto str_at = [&](const S::Sheet& sh, int c, int r) {
+    auto v = S::eval_cell(S::DEFAULT_FUEL, sh, S::CellRef{c, r});
+    return std::holds_alternative<S::EvalResult::EValS>(v.v())
+               ? std::get<S::EvalResult::EValS>(v.v()).d_a0
+               : std::string("<not-a-string>");
+  };
+  s = form(s, 1, 0, S::Expr::eupper(S::Expr::estr("aB3z")));
+  check("UPPER", str_at(s, 1, 0) == "AB3Z");
+  s = form(s, 2, 0, S::Expr::elower(S::Expr::estr("AbC!")));
+  check("LOWER", str_at(s, 2, 0) == "abc!");
+  s = form(s, 3, 0, S::Expr::etrim(S::Expr::eref(S::CellRef{0, 0})));
+  check("TRIM", str_at(s, 3, 0) == "Hello, World");
+  s = form(s, 4, 0, S::Expr::efind(S::Expr::estr("lo"),
+                                   S::Expr::estr("hello")));
+  check_int("FIND hit",
+            as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{4, 0})), 4);
+  s = form(s, 5, 0, S::Expr::efind(S::Expr::estr("xy"),
+                                   S::Expr::estr("hello")));
+  check("FIND miss → EErr",
+        is_err(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{5, 0})));
+  s = form(s, 6, 0, S::Expr::ereplaces(S::Expr::estr("abcdef"),
+                                       S::Expr::eint(2), S::Expr::eint(3),
+                                       S::Expr::estr("XY")));
+  check("REPLACE", str_at(s, 6, 0) == "aXYef");
+  // Regression: an out-of-range SUBSTR must clamp (the raw substr
+  // mapping threw std::out_of_range and aborted the process).
+  s = form(s, 7, 0, S::Expr::esubstr(S::Expr::estr("x"), S::Expr::eint(5),
+                                     S::Expr::eint(1)));
+  check("SUBSTR OOB clamps", str_at(s, 7, 0) == "");
+}
+
 void test_boolean_ops() {
   auto s = put(S::new_sheet, 0, 0, S::Cell::cbool(true));
   s = put(s, 1, 0, S::Cell::cbool(false));
@@ -650,6 +684,7 @@ int main() {
   test_if_aggregates();
   test_var_stdev();
   test_csv_import();
+  test_string_funcs();
   test_boolean_ops();
   test_string_ops();
   test_correspondence_corpus();

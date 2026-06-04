@@ -51,7 +51,12 @@ Fixpoint float_free (e : Expr) : bool :=
   | EBAnd a b | EBOr a b => andb (float_free a) (float_free b)
   | EIf a b c | ESubstr a b c =>
     andb (float_free a) (andb (float_free b) (float_free c))
-  | ENot a | ELen a | EBNot a => float_free a
+  | ENot a | ELen a | EBNot a
+  | EUpper a | ELower a | ETrim a => float_free a
+  | EFind a b => andb (float_free a) (float_free b)
+  | EReplaceS a b c d =>
+    andb (andb (float_free a) (float_free b))
+         (andb (float_free c) (float_free d))
   | ESum _ _ | EAvg _ _ | ECount _ _
   | EMin _ _ | EMax _ _
   | ECountN _ _ | ECountA _ _

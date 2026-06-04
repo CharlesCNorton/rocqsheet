@@ -120,6 +120,17 @@ int main() {
   want_fail("if-bare",     "IF");
   want_fail("eq-trailing", "A1=");
 
+  // Item 22: string operators.
+  want_ok("upper",        "UPPER(\"x\")");
+  want_ok("lower",        "LOWER(A1)");
+  want_ok("trim",         "TRIM(\" x \")");
+  want_ok("upper-nested", "UPPER(LOWER(A1))");
+  want_ok("find",         "FIND(\"a\",A1)");
+  want_ok("replace4",     "REPLACE(A1,2,3,\"Z\")");
+  want_fail("upper-noargs", "UPPER()");
+  want_fail("find-1arg",    "FIND(A1)");
+  want_fail("replace-3arg", "REPLACE(A1,2,3)");
+
   // Item 27: variance / standard deviation.
   want_ok("var",       "VAR(A1:A8)");
   want_ok("varp",      "VARP(A1:A8)");

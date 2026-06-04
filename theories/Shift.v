@@ -64,6 +64,13 @@ Fixpoint shift_refs (dc dr : int) (e : Expr) : Expr :=
     EStdevSamp (shift_ref dc dr tl) (shift_ref dc dr br)
   | EStdevPop tl br =>
     EStdevPop (shift_ref dc dr tl) (shift_ref dc dr br)
+  | EUpper a => EUpper (shift_refs dc dr a)
+  | ELower a => ELower (shift_refs dc dr a)
+  | ETrim a => ETrim (shift_refs dc dr a)
+  | EFind a b => EFind (shift_refs dc dr a) (shift_refs dc dr b)
+  | EReplaceS a b c d =>
+    EReplaceS (shift_refs dc dr a) (shift_refs dc dr b)
+              (shift_refs dc dr c) (shift_refs dc dr d)
   end.
 
 Theorem shift_ref_zero : forall r, shift_ref 0 0 r = r.
@@ -90,6 +97,7 @@ Theorem shift_refs_zero : forall e, shift_refs 0 0 e = e.
 Proof.
   induction e; simpl;
     try rewrite IHe1; try rewrite IHe2; try rewrite IHe3;
+    try rewrite IHe4;
     try rewrite IHe;
     try rewrite !shift_ref_zero;
     reflexivity.

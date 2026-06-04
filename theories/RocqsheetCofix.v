@@ -160,6 +160,12 @@ Definition trans (st : State) : State + option Z :=
   | PCEval _ (EVarPop _ _) => inr None
   | PCEval _ (EStdevSamp _ _) => inr None
   | PCEval _ (EStdevPop _ _) => inr None
+  (* Item 22: string operators bail out the same way. *)
+  | PCEval _ (EUpper _) => inr None
+  | PCEval _ (ELower _) => inr None
+  | PCEval _ (ETrim _) => inr None
+  | PCEval _ (EFind _ _) => inr None
+  | PCEval _ (EReplaceS _ _ _ _) => inr None
   | PCSumStep visited lc hc col row hr acc =>
       if PrimInt63.ltb hr row then
         inl (mkSt (st_sheet st) (PCApply (Some acc)) (st_stack st))

@@ -40,6 +40,22 @@ Crane Extract Inlined Constant Z.div =>
 Crane Extract Inlined Constant Z.modulo =>
   "((%a1 == 0) ? INT64_C(0) : (((%a0 == INT64_MIN) && (%a1 == -1)) ? INT64_C(0) : ((%a0) % (%a1))))".
 
+(* Item 22: single-character string construction (no upstream Crane
+   mapping exists for PrimString.make). *)
+Crane Extract Inlined Constant PrimString.make =>
+  "std::string(static_cast<size_t>(%a0), static_cast<char>(%a1))"
+  From "string".
+
+(* Override the upstream PrimString.sub mapping: Coq's sub clamps to
+   the string bounds, but std::string::substr throws out_of_range on
+   pos > size() — a user formula =SUBSTR("x",5,1) would abort the
+   process.  The lambda reproduces the clamping semantics (an int63
+   that wrapped "negative" lands in the o >= n branch on both
+   sides). *)
+Crane Extract Inlined Constant PrimString.sub =>
+  "([](const std::string& _s, int64_t _o, int64_t _l) -> std::string { const int64_t _n = static_cast<int64_t>(_s.size()); if (_o < 0 || _o >= _n || _l <= 0) return std::string(); return _s.substr(static_cast<size_t>(_o), static_cast<size_t>(std::min(_l, _n - _o))); }(%a0, %a1, %a2))"
+  From "string" "algorithm".
+
 Module Rocqsheet.
 
 Open Scope int63.
@@ -125,6 +141,142 @@ Theorem isqrt_int64_max :
   isqrt 9223372036854775807%Z = 3037000499%Z.
 Proof. vm_compute. reflexivity. Qed.
 
+(* ----- Item 22: character-level string helpers -------------------- *)
+(* Fueled walkers outside the evaluation fixpoint (no mutual-block
+   growth).  Case mapping is ASCII-only: bytes outside a-z / A-Z pass
+   through untouched.  STR_FUEL caps the extracted recursion depth;
+   cell text past it is processed up to the cap. *)
+
+Definition STR_FUEL : nat := 32768%nat.
+
+Definition char_upper (c : PrimString.char63) : PrimString.char63 :=
+  if andb (PrimInt63.leb 97 c) (PrimInt63.leb c 122)
+  then PrimInt63.sub c 32 else c.
+
+Definition char_lower (c : PrimString.char63) : PrimString.char63 :=
+  if andb (PrimInt63.leb 65 c) (PrimInt63.leb c 90)
+  then PrimInt63.add c 32 else c.
+
+Fixpoint map_case_aux (up : bool) (s : PrimString.string) (len i : int)
+    (acc : PrimString.string) (fuel : nat) : PrimString.string :=
+  match fuel with
+  | O => acc
+  | S fuel' =>
+    if PrimInt63.leb len i then acc
+    else
+      let c := PrimString.get s i in
+      let c' := if up then char_upper c else char_lower c in
+      map_case_aux up s len (PrimInt63.add i 1)
+        (PrimString.cat acc (PrimString.make 1 c')) fuel'
+  end.
+
+Definition str_upper (s : PrimString.string) : PrimString.string :=
+  map_case_aux true s (PrimString.length s) 0 ""%pstring STR_FUEL.
+
+Definition str_lower (s : PrimString.string) : PrimString.string :=
+  map_case_aux false s (PrimString.length s) 0 ""%pstring STR_FUEL.
+
+Definition is_ws (c : PrimString.char63) : bool :=
+  orb (orb (PrimInt63.eqb c 32) (PrimInt63.eqb c 9))
+      (orb (PrimInt63.eqb c 10) (PrimInt63.eqb c 13)).
+
+Fixpoint trim_left_aux (s : PrimString.string) (len i : int) (fuel : nat)
+  : int :=
+  match fuel with
+  | O => i
+  | S fuel' =>
+    if PrimInt63.leb len i then i
+    else if is_ws (PrimString.get s i)
+    then trim_left_aux s len (PrimInt63.add i 1) fuel'
+    else i
+  end.
+
+(* Index one past the last non-whitespace character in s[i..len). *)
+Fixpoint trim_right_aux (s : PrimString.string) (i j : int) (fuel : nat)
+  : int :=
+  match fuel with
+  | O => j
+  | S fuel' =>
+    if PrimInt63.leb j i then j
+    else if is_ws (PrimString.get s (PrimInt63.sub j 1))
+    then trim_right_aux s i (PrimInt63.sub j 1) fuel'
+    else j
+  end.
+
+Definition str_trim (s : PrimString.string) : PrimString.string :=
+  let len := PrimString.length s in
+  let a := trim_left_aux s len 0 STR_FUEL in
+  let b := trim_right_aux s a len STR_FUEL in
+  PrimString.sub s a (PrimInt63.sub b a).
+
+(* True when needle occurs in hay starting at offset i. *)
+Fixpoint streq_at_aux (needle hay : PrimString.string) (nl : int)
+    (i j : int) (fuel : nat) : bool :=
+  match fuel with
+  | O => true
+  | S fuel' =>
+    if PrimInt63.leb nl j then true
+    else if PrimInt63.eqb
+              (PrimString.get hay (PrimInt63.add i j))
+              (PrimString.get needle j)
+    then streq_at_aux needle hay nl i (PrimInt63.add j 1) fuel'
+    else false
+  end.
+
+(* 1-based position of the first occurrence of needle in hay; 0 when
+   absent.  The empty needle matches at position 1 (Excel FIND). *)
+Fixpoint str_find_aux (needle hay : PrimString.string) (nl hl : int)
+    (i : int) (fuel : nat) : Z :=
+  match fuel with
+  | O => 0%Z
+  | S fuel' =>
+    if PrimInt63.ltb (PrimInt63.sub hl i) nl then 0%Z
+    else if streq_at_aux needle hay nl i 0 STR_FUEL
+    then Z.add (Uint63.to_Z i) 1%Z
+    else str_find_aux needle hay nl hl (PrimInt63.add i 1) fuel'
+  end.
+
+Definition str_find (needle hay : PrimString.string) : Z :=
+  str_find_aux needle hay (PrimString.length needle)
+    (PrimString.length hay) 0 STR_FUEL.
+
+(* REPLACE(text, start(1-based), count, rep): splice [rep] over
+   [count] characters beginning at [start].  Out-of-range pieces clamp
+   through PrimString.sub's bounds behavior. *)
+Definition str_replace (text : PrimString.string) (start count : Z)
+    (rep : PrimString.string) : PrimString.string :=
+  if orb (Z.ltb start 1%Z) (Z.ltb count 0%Z) then text
+  else
+    let total := PrimString.length text in
+    let s0 := Uint63.of_Z (Z.sub start 1%Z) in
+    let tail_start := Uint63.of_Z (Z.add (Z.sub start 1%Z) count) in
+    PrimString.cat (PrimString.sub text 0 s0)
+      (PrimString.cat rep
+        (PrimString.sub text tail_start
+           (PrimInt63.sub total tail_start))).
+
+Theorem str_upper_smoke : str_upper "aB3z"%pstring = "AB3Z"%pstring.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem str_lower_smoke : str_lower "AbC!"%pstring = "abc!"%pstring.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem str_trim_smoke : str_trim "  hi x  "%pstring = "hi x"%pstring.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem str_trim_all_ws : str_trim "   "%pstring = ""%pstring.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem str_find_smoke : str_find "lo"%pstring "hello"%pstring = 4%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem str_find_absent : str_find "xy"%pstring "hello"%pstring = 0%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem str_replace_smoke :
+  str_replace "abcdef"%pstring 2%Z 3%Z "XY"%pstring = "aXYef"%pstring.
+Proof. vm_compute. reflexivity. Qed.
+
 Inductive Expr : Type :=
   | EInt   : Z -> Expr
   | ERef   : CellRef -> Expr
@@ -179,7 +331,15 @@ Inductive Expr : Type :=
   | EVarSamp   : CellRef -> CellRef -> Expr
   | EVarPop    : CellRef -> CellRef -> Expr
   | EStdevSamp : CellRef -> CellRef -> Expr
-  | EStdevPop  : CellRef -> CellRef -> Expr.
+  | EStdevPop  : CellRef -> CellRef -> Expr
+  (* Item 22: string operators over EValS operands. *)
+  | EUpper    : Expr -> Expr
+  | ELower    : Expr -> Expr
+  | ETrim     : Expr -> Expr
+  (* FIND(needle, hay): 1-based position, EErr when absent. *)
+  | EFind     : Expr -> Expr -> Expr
+  (* REPLACE(text, start(1-based), count, rep). *)
+  | EReplaceS : Expr -> Expr -> Expr -> Expr -> Expr.
 
 Inductive Cell : Type :=
   | CEmpty : Cell
@@ -707,6 +867,51 @@ Fixpoint eval_expr (fuel : nat) (visited : VisitedSet) (s : Sheet)
         (walk_rows fuel' WCountV CmpEq 0%Z 0 0 visited s lc hc lr hr 0%Z)
         (walk_rows fuel' WSumN CmpEq 0%Z 0 0 visited s lc hc lr hr 0%Z)
         (walk_rows fuel' WSumSqN CmpEq 0%Z 0 0 visited s lc hc lr hr 0%Z)
+    (* Item 22: string operators. *)
+    | EUpper a =>
+      match eval_expr fuel' visited s a with
+      | EValS sv => EValS (str_upper sv)
+      | EErr     => EErr
+      | EFuel    => EFuel
+      | _        => EErr
+      end
+    | ELower a =>
+      match eval_expr fuel' visited s a with
+      | EValS sv => EValS (str_lower sv)
+      | EErr     => EErr
+      | EFuel    => EFuel
+      | _        => EErr
+      end
+    | ETrim a =>
+      match eval_expr fuel' visited s a with
+      | EValS sv => EValS (str_trim sv)
+      | EErr     => EErr
+      | EFuel    => EFuel
+      | _        => EErr
+      end
+    | EFind n h =>
+      combine_bins
+        (fun sn sh =>
+          let p := str_find sn sh in
+          if Z.eqb p 0%Z then EErr else EVal p)
+        (eval_expr fuel' visited s n) (eval_expr fuel' visited s h)
+    | EReplaceS t st ct rp =>
+      match eval_expr fuel' visited s t,
+            eval_expr fuel' visited s st,
+            eval_expr fuel' visited s ct,
+            eval_expr fuel' visited s rp with
+      | EFuel, _, _, _ => EFuel
+      | _, EFuel, _, _ => EFuel
+      | _, _, EFuel, _ => EFuel
+      | _, _, _, EFuel => EFuel
+      | EErr, _, _, _ => EErr
+      | _, EErr, _, _ => EErr
+      | _, _, EErr, _ => EErr
+      | _, _, _, EErr => EErr
+      | EValS tv, EVal sv, EVal cv, EValS rv =>
+          EValS (str_replace tv sv cv rv)
+      | _, _, _, _ => EErr
+      end
     | EAvg tl br =>
       let lc := cell_col_of tl in
       let hc := cell_col_of br in
@@ -1480,6 +1685,29 @@ Proof.
           rewrite (IHwr _ _ _ _ _ _ _ _ _ _ _ _ _ Hle') by congruence;
           rewrite E3;
           reflexivity.
+      * (* EUpper *)
+        destruct (eval_expr fuel visited s e) eqn:Ea; try congruence;
+          rewrite (IHe e fuel' visited s Hle') by congruence;
+          rewrite Ea; reflexivity.
+      * (* ELower *)
+        destruct (eval_expr fuel visited s e) eqn:Ea; try congruence;
+          rewrite (IHe e fuel' visited s Hle') by congruence;
+          rewrite Ea; reflexivity.
+      * (* ETrim *)
+        destruct (eval_expr fuel visited s e) eqn:Ea; try congruence;
+          rewrite (IHe e fuel' visited s Hle') by congruence;
+          rewrite Ea; reflexivity.
+      * (* EReplaceS *)
+        destruct (eval_expr fuel visited s e1) eqn:Et;
+        destruct (eval_expr fuel visited s e2) eqn:Es;
+        destruct (eval_expr fuel visited s e3) eqn:Ec;
+        destruct (eval_expr fuel visited s e4) eqn:Er;
+        try congruence;
+        try (rewrite (IHe e1 fuel' visited s Hle') by congruence;
+             rewrite (IHe e2 fuel' visited s Hle') by congruence;
+             rewrite (IHe e3 fuel' visited s Hle') by congruence;
+             rewrite (IHe e4 fuel' visited s Hle') by congruence;
+             rewrite Et, Es, Ec, Er; reflexivity).
     + (* eval_at_ref *)
       intros r fuel' visited s Hle Hnf.
       destruct fuel' as [|fuel']; [lia|].

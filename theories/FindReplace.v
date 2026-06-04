@@ -54,6 +54,16 @@ Fixpoint replace_int_in_expr (from to : Z) (e : Expr) : Expr :=
   | EVarPop tl br => EVarPop tl br
   | EStdevSamp tl br => EStdevSamp tl br
   | EStdevPop tl br => EStdevPop tl br
+  | EUpper a => EUpper (replace_int_in_expr from to a)
+  | ELower a => ELower (replace_int_in_expr from to a)
+  | ETrim a => ETrim (replace_int_in_expr from to a)
+  | EFind a b => EFind (replace_int_in_expr from to a)
+                       (replace_int_in_expr from to b)
+  | EReplaceS a b c d =>
+    EReplaceS (replace_int_in_expr from to a)
+              (replace_int_in_expr from to b)
+              (replace_int_in_expr from to c)
+              (replace_int_in_expr from to d)
   end.
 
 Theorem replace_idempotent_when_equal :
@@ -61,7 +71,8 @@ Theorem replace_idempotent_when_equal :
 Proof.
   intros n e. induction e; simpl; try reflexivity;
     try (rewrite IHe1; rewrite IHe2; reflexivity);
-    try (rewrite IHe; reflexivity).
+    try (rewrite IHe; reflexivity);
+    try (rewrite IHe1, IHe2, IHe3, IHe4; reflexivity).
   - destruct (Z.eqb z n) eqn:H.
     + apply Z.eqb_eq in H. subst. reflexivity.
     + reflexivity.

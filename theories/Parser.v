@@ -106,7 +106,13 @@ Inductive token : Type :=
   | TVar
   | TVarP
   | TStdev
-  | TStdevP.
+  | TStdevP
+  (* Item 22: string operators. *)
+  | TUpper
+  | TLower
+  | TTrim
+  | TFind
+  | TReplaceS.
 
 (* INT64_MAX / 10 = 922337203685477580; one extra digit must not
    exceed (INT64_MAX mod 10) = 7.  The negated form accepts one extra
@@ -422,6 +428,37 @@ Fixpoint tokenize_aux
         then
           (* "VARP(" *)
           tokenize_aux fuel' s len i5 (TVarP :: acc)
+        else if PrimInt63.eqb c0 82 && PrimInt63.eqb c1u 69 &&
+                PrimInt63.eqb c2u 80 && PrimInt63.eqb c3u 76 &&
+                PrimInt63.eqb c4u 65 && PrimInt63.eqb c5u 67 &&
+                PrimInt63.eqb c6u 69 && seven_letter_kw_lp
+        then
+          (* "REPLACE(" *)
+          tokenize_aux fuel' s len i8 (TReplaceS :: acc)
+        else if PrimInt63.eqb c0 85 && PrimInt63.eqb c1u 80 &&
+                PrimInt63.eqb c2u 80 && PrimInt63.eqb c3u 69 &&
+                PrimInt63.eqb c4u 82 && five_letter_kw_lp
+        then
+          (* "UPPER(" *)
+          tokenize_aux fuel' s len i6 (TUpper :: acc)
+        else if PrimInt63.eqb c0 76 && PrimInt63.eqb c1u 79 &&
+                PrimInt63.eqb c2u 87 && PrimInt63.eqb c3u 69 &&
+                PrimInt63.eqb c4u 82 && five_letter_kw_lp
+        then
+          (* "LOWER(" *)
+          tokenize_aux fuel' s len i6 (TLower :: acc)
+        else if PrimInt63.eqb c0 84 && PrimInt63.eqb c1u 82 &&
+                PrimInt63.eqb c2u 73 && PrimInt63.eqb c3u 77 &&
+                four_letter_kw_lp
+        then
+          (* "TRIM(" *)
+          tokenize_aux fuel' s len i5 (TTrim :: acc)
+        else if PrimInt63.eqb c0 70 && PrimInt63.eqb c1u 73 &&
+                PrimInt63.eqb c2u 78 && PrimInt63.eqb c3u 68 &&
+                four_letter_kw_lp
+        then
+          (* "FIND(" *)
+          tokenize_aux fuel' s len i5 (TFind :: acc)
         else if PrimInt63.eqb c0 86 && PrimInt63.eqb c1u 65 &&
                 PrimInt63.eqb c2u 82 && three_letter_kw_lp
         then
@@ -793,6 +830,49 @@ with parse_factor (fuel : nat) (toks : list token)
     | TCounta :: TRef r1 :: TColon :: TRef r2 :: TRParen :: rest' =>
       (* Item 79: COUNTA counts non-empty cells. *)
       Some (ECountA r1 r2, rest')
+    (* Item 22: string operators. *)
+    | TUpper :: rest =>
+      match parse_top fuel' rest with
+      | Some (a, TRParen :: rest') => Some (EUpper a, rest')
+      | _ => None
+      end
+    | TLower :: rest =>
+      match parse_top fuel' rest with
+      | Some (a, TRParen :: rest') => Some (ELower a, rest')
+      | _ => None
+      end
+    | TTrim :: rest =>
+      match parse_top fuel' rest with
+      | Some (a, TRParen :: rest') => Some (ETrim a, rest')
+      | _ => None
+      end
+    | TFind :: rest =>
+      match parse_top fuel' rest with
+      | Some (n, TComma :: rest1) =>
+        match parse_top fuel' rest1 with
+        | Some (h, TRParen :: rest2) => Some (EFind n h, rest2)
+        | _ => None
+        end
+      | _ => None
+      end
+    | TReplaceS :: rest =>
+      match parse_top fuel' rest with
+      | Some (t, TComma :: rest1) =>
+        match parse_top fuel' rest1 with
+        | Some (st, TComma :: rest2) =>
+          match parse_top fuel' rest2 with
+          | Some (ct, TComma :: rest3) =>
+            match parse_top fuel' rest3 with
+            | Some (rp, TRParen :: rest4) =>
+              Some (EReplaceS t st ct rp, rest4)
+            | _ => None
+            end
+          | _ => None
+          end
+        | _ => None
+        end
+      | _ => None
+      end
     (* Item 27: variance / standard deviation. *)
     | TVar :: TRef r1 :: TColon :: TRef r2 :: TRParen :: rest' =>
       Some (EVarSamp r1 r2, rest')
@@ -870,7 +950,8 @@ Fixpoint expr_depth (e : Expr) : nat :=
   | ECountN _ _ | ECountA _ _
   | ESumIf _ _ _ _ _ | ECountIf _ _ _ _ | EAvgIf _ _ _ _ _
   | EVarSamp _ _ | EVarPop _ _ | EStdevSamp _ _ | EStdevPop _ _ => 1
-  | ENot a | ELen a | EBNot a => S (expr_depth a)
+  | ENot a | ELen a | EBNot a
+  | EUpper a | ELower a | ETrim a => S (expr_depth a)
   | EAdd a b | ESub a b | EMul a b | EDiv a b
   | EEq a b | ELt a b | EGt a b
   | EMod a b | EPow a b
@@ -878,9 +959,13 @@ Fixpoint expr_depth (e : Expr) : nat :=
   | EIfErr a b
   | EFAdd a b | EFSub a b | EFMul a b | EFDiv a b
   | EConcat a b
-  | EBAnd a b | EBOr a b => S (Nat.max (expr_depth a) (expr_depth b))
+  | EBAnd a b | EBOr a b
+  | EFind a b => S (Nat.max (expr_depth a) (expr_depth b))
   | EIf a b c | ESubstr a b c =>
     S (Nat.max (expr_depth a) (Nat.max (expr_depth b) (expr_depth c)))
+  | EReplaceS a b c d =>
+    S (Nat.max (Nat.max (expr_depth a) (expr_depth b))
+               (Nat.max (expr_depth c) (expr_depth d)))
   end.
 
 Definition parse_formula (s : PrimString.string) : option Expr :=

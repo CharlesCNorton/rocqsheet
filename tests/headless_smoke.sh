@@ -69,6 +69,10 @@ assert_eval F11 100
 assert_eval A12 0
 assert_eval B12 0
 
+# Item 22: string operators.
+assert_eval A13 HI
+assert_eval B13 ho
+
 # --print-csv produces non-empty output.
 csv_lines=$("$BIN" --headless --load "$FIX" --print-csv | wc -l)
 if [ "$csv_lines" -lt 1 ]; then

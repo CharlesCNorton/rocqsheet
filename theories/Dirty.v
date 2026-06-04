@@ -25,7 +25,12 @@ Fixpoint expr_references (r : CellRef) (e : Expr) : bool :=
   | EIf a b c | ESubstr a b c =>
     orb (expr_references r a)
         (orb (expr_references r b) (expr_references r c))
-  | ENot a | ELen a | EBNot a => expr_references r a
+  | ENot a | ELen a | EBNot a
+  | EUpper a | ELower a | ETrim a => expr_references r a
+  | EFind a b => orb (expr_references r a) (expr_references r b)
+  | EReplaceS a b c d =>
+    orb (orb (expr_references r a) (expr_references r b))
+        (orb (expr_references r c) (expr_references r d))
   | ESum tl br | EAvg tl br | ECount tl br
   | EMin tl br | EMax tl br
   | ECountN tl br | ECountA tl br
