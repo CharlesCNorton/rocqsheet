@@ -126,8 +126,11 @@ int main() {
   want_ok("edate",     "EDATE(A1,1)");
   want_ok("eomonth",   "EOMONTH(A1,0)");
   want_ok("date-expr", "DATE(2026,B1,4)");
+  want_ok("datedif",   "DATEDIF(A1,B1,2)");
+  want_ok("datedif-expr", "DATEDIF(DATE(2000,6,4),DATE(2026,6,4),0)");
   want_fail("date-2arg",   "DATE(2026,6)");
   want_fail("edate-1arg",  "EDATE(A1)");
+  want_fail("datedif-2arg", "DATEDIF(A1,B1)");
 
   // exact-match lookups.
   want_ok("vlookup",      "VLOOKUP(20,A1:C3,2)");
@@ -138,6 +141,17 @@ int main() {
   want_fail("vlookup-2arg", "VLOOKUP(20,A1:C3)");
   want_fail("index-1arg",   "INDEX(A1:C3,2)");
   want_fail("match-norange","MATCH(30)");
+
+  // approximate-match modes via the literal fourth / third argument.
+  want_ok("vlookup-approx",  "VLOOKUP(25,A1:C3,2,1)");
+  want_ok("vlookup-exact4",  "VLOOKUP(25,A1:C3,2,0)");
+  want_ok("vlookup-true",    "VLOOKUP(25,A1:C3,2,TRUE)");
+  want_ok("vlookup-false",   "VLOOKUP(25,A1:C3,2,FALSE)");
+  want_ok("hlookup-approx",  "HLOOKUP(25,A1:C3,2,1)");
+  want_ok("match-approx",    "MATCH(25,A1:A5,1)");
+  want_ok("match-exact3",    "MATCH(25,A1:A5,0)");
+  want_fail("vlookup-badmode", "VLOOKUP(25,A1:C3,2,7)");
+  want_fail("match-badmode",   "MATCH(25,A1:A5,9)");
 
   // order statistics and NPV.
   want_ok("median",       "MEDIAN(A1:A5)");

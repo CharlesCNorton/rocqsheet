@@ -59,14 +59,15 @@ Fixpoint float_free (e : Expr) : bool :=
          (andb (float_free c) (float_free d))
   | EMedian _ _ | EModeV _ _ => true
   | ERank x _ _ | EPercentile x _ _ | ENpvZ x _ _
-  | EMatchV x _ _ => float_free x
-  | EVLookup x _ _ i | EHLookup x _ _ i =>
+  | EMatchV x _ _ | EMatchA x _ _ => float_free x
+  | EVLookup x _ _ i | EHLookup x _ _ i
+  | EVLookupA x _ _ i | EHLookupA x _ _ i =>
     andb (float_free x) (float_free i)
   | EIndex _ _ a b => andb (float_free a) (float_free b)
   | EWeekdayF a => float_free a
   | EEdateF a b | EEomonthF a b =>
     andb (float_free a) (float_free b)
-  | EDate3 a b c =>
+  | EDate3 a b c | EDatedif a b c =>
     andb (float_free a) (andb (float_free b) (float_free c))
   | ESum _ _ | EAvg _ _ | ECount _ _
   | EMin _ _ | EMax _ _

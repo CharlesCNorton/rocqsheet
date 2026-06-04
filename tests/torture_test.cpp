@@ -578,6 +578,30 @@ void test_lookups() {
                                       S::Expr::eint(2)));
   check_int("HLOOKUP",
             as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{4, 6})), 3000);
+  // Approximate (sorted-range) mode: key 25 selects the row of 20.
+  s = form(s, 5, 0, S::Expr::evlookupa(S::Expr::eint(25), tl, br,
+                                       S::Expr::eint(2)));
+  check_int("VLOOKUP approx",
+            as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{5, 0})), 200);
+  // An exact key still hits its own row.
+  s = form(s, 5, 1, S::Expr::evlookupa(S::Expr::eint(30), tl, br,
+                                       S::Expr::eint(2)));
+  check_int("VLOOKUP approx exact key",
+            as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{5, 1})), 300);
+  // Every key above x misses.
+  s = form(s, 5, 2, S::Expr::evlookupa(S::Expr::eint(5), tl, br,
+                                       S::Expr::eint(2)));
+  check("VLOOKUP approx all-above → EErr",
+        is_err(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{5, 2})));
+  s = form(s, 5, 3, S::Expr::ematcha(S::Expr::eint(25), tl,
+                                     S::CellRef{0, 2}));
+  check_int("MATCH approx",
+            as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{5, 3})), 2);
+  s = form(s, 5, 4, S::Expr::ehlookupa(S::Expr::eint(25),
+                                       S::CellRef{0, 5}, S::CellRef{2, 6},
+                                       S::Expr::eint(2)));
+  check_int("HLOOKUP approx",
+            as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{5, 4})), 2000);
 }
 
 // numeric strings coerce in integer contexts.
@@ -629,6 +653,27 @@ void test_dates() {
             as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{7, 0})), 1);
   agree_iter_vs_spec("floored-div", s, S::CellRef{6, 0});
   agree_iter_vs_spec("floored-mod", s, S::CellRef{7, 0});
+  // DATEDIF in days, months, years; reversed interval errors.
+  auto d0 = S::Expr::edate3(S::Expr::eint(2000), S::Expr::eint(6),
+                            S::Expr::eint(4));
+  auto d1 = S::Expr::edate3(S::Expr::eint(2026), S::Expr::eint(6),
+                            S::Expr::eint(4));
+  s = form(s, 8, 0, S::Expr::edatedif(d0, d1, S::Expr::eint(2)));
+  check_int("DATEDIF years",
+            as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{8, 0})), 26);
+  s = form(s, 9, 0, S::Expr::edatedif(d0, d1, S::Expr::eint(1)));
+  check_int("DATEDIF months",
+            as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{9, 0})), 312);
+  s = form(s, 10, 0, S::Expr::edatedif(S::Expr::eint(0), S::Expr::eint(45),
+                                       S::Expr::eint(0)));
+  check_int("DATEDIF days",
+            as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{10, 0})), 45);
+  s = form(s, 11, 0, S::Expr::edatedif(d1, d0, S::Expr::eint(0)));
+  check("DATEDIF reversed → EErr",
+        is_err(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{11, 0})));
+  s = form(s, 12, 0, S::Expr::edatedif(d0, d1, S::Expr::eint(7)));
+  check("DATEDIF bad unit → EErr",
+        is_err(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{12, 0})));
 }
 
 void test_boolean_ops() {

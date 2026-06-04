@@ -35,14 +35,18 @@ Crane Extract Inlined Constant Z.sub =>
 Crane Extract Inlined Constant Z.mul =>
   "([&]() -> int64_t { int64_t _r; if (__builtin_mul_overflow(%a0, %a1, &_r)) return (((%a0) < 0) != ((%a1) < 0)) ? INT64_MIN : INT64_MAX; return _r; }())".
 
+(* Coq's Z.div / Z.modulo are floored; C++ / and % truncate toward
+   zero, so the operands' signs must be reconciled or the extracted
+   arithmetic diverges from the spec on negatives (Coq: -7/2 = -4,
+   C++: -3). *)
 Crane Extract Inlined Constant Z.div =>
-  "((%a1 == 0) ? INT64_C(0) : (((%a0 == INT64_MIN) && (%a1 == -1)) ? INT64_MIN : ((%a0) / (%a1))))".
+  "([](int64_t _a, int64_t _b) -> int64_t { if (_b == 0) return INT64_C(0); if (_a == INT64_MIN && _b == -1) return INT64_MIN; int64_t _q = _a / _b; int64_t _r = _a % _b; return (_r != 0 && ((_r < 0) != (_b < 0))) ? _q - 1 : _q; }(%a0, %a1))".
 Crane Extract Inlined Constant Z.modulo =>
-  "((%a1 == 0) ? INT64_C(0) : (((%a0 == INT64_MIN) && (%a1 == -1)) ? INT64_C(0) : ((%a0) % (%a1))))".
+  "([](int64_t _a, int64_t _b) -> int64_t { if (_b == 0) return INT64_C(0); if (_a == INT64_MIN && _b == -1) return INT64_C(0); int64_t _r = _a % _b; return (_r != 0 && ((_r < 0) != (_b < 0))) ? _r + _b : _r; }(%a0, %a1))".
 
 From Rocqsheet Require Import InsertionSort.
 
-(* Item 22: single-character string construction (no upstream Crane
+(* Single-character string construction (no upstream Crane
    mapping exists for PrimString.make). *)
 Crane Extract Inlined Constant PrimString.make =>
   "std::string(static_cast<size_t>(%a0), static_cast<char>(%a1))"
@@ -77,7 +81,7 @@ Definition cellref_eqb (r1 r2 : CellRef) : bool :=
 Definition cell_index (r : CellRef) : int :=
   PrimInt63.add (PrimInt63.mul (ref_row r) NUM_COLS) (ref_col r).
 
-(* Item 25: comparison shape for the IF-aggregate predicates.  The
+(* Comparison shape for the IF-aggregate predicates.  The
    criteria of SUMIF / COUNTIF / AVERAGEIF is one of these against a
    literal integer. *)
 Inductive CmpOp : Type :=
@@ -102,7 +106,7 @@ Definition show_cmp (op : CmpOp) : PrimString.string :=
   | CmpGt => ">"%pstring
   end.
 
-(* Item 27: integer square root by fueled binary search, for STDEV.
+(* Integer square root by fueled binary search, for STDEV.
    The search space is [0, 3037000499] (floor (sqrt INT64_MAX)), so
    64 halvings always converge and mid * mid never overflows the
    extracted int64. *)
@@ -143,7 +147,7 @@ Theorem isqrt_int64_max :
   isqrt 9223372036854775807%Z = 3037000499%Z.
 Proof. vm_compute. reflexivity. Qed.
 
-(* ----- Item 22: character-level string helpers -------------------- *)
+(* ----- Character-level string helpers ----------------------------- *)
 (* Fueled walkers outside the evaluation fixpoint (no mutual-block
    growth).  Case mapping is ASCII-only: bytes outside a-z / A-Z pass
    through untouched.  STR_FUEL caps the extracted recursion depth;
@@ -279,7 +283,7 @@ Theorem str_replace_smoke :
   str_replace "abcdef"%pstring 2%Z 3%Z "XY"%pstring = "aXYef"%pstring.
 Proof. vm_compute. reflexivity. Qed.
 
-(* Item 19 (string half): parse a decimal integer with an optional
+(* Parse a decimal integer with an optional
    leading minus.  Used by combine_bin to coerce EValS operands in
    integer contexts ("5" + 2 = 7).  Whole-string match only: any
    non-digit rejects.  Accumulation saturates via the Z.mul/Z.add
@@ -320,6 +324,220 @@ Theorem str_to_z_reject : str_to_z "4x"%pstring = None.
 Proof. vm_compute. reflexivity. Qed.
 
 Theorem str_to_z_empty : str_to_z ""%pstring = None.
+Proof. vm_compute. reflexivity. Qed.
+
+(* ----- Civil-date <-> epoch-days conversion ----------------------- *)
+(* Howard Hinnant's algorithms over Z: exact for the proleptic
+   Gregorian calendar; the epoch is 1970-01-01 = day 0. *)
+
+Definition date_to_days (y m d : Z) : Z :=
+  let y' := if Z.leb m 2%Z then Z.sub y 1%Z else y in
+  let era := Z.div (if Z.ltb y' 0%Z then Z.sub y' 399%Z else y') 400%Z in
+  let yoe := Z.sub y' (Z.mul era 400%Z) in
+  let mp := Z.modulo (Z.add m 9%Z) 12%Z in
+  let doy := Z.add (Z.div (Z.add (Z.mul 153%Z mp) 2%Z) 5%Z)
+                   (Z.sub d 1%Z) in
+  let doe := Z.add (Z.add (Z.mul yoe 365%Z)
+                          (Z.sub (Z.div yoe 4%Z) (Z.div yoe 100%Z)))
+                   doy in
+  Z.sub (Z.add (Z.mul era 146097%Z) doe) 719468%Z.
+
+Definition days_to_date (z : Z) : Z * Z * Z :=
+  let z' := Z.add z 719468%Z in
+  let era := Z.div (if Z.ltb z' 0%Z then Z.sub z' 146096%Z else z')
+                   146097%Z in
+  let doe := Z.sub z' (Z.mul era 146097%Z) in
+  let yoe := Z.div (Z.add (Z.sub doe (Z.div doe 1460%Z))
+                          (Z.sub (Z.div doe 36524%Z)
+                                 (Z.div doe 146096%Z)))
+                   365%Z in
+  let y := Z.add yoe (Z.mul era 400%Z) in
+  let doy := Z.sub doe (Z.add (Z.mul 365%Z yoe)
+                              (Z.sub (Z.div yoe 4%Z)
+                                     (Z.div yoe 100%Z))) in
+  let mp := Z.div (Z.add (Z.mul 5%Z doy) 2%Z) 153%Z in
+  let d := Z.add (Z.sub doy (Z.div (Z.add (Z.mul 153%Z mp) 2%Z) 5%Z))
+                 1%Z in
+  let m := Z.add mp (if Z.ltb mp 10%Z then 3%Z else (-9)%Z) in
+  ((if Z.leb m 2%Z then Z.add y 1%Z else y), m, d).
+
+Theorem date_epoch : date_to_days 1970%Z 1%Z 1%Z = 0%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem date_smoke : date_to_days 2026%Z 6%Z 4%Z = 20608%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem date_roundtrip_smoke :
+  days_to_date (date_to_days 2026%Z 6%Z 4%Z) = (2026%Z, 6%Z, 4%Z).
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem date_roundtrip_leap :
+  days_to_date (date_to_days 2024%Z 2%Z 29%Z) = (2024%Z, 2%Z, 29%Z).
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem date_roundtrip_pre_epoch :
+  days_to_date (date_to_days 1969%Z 12%Z 31%Z) = (1969%Z, 12%Z, 31%Z).
+Proof. vm_compute. reflexivity. Qed.
+
+(* WEEKDAY convention: 1 = Monday .. 7 = Sunday (ISO).  Day 0
+   (1970-01-01) was a Thursday = 4. *)
+Definition weekday_of_days (z : Z) : Z :=
+  Z.add (Z.modulo (Z.add z 3%Z) 7%Z) 1%Z.
+
+Theorem weekday_epoch : weekday_of_days 0%Z = 4%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem weekday_smoke : weekday_of_days 20608%Z = 4%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+Definition is_leap (y : Z) : bool :=
+  andb (Z.eqb (Z.modulo y 4%Z) 0%Z)
+       (orb (negb (Z.eqb (Z.modulo y 100%Z) 0%Z))
+            (Z.eqb (Z.modulo y 400%Z) 0%Z)).
+
+Definition days_in_month (y m : Z) : Z :=
+  if Z.eqb m 2%Z then (if is_leap y then 29%Z else 28%Z)
+  else if orb (orb (Z.eqb m 4%Z) (Z.eqb m 6%Z))
+              (orb (Z.eqb m 9%Z) (Z.eqb m 11%Z))
+  then 30%Z else 31%Z.
+
+(* EDATE: shift a date by [months], clamping the day to the target
+   month's length (Excel semantics: Jan 31 + 1 month = Feb 28/29). *)
+Definition edate_days (z months : Z) : Z :=
+  let '(y, m, d) := days_to_date z in
+  let mm := Z.add (Z.add (Z.mul y 12%Z) (Z.sub m 1%Z)) months in
+  let y' := Z.div mm 12%Z in
+  let m' := Z.add (Z.modulo mm 12%Z) 1%Z in
+  date_to_days y' m' (Z.min d (days_in_month y' m')).
+
+(* EOMONTH: the last day of the month [months] away. *)
+Definition eomonth_days (z months : Z) : Z :=
+  let '(y, m, _) := days_to_date z in
+  let mm := Z.add (Z.add (Z.mul y 12%Z) (Z.sub m 1%Z)) months in
+  let y' := Z.div mm 12%Z in
+  let m' := Z.add (Z.modulo mm 12%Z) 1%Z in
+  date_to_days y' m' (days_in_month y' m').
+
+Theorem edate_clamps :
+  days_to_date (edate_days (date_to_days 2026%Z 1%Z 31%Z) 1%Z)
+  = (2026%Z, 2%Z, 28%Z).
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem edate_leap_clamps :
+  days_to_date (edate_days (date_to_days 2024%Z 1%Z 31%Z) 1%Z)
+  = (2024%Z, 2%Z, 29%Z).
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem edate_negative :
+  days_to_date (edate_days (date_to_days 2026%Z 1%Z 15%Z) (-2)%Z)
+  = (2025%Z, 11%Z, 15%Z).
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem eomonth_smoke :
+  days_to_date (eomonth_days (date_to_days 2026%Z 6%Z 4%Z) 0%Z)
+  = (2026%Z, 6%Z, 30%Z).
+Proof. vm_compute. reflexivity. Qed.
+
+(* DATE(y, m, d) with Excel-style normalization: month overflow
+   rolls the year; the day clamps into the resulting month. *)
+Definition date3_days (y m d : Z) : Z :=
+  let mm := Z.add (Z.mul y 12%Z) (Z.sub m 1%Z) in
+  let y' := Z.div mm 12%Z in
+  let m' := Z.add (Z.modulo mm 12%Z) 1%Z in
+  date_to_days y' m' (Z.max 1%Z (Z.min d (days_in_month y' m'))).
+
+Theorem date3_normalizes_month :
+  days_to_date (date3_days 2026%Z 13%Z 1%Z) = (2027%Z, 1%Z, 1%Z).
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem date3_clamps_day :
+  days_to_date (date3_days 2026%Z 2%Z 31%Z) = (2026%Z, 2%Z, 28%Z).
+Proof. vm_compute. reflexivity. Qed.
+
+(* DATEDIF "M": whole calendar months from epoch-day a to b — the
+   month delta, less one when b's day-of-month has not yet reached
+   a's. *)
+Definition datedif_months (a b : Z) : Z :=
+  let '(y1, m1, d1) := days_to_date a in
+  let '(y2, m2, d2) := days_to_date b in
+  let months := Z.add (Z.mul (Z.sub y2 y1) 12%Z) (Z.sub m2 m1) in
+  if Z.ltb d2 d1 then Z.sub months 1%Z else months.
+
+(* DATEDIF "Y": whole calendar years, less one before the
+   anniversary. *)
+Definition datedif_years (a b : Z) : Z :=
+  let '(y1, m1, d1) := days_to_date a in
+  let '(y2, m2, d2) := days_to_date b in
+  let years := Z.sub y2 y1 in
+  if orb (Z.ltb m2 m1) (andb (Z.eqb m2 m1) (Z.ltb d2 d1))
+  then Z.sub years 1%Z else years.
+
+Theorem datedif_months_smoke :
+  datedif_months (date_to_days 2026%Z 1%Z 31%Z)
+                 (date_to_days 2026%Z 3%Z 1%Z) = 1%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem datedif_months_exact :
+  datedif_months (date_to_days 2025%Z 6%Z 4%Z)
+                 (date_to_days 2026%Z 6%Z 4%Z) = 12%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem datedif_years_before_anniversary :
+  datedif_years (date_to_days 2000%Z 6%Z 15%Z)
+                (date_to_days 2026%Z 6%Z 4%Z) = 25%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem datedif_years_on_anniversary :
+  datedif_years (date_to_days 2000%Z 6%Z 4%Z)
+                (date_to_days 2026%Z 6%Z 4%Z) = 26%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+(* Pure decimal rendering (no FFI): peel digits into char codes. *)
+Fixpoint z_to_dec_aux (fuel : nat) (n : Z) (acc : PrimString.string)
+  : PrimString.string :=
+  match fuel with
+  | O => acc
+  | S fuel' =>
+    if Z.leb n 0%Z then acc
+    else
+      z_to_dec_aux fuel' (Z.div n 10%Z)
+        (PrimString.cat
+           (PrimString.make 1
+              (Uint63.of_Z (Z.add 48%Z (Z.modulo n 10%Z))))
+           acc)
+  end.
+
+Definition z_to_dec (n : Z) : PrimString.string :=
+  if Z.eqb n 0%Z then "0"%pstring
+  else if Z.ltb n 0%Z
+  then PrimString.cat "-"%pstring (z_to_dec_aux 32%nat (Z.opp n) ""%pstring)
+  else z_to_dec_aux 32%nat n ""%pstring.
+
+(* Zero-padded two-digit field for month / day. *)
+Definition pad2 (n : Z) : PrimString.string :=
+  if Z.ltb n 10%Z
+  then PrimString.cat "0"%pstring (z_to_dec n)
+  else z_to_dec n.
+
+Definition date_to_string (z : Z) : PrimString.string :=
+  let '(y, m, d) := days_to_date z in
+  PrimString.cat (z_to_dec y)
+    (PrimString.cat "-"%pstring
+      (PrimString.cat (pad2 m)
+        (PrimString.cat "-"%pstring (pad2 d)))).
+
+Theorem z_to_dec_smoke : z_to_dec 1234%Z = "1234"%pstring.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem z_to_dec_neg : z_to_dec (-7)%Z = "-7"%pstring.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem date_to_string_smoke :
+  date_to_string 20608%Z = "2026-06-04"%pstring.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem date_to_string_pads :
+  date_to_string 0%Z = "1970-01-01"%pstring.
 Proof. vm_compute. reflexivity. Qed.
 
 (* ----- Items 23 / 24: order statistics and NPV over list Z -------- *)
@@ -488,27 +706,27 @@ Inductive Expr : Type :=
   | EBOr   : Expr -> Expr -> Expr
   | EMin   : CellRef -> CellRef -> Expr
   | EMax   : CellRef -> CellRef -> Expr
-  (* Item 79: COUNT counts numeric cells (CLit / CFloat / numeric
+  (* COUNT counts numeric cells (CLit / CFloat / numeric
      formula results); COUNTA counts non-empty cells.  The original
      rectangle-cardinality [ECount] stays and is surfaced in the
      parser as RANGE_SIZE. *)
   | ECountN : CellRef -> CellRef -> Expr
   | ECountA : CellRef -> CellRef -> Expr
-  (* Item 25: IF-aggregates.  Criteria rectangle (tl, br), predicate
+  (* IF-aggregates.  Criteria rectangle (tl, br), predicate
      (CmpOp against a literal), and — for SUMIF / AVERAGEIF — the
      anchor of a parallel aggregation range whose cells sit at a
      fixed offset from the criteria cells. *)
   | ESumIf   : CellRef -> CellRef -> CmpOp -> Z -> CellRef -> Expr
   | ECountIf : CellRef -> CellRef -> CmpOp -> Z -> Expr
   | EAvgIf   : CellRef -> CellRef -> CmpOp -> Z -> CellRef -> Expr
-  (* Item 27: variance and standard deviation (sample and population)
+  (* Variance and standard deviation (sample and population)
      over the integer-valued cells of a rectangle; empty and
      non-integer cells are skipped, matching Excel's VAR family. *)
   | EVarSamp   : CellRef -> CellRef -> Expr
   | EVarPop    : CellRef -> CellRef -> Expr
   | EStdevSamp : CellRef -> CellRef -> Expr
   | EStdevPop  : CellRef -> CellRef -> Expr
-  (* Item 22: string operators over EValS operands. *)
+  (* String operators over EValS operands. *)
   | EUpper    : Expr -> Expr
   | ELower    : Expr -> Expr
   | ETrim     : Expr -> Expr
@@ -516,7 +734,7 @@ Inductive Expr : Type :=
   | EFind     : Expr -> Expr -> Expr
   (* REPLACE(text, start(1-based), count, rep). *)
   | EReplaceS : Expr -> Expr -> Expr -> Expr -> Expr
-  (* Items 23 / 24: order statistics and integer NPV over the numeric
+  (* Order statistics and integer NPV over the numeric
      cells of a rectangle. *)
   | EMedian     : CellRef -> CellRef -> Expr
   | EModeV      : CellRef -> CellRef -> Expr
@@ -527,7 +745,7 @@ Inductive Expr : Type :=
   (* NPV(d, range): cashflow i divided by d^i (integer divisor
      d >= 1; d = 1 is the undiscounted sum). *)
   | ENpvZ       : Expr -> CellRef -> CellRef -> Expr
-  (* Item 21: exact-match lookups.  VLOOKUP(x, range, c) scans the
+  (* Exact-match lookups.  VLOOKUP(x, range, c) scans the
      range's first column for integer x and returns the cell in the
      match row at 1-based column c of the range; HLOOKUP mirrors it
      over the first row; MATCH returns the 1-based position of x down
@@ -536,7 +754,24 @@ Inductive Expr : Type :=
   | EVLookup : Expr -> CellRef -> CellRef -> Expr -> Expr
   | EHLookup : Expr -> CellRef -> CellRef -> Expr -> Expr
   | EMatchV  : Expr -> CellRef -> CellRef -> Expr
-  | EIndex   : CellRef -> CellRef -> Expr -> Expr -> Expr.
+  | EIndex   : CellRef -> CellRef -> Expr -> Expr -> Expr
+  (* Date construction and arithmetic over epoch
+     days.  DATE normalizes month overflow and clamps the day;
+     WEEKDAY is ISO (1 = Monday); EDATE / EOMONTH shift by months. *)
+  | EDate3    : Expr -> Expr -> Expr -> Expr
+  | EWeekdayF : Expr -> Expr
+  | EEdateF   : Expr -> Expr -> Expr
+  | EEomonthF : Expr -> Expr -> Expr
+  (* Approximate-match lookups (sorted-range mode): scan the same
+     rectangles as the exact forms but return the cell attaining the
+     largest integer value <= x; the scan is total, so the result is
+     well defined even on unsorted data.  DATEDIF(a, b, u) counts
+     whole days (u = 0), whole calendar months (u = 1), or whole
+     calendar years (u = 2) from epoch-day a to epoch-day b. *)
+  | EVLookupA : Expr -> CellRef -> CellRef -> Expr -> Expr
+  | EHLookupA : Expr -> CellRef -> CellRef -> Expr -> Expr
+  | EMatchA   : Expr -> CellRef -> CellRef -> Expr
+  | EDatedif  : Expr -> Expr -> Expr -> Expr.
 
 Inductive Cell : Type :=
   | CEmpty : Cell
@@ -544,7 +779,12 @@ Inductive Cell : Type :=
   | CFloat : PrimFloat.float -> Cell
   | CStr   : PrimString.string -> Cell
   | CBool  : bool -> Cell
-  | CForm  : Expr -> Cell.
+  | CForm  : Expr -> Cell
+  (* A calendar date stored as days since 1970-01-01
+     (negative for earlier).  Dates are integers to the evaluator —
+     date arithmetic falls out of the existing Z operators — and
+     date-ness lives in presentation. *)
+  | CDate  : Z -> Cell.
 
 Definition Sheet : Type := PrimArray.array Cell.
 
@@ -634,7 +874,7 @@ Inductive EvalResult : Type :=
   | EFuel : EvalResult.
 
 (* Combine two binary [Z] operands into a single result, preserving
-   error and fuel propagation.  Item 19: a string operand that parses
+   error and fuel propagation.  A string operand that parses
    as a decimal integer coerces ("5" + 2 = 7); any other non-integer
    operand degrades to [EErr] (type mismatch). *)
 Definition combine_bin (op : Z -> Z -> EvalResult)
@@ -689,7 +929,7 @@ Definition combine_bins (op : PrimString.string -> PrimString.string -> EvalResu
   | _, _          => EErr
   end.
 
-(* Item 37: small Z -> PrimFloat conversion + nat-exponent power so
+(* Small Z -> PrimFloat conversion + nat-exponent power so
    [EPow va vb] with [vb < 0] can produce [EFVal (1 / va^|vb|)]
    instead of [EErr].  Z.pow is integer; PrimFloat has no native
    pow, so we iterate. *)
@@ -707,7 +947,7 @@ Fixpoint float_pow_nat (x : PrimFloat.float) (n : nat) : PrimFloat.float :=
   | S n' => PrimFloat.mul x (float_pow_nat x n')
   end.
 
-(* Item 79 / item 25: per-cell decision helpers for the counting and
+(* Per-cell decision helpers for the counting and
    IF-aggregate walkers.  Kept outside the mutual fixpoint so the
    walker bodies have a single match around the recursive call — the
    guard checker's cost explodes on nested matches whose arms hold
@@ -720,7 +960,7 @@ Definition list_cell_contrib (cell : Cell) (res : EvalResult)
     (acc : list Z) : option (list Z) :=
   match cell with
   | CEmpty => Some acc
-  | CLit _ | CFloat _ | CStr _ | CBool _ | CForm _ =>
+  | CLit _ | CFloat _ | CStr _ | CBool _ | CForm _ | CDate _ =>
     match res with
     | EVal v => Some (v :: acc)
     | EFuel => None
@@ -734,7 +974,7 @@ Definition count_contrib (numeric : bool) (cell : Cell)
     (res : EvalResult) : option Z :=
   match cell with
   | CEmpty => Some 0%Z
-  | CLit _ | CFloat _ => Some 1%Z
+  | CLit _ | CFloat _ | CDate _ => Some 1%Z
   | CStr _ | CBool _ => Some (if numeric then 0%Z else 1%Z)
   | CForm _ =>
     match res with
@@ -795,7 +1035,7 @@ Inductive WalkKind : Type :=
   | WCountA : WalkKind
   | WAggSum : WalkKind
   | WAggCnt : WalkKind
-  (* Item 27: the three statistical accumulators.  All skip empty
+  (* The three statistical accumulators.  All skip empty
      cells and cells whose evaluation is not an integer, so n, Σx,
      and Σx² range over exactly the same cell population. *)
   | WCountV : WalkKind
@@ -885,7 +1125,7 @@ Definition walk_step (k : WalkKind) (op : CmpOp) (lit : Z)
     end
   end.
 
-(* Item 27: combine the three statistical walks.  With n the count,
+(* Combine the three statistical walks.  With n the count,
    s the sum, and q the sum of squares:
      population variance = (n*q - s*s) / n^2
      sample variance     = (n*q - s*s) / (n*(n-1))
@@ -938,6 +1178,7 @@ Fixpoint eval_expr (fuel : nat) (visited : VisitedSet) (s : Sheet)
         | CStr s'  => EValS s'
         | CBool b  => EValB b
         | CForm e' => eval_expr fuel' (mark_visited visited r) s e'
+        | CDate d  => EVal d
         end
     | EAdd a b =>
       combine_bin (fun va vb => EVal (Z.add va vb))
@@ -982,7 +1223,7 @@ Fixpoint eval_expr (fuel : nat) (visited : VisitedSet) (s : Sheet)
                       else EVal (Z.modulo va vb))
         (eval_expr fuel' visited s a) (eval_expr fuel' visited s b)
     | EPow a b =>
-      (* Item 37: negative exponents now yield [1 / a^|b|] as a float
+      (* Negative exponents now yield [1 / a^|b|] as a float
          (when [a <> 0]); previously they returned [EErr]. *)
       combine_bin
         (fun va vb =>
@@ -1025,7 +1266,7 @@ Fixpoint eval_expr (fuel : nat) (visited : VisitedSet) (s : Sheet)
         let cs := PrimInt63.add (PrimInt63.sub hc lc) 1 in
         let rs := PrimInt63.add (PrimInt63.sub hr lr) 1 in
         EVal (Uint63.to_Z (PrimInt63.mul cs rs))
-    (* Item 79: COUNT (numeric cells only) and COUNTA (non-empty
+    (* COUNT (numeric cells only) and COUNTA (non-empty
        cells).  Degenerate rectangles fall out of the walkers'
        boundary tests as EVal 0 with no special-casing. *)
     | ECountN tl br =>
@@ -1036,7 +1277,7 @@ Fixpoint eval_expr (fuel : nat) (visited : VisitedSet) (s : Sheet)
       walk_rows fuel' WCountA CmpEq 0%Z 0 0 visited s
         (cell_col_of tl) (cell_col_of br)
         (cell_row_of tl) (cell_row_of br) 0%Z
-    (* Item 25: IF-aggregates.  The sum-range anchor turns into a
+    (* IF-aggregates.  The sum-range anchor turns into a
        constant (dc, dr) offset from each criteria cell. *)
     | ESumIf tl br op lit sumtl =>
       walk_rows fuel' WAggSum op lit
@@ -1095,7 +1336,7 @@ Fixpoint eval_expr (fuel : nat) (visited : VisitedSet) (s : Sheet)
         (walk_rows fuel' WCountV CmpEq 0%Z 0 0 visited s lc hc lr hr 0%Z)
         (walk_rows fuel' WSumN CmpEq 0%Z 0 0 visited s lc hc lr hr 0%Z)
         (walk_rows fuel' WSumSqN CmpEq 0%Z 0 0 visited s lc hc lr hr 0%Z)
-    (* Item 22: string operators. *)
+    (* String operators. *)
     | EUpper a =>
       match eval_expr fuel' visited s a with
       | EValS sv => EValS (str_upper sv)
@@ -1140,7 +1381,7 @@ Fixpoint eval_expr (fuel : nat) (visited : VisitedSet) (s : Sheet)
           EValS (str_replace tv sv cv rv)
       | _, _, _, _ => EErr
       end
-    (* Items 23 / 24: materialize the range, combine over the list. *)
+    (* Materialize the range, combine over the list. *)
     | EMedian tl br =>
       match walk_list_rows fuel' visited s
               (cell_col_of tl) (cell_col_of br)
@@ -1206,7 +1447,7 @@ Fixpoint eval_expr (fuel : nat) (visited : VisitedSet) (s : Sheet)
           end
       | EFVal _ | EValS _ | EValB _ | EErr => EErr
       end
-    (* Item 21: exact-match lookups. *)
+    (* Exact-match lookups. *)
     | EVLookup x tl br cidx =>
       match eval_expr fuel' visited s x,
             eval_expr fuel' visited s cidx with
@@ -1220,7 +1461,8 @@ Fixpoint eval_expr (fuel : nat) (visited : VisitedSet) (s : Sheet)
         else
           match lookup_scan fuel' xv 0 1 visited s
                   (cell_col_of tl) (cell_row_of tl)
-                  (cell_col_of br) (cell_row_of br) 0%Z with
+                  (cell_col_of br) (cell_row_of br) 0%Z
+                  false 0%Z 0%Z with
           | EVal hit =>
             eval_at_ref fuel' visited s
               (mkRef (PrimInt63.add (cell_col_of tl)
@@ -1244,7 +1486,8 @@ Fixpoint eval_expr (fuel : nat) (visited : VisitedSet) (s : Sheet)
         else
           match lookup_scan fuel' xv 1 0 visited s
                   (cell_col_of tl) (cell_row_of tl)
-                  (cell_col_of br) (cell_row_of br) 0%Z with
+                  (cell_col_of br) (cell_row_of br) 0%Z
+                  false 0%Z 0%Z with
           | EVal hit =>
             eval_at_ref fuel' visited s
               (mkRef (PrimInt63.add (cell_col_of tl)
@@ -1261,7 +1504,8 @@ Fixpoint eval_expr (fuel : nat) (visited : VisitedSet) (s : Sheet)
       | EVal xv =>
         match lookup_scan fuel' xv 0 1 visited s
                 (cell_col_of tl) (cell_row_of tl)
-                (cell_col_of tl) (cell_row_of br) 0%Z with
+                (cell_col_of tl) (cell_row_of br) 0%Z
+                false 0%Z 0%Z with
         | EVal hit => EVal (Z.add hit 1%Z)
         | r => r
         end
@@ -1287,6 +1531,112 @@ Fixpoint eval_expr (fuel : nat) (visited : VisitedSet) (s : Sheet)
                    (PrimInt63.add (cell_row_of tl)
                       (Uint63.of_Z (Z.sub ri 1%Z))))
       | _, _ => EErr
+      end
+    (* Date functions. *)
+    | EDate3 ye mo da =>
+      match eval_expr fuel' visited s ye,
+            eval_expr fuel' visited s mo,
+            eval_expr fuel' visited s da with
+      | EFuel, _, _ => EFuel
+      | _, EFuel, _ => EFuel
+      | _, _, EFuel => EFuel
+      | EErr, _, _ => EErr
+      | _, EErr, _ => EErr
+      | _, _, EErr => EErr
+      | EVal yv, EVal mv, EVal dv => EVal (date3_days yv mv dv)
+      | _, _, _ => EErr
+      end
+    | EWeekdayF a =>
+      match eval_expr fuel' visited s a with
+      | EVal v => EVal (weekday_of_days v)
+      | EErr   => EErr
+      | EFuel  => EFuel
+      | _      => EErr
+      end
+    | EEdateF a b =>
+      combine_bin (fun va vb => EVal (edate_days va vb))
+        (eval_expr fuel' visited s a) (eval_expr fuel' visited s b)
+    | EEomonthF a b =>
+      combine_bin (fun va vb => EVal (eomonth_days va vb))
+        (eval_expr fuel' visited s a) (eval_expr fuel' visited s b)
+    | EDatedif a b u =>
+      match eval_expr fuel' visited s a,
+            eval_expr fuel' visited s b,
+            eval_expr fuel' visited s u with
+      | EFuel, _, _ => EFuel
+      | _, EFuel, _ => EFuel
+      | _, _, EFuel => EFuel
+      | EVal da, EVal db, EVal uv =>
+        if Z.ltb db da then EErr
+        else if Z.eqb uv 0%Z then EVal (Z.sub db da)
+        else if Z.eqb uv 1%Z then EVal (datedif_months da db)
+        else if Z.eqb uv 2%Z then EVal (datedif_years da db)
+        else EErr
+      | _, _, _ => EErr
+      end
+    (* Approximate-match lookups. *)
+    | EVLookupA x tl br cidx =>
+      match eval_expr fuel' visited s x,
+            eval_expr fuel' visited s cidx with
+      | EFuel, _ | _, EFuel => EFuel
+      | EVal xv, EVal ci =>
+        if orb (Z.ltb ci 1%Z)
+               (Z.ltb (Uint63.to_Z (PrimInt63.sub (cell_col_of br)
+                                                  (cell_col_of tl)))
+                      (Z.sub ci 1%Z))
+        then EErr
+        else
+          match lookup_scan fuel' xv 0 1 visited s
+                  (cell_col_of tl) (cell_row_of tl)
+                  (cell_col_of br) (cell_row_of br) 0%Z
+                  true (-1)%Z 0%Z with
+          | EVal hit =>
+            eval_at_ref fuel' visited s
+              (mkRef (PrimInt63.add (cell_col_of tl)
+                        (Uint63.of_Z (Z.sub ci 1%Z)))
+                     (PrimInt63.add (cell_row_of tl)
+                        (Uint63.of_Z hit)))
+          | r => r
+          end
+      | _, _ => EErr
+      end
+    | EHLookupA x tl br ridx =>
+      match eval_expr fuel' visited s x,
+            eval_expr fuel' visited s ridx with
+      | EFuel, _ | _, EFuel => EFuel
+      | EVal xv, EVal ri =>
+        if orb (Z.ltb ri 1%Z)
+               (Z.ltb (Uint63.to_Z (PrimInt63.sub (cell_row_of br)
+                                                  (cell_row_of tl)))
+                      (Z.sub ri 1%Z))
+        then EErr
+        else
+          match lookup_scan fuel' xv 1 0 visited s
+                  (cell_col_of tl) (cell_row_of tl)
+                  (cell_col_of br) (cell_row_of br) 0%Z
+                  true (-1)%Z 0%Z with
+          | EVal hit =>
+            eval_at_ref fuel' visited s
+              (mkRef (PrimInt63.add (cell_col_of tl)
+                        (Uint63.of_Z hit))
+                     (PrimInt63.add (cell_row_of tl)
+                        (Uint63.of_Z (Z.sub ri 1%Z))))
+          | r => r
+          end
+      | _, _ => EErr
+      end
+    | EMatchA x tl br =>
+      match eval_expr fuel' visited s x with
+      | EFuel => EFuel
+      | EVal xv =>
+        match lookup_scan fuel' xv 0 1 visited s
+                (cell_col_of tl) (cell_row_of tl)
+                (cell_col_of tl) (cell_row_of br) 0%Z
+                true (-1)%Z 0%Z with
+        | EVal hit => EVal (Z.add hit 1%Z)
+        | r => r
+        end
+      | EFVal _ | EValS _ | EValB _ | EErr => EErr
       end
     | EAvg tl br =>
       let lc := cell_col_of tl in
@@ -1416,6 +1766,7 @@ with eval_at_ref (fuel : nat) (visited : VisitedSet) (s : Sheet)
       | CStr s'  => EValS s'
       | CBool b  => EValB b
       | CForm e  => eval_expr fuel' (mark_visited visited r) s e
+      | CDate d  => EVal d
       end
   end
 
@@ -1480,7 +1831,7 @@ with walk_rows (fuel : nat) (k : WalkKind) (op : CmpOp) (lit : Z)
       end
   end
 
-(* Items 23 / 24: materialize a rectangle's numeric cells into a
+(* Materialize a rectangle's numeric cells into a
    list Z (reverse row-major order).  None propagates fuel
    exhaustion; non-numeric cells are skipped via
    [list_cell_contrib]. *)
@@ -1515,30 +1866,49 @@ with walk_list_rows (fuel : nat) (visited : VisitedSet) (s : Sheet)
       end
   end
 
-(* Item 21: directional exact-match scan.  Steps by (dx, dy) from
-   (col, row) while inside (hc, hr), returning the 0-based step count
-   of the first cell whose integer value equals x; EErr when the scan
-   walks off the rectangle without a hit.  Non-integer cells never
-   match (Excel's exact-mode convention). *)
+(* Directional exact-match scan.  Steps by (dx, dy) from
+   (col, row) while inside (hc, hr).  Exact mode (approx = false)
+   returns the 0-based step count of the first cell whose integer
+   value equals x, EErr when the scan walks off the rectangle without
+   a hit.  Approximate mode (approx = true) scans the whole stripe
+   and returns the first step attaining the largest value <= x,
+   carried in the (bs, bv) accumulators (bs < 0 = none yet); EErr
+   when every cell exceeds x.  Non-integer cells never match in
+   either mode (Excel's convention). *)
 with lookup_scan (fuel : nat) (x : Z) (dx dy : int)
                  (visited : VisitedSet) (s : Sheet)
-                 (col row hc hr : int) (step : Z) : EvalResult :=
+                 (col row hc hr : int) (step : Z)
+                 (approx : bool) (bs bv : Z) : EvalResult :=
   match fuel with
   | O => EFuel
   | S fuel' =>
-    if orb (PrimInt63.ltb hc col) (PrimInt63.ltb hr row) then EErr
+    if orb (PrimInt63.ltb hc col) (PrimInt63.ltb hr row) then
+      (* Off the rectangle: exact mode misses; approximate mode
+         returns the best step recorded, if any. *)
+      (if approx then (if Z.ltb bs 0%Z then EErr else EVal bs)
+       else EErr)
     else
       match eval_at_ref fuel' visited s (mkRef col row) with
       | EFuel => EFuel
       | EVal v =>
-        if Z.eqb v x then EVal step
+        if approx then
+          (* Track the first step attaining the maximum value <= x. *)
+          if andb (Z.leb v x) (orb (Z.ltb bs 0%Z) (Z.ltb bv v)) then
+            lookup_scan fuel' x dx dy visited s
+              (PrimInt63.add col dx) (PrimInt63.add row dy) hc hr
+              (Z.add step 1%Z) approx step v
+          else
+            lookup_scan fuel' x dx dy visited s
+              (PrimInt63.add col dx) (PrimInt63.add row dy) hc hr
+              (Z.add step 1%Z) approx bs bv
+        else if Z.eqb v x then EVal step
         else lookup_scan fuel' x dx dy visited s
                (PrimInt63.add col dx) (PrimInt63.add row dy) hc hr
-               (Z.add step 1%Z)
+               (Z.add step 1%Z) approx bs bv
       | EFVal _ | EValS _ | EValB _ | EErr =>
         lookup_scan fuel' x dx dy visited s
           (PrimInt63.add col dx) (PrimInt63.add row dy) hc hr
-          (Z.add step 1%Z)
+          (Z.add step 1%Z) approx bs bv
       end
   end.
 
@@ -1550,6 +1920,7 @@ Definition eval_cell (fuel : nat) (s : Sheet) (r : CellRef) : EvalResult :=
   | CStr s'  => EValS s'
   | CBool b  => EValB b
   | CForm e  => eval_expr fuel (mark_visited empty_visited r) s e
+  | CDate d  => EVal d
   end.
 
 Definition DEFAULT_FUEL : nat := 4000.
@@ -1915,11 +2286,12 @@ Lemma fuel_monotone_all : forall fuel,
      walk_list_rows fuel visited s lc hc row hr acc <> None ->
      walk_list_rows fuel' visited s lc hc row hr acc =
      walk_list_rows fuel visited s lc hc row hr acc) /\
-  (forall x dx dy col row hc hr step fuel' visited s,
+  (forall x dx dy col row hc hr step approx bs bv fuel' visited s,
      fuel <= fuel' ->
-     lookup_scan fuel x dx dy visited s col row hc hr step <> EFuel ->
-     lookup_scan fuel' x dx dy visited s col row hc hr step =
-     lookup_scan fuel x dx dy visited s col row hc hr step).
+     lookup_scan fuel x dx dy visited s col row hc hr step approx bs bv
+       <> EFuel ->
+     lookup_scan fuel' x dx dy visited s col row hc hr step approx bs bv =
+     lookup_scan fuel x dx dy visited s col row hc hr step approx bs bv).
 Proof.
   induction fuel as [|fuel IH].
   - split; [|split; [|split; [|split; [|split; [|split]]]]];
@@ -2216,9 +2588,10 @@ Proof.
           rewrite Ex, Ei;
           try reflexivity.
         destruct (orb _ _); [reflexivity|].
-        destruct (lookup_scan fuel _ _ _ visited s _ _ _ _ _) eqn:Eh;
+        destruct (lookup_scan fuel _ _ _ visited s _ _ _ _ _ _ _ _)
+          eqn:Eh;
           simpl in Hnf; try congruence;
-          rewrite (IHls _ _ _ _ _ _ _ _ fuel' visited s Hle')
+          rewrite (IHls _ _ _ _ _ _ _ _ _ _ _ fuel' visited s Hle')
             by congruence;
           rewrite Eh;
           try reflexivity.
@@ -2235,9 +2608,10 @@ Proof.
           rewrite Ex, Ei;
           try reflexivity.
         destruct (orb _ _); [reflexivity|].
-        destruct (lookup_scan fuel _ _ _ visited s _ _ _ _ _) eqn:Eh;
+        destruct (lookup_scan fuel _ _ _ visited s _ _ _ _ _ _ _ _)
+          eqn:Eh;
           simpl in Hnf; try congruence;
-          rewrite (IHls _ _ _ _ _ _ _ _ fuel' visited s Hle')
+          rewrite (IHls _ _ _ _ _ _ _ _ _ _ _ fuel' visited s Hle')
             by congruence;
           rewrite Eh;
           try reflexivity.
@@ -2251,9 +2625,10 @@ Proof.
           rewrite (IHe e fuel' visited s Hle') by congruence;
           rewrite Ex;
           try reflexivity.
-        destruct (lookup_scan fuel _ _ _ visited s _ _ _ _ _) eqn:Eh;
+        destruct (lookup_scan fuel _ _ _ visited s _ _ _ _ _ _ _ _)
+          eqn:Eh;
           simpl in Hnf; try congruence;
-          rewrite (IHls _ _ _ _ _ _ _ _ fuel' visited s Hle')
+          rewrite (IHls _ _ _ _ _ _ _ _ _ _ _ fuel' visited s Hle')
             by congruence;
           rewrite Eh;
           reflexivity.
@@ -2270,7 +2645,82 @@ Proof.
           try congruence;
           rewrite (IHr _ fuel' visited s Hle') by congruence;
           rewrite Er; reflexivity.
-    + (* eval_at_ref *)
+      * (* EDate3 *)
+        destruct (eval_expr fuel visited s e1) eqn:Ey;
+        destruct (eval_expr fuel visited s e2) eqn:Em;
+        destruct (eval_expr fuel visited s e3) eqn:Ed;
+        try congruence;
+        try (rewrite (IHe e1 fuel' visited s Hle') by congruence;
+             rewrite (IHe e2 fuel' visited s Hle') by congruence;
+             rewrite (IHe e3 fuel' visited s Hle') by congruence;
+             rewrite Ey, Em, Ed; reflexivity).
+      * (* EWeekdayF *)
+        destruct (eval_expr fuel visited s e) eqn:Ea; try congruence;
+          rewrite (IHe e fuel' visited s Hle') by congruence;
+          rewrite Ea; reflexivity.
+      * (* EVLookupA *)
+        destruct (eval_expr fuel visited s e1) eqn:Ex;
+          destruct (eval_expr fuel visited s e2) eqn:Ei;
+          simpl in Hnf; try congruence;
+          rewrite (IHe e1 fuel' visited s Hle') by congruence;
+          rewrite (IHe e2 fuel' visited s Hle') by congruence;
+          rewrite Ex, Ei;
+          try reflexivity.
+        destruct (orb _ _); [reflexivity|].
+        destruct (lookup_scan fuel _ _ _ visited s _ _ _ _ _ _ _ _)
+          eqn:Eh;
+          simpl in Hnf; try congruence;
+          rewrite (IHls _ _ _ _ _ _ _ _ _ _ _ fuel' visited s Hle')
+            by congruence;
+          rewrite Eh;
+          try reflexivity.
+        destruct (eval_at_ref fuel visited s (mkRef _ _)) eqn:Er;
+          try congruence;
+          rewrite (IHr _ fuel' visited s Hle') by congruence;
+          rewrite Er; reflexivity.
+      * (* EHLookupA *)
+        destruct (eval_expr fuel visited s e1) eqn:Ex;
+          destruct (eval_expr fuel visited s e2) eqn:Ei;
+          simpl in Hnf; try congruence;
+          rewrite (IHe e1 fuel' visited s Hle') by congruence;
+          rewrite (IHe e2 fuel' visited s Hle') by congruence;
+          rewrite Ex, Ei;
+          try reflexivity.
+        destruct (orb _ _); [reflexivity|].
+        destruct (lookup_scan fuel _ _ _ visited s _ _ _ _ _ _ _ _)
+          eqn:Eh;
+          simpl in Hnf; try congruence;
+          rewrite (IHls _ _ _ _ _ _ _ _ _ _ _ fuel' visited s Hle')
+            by congruence;
+          rewrite Eh;
+          try reflexivity.
+        destruct (eval_at_ref fuel visited s (mkRef _ _)) eqn:Er;
+          try congruence;
+          rewrite (IHr _ fuel' visited s Hle') by congruence;
+          rewrite Er; reflexivity.
+      * (* EMatchA *)
+        destruct (eval_expr fuel visited s e) eqn:Ex;
+          simpl in Hnf; try congruence;
+          rewrite (IHe e fuel' visited s Hle') by congruence;
+          rewrite Ex;
+          try reflexivity.
+        destruct (lookup_scan fuel _ _ _ visited s _ _ _ _ _ _ _ _)
+          eqn:Eh;
+          simpl in Hnf; try congruence;
+          rewrite (IHls _ _ _ _ _ _ _ _ _ _ _ fuel' visited s Hle')
+            by congruence;
+          rewrite Eh;
+          reflexivity.
+      * (* EDatedif *)
+        destruct (eval_expr fuel visited s e1) eqn:Ea;
+        destruct (eval_expr fuel visited s e2) eqn:Eb;
+        destruct (eval_expr fuel visited s e3) eqn:Eu;
+        try congruence;
+        try (rewrite (IHe e1 fuel' visited s Hle') by congruence;
+             rewrite (IHe e2 fuel' visited s Hle') by congruence;
+             rewrite (IHe e3 fuel' visited s Hle') by congruence;
+             rewrite Ea, Eb, Eu; reflexivity).
+    + (* Eval_at_ref *)
       intros r fuel' visited s Hle Hnf.
       destruct fuel' as [|fuel']; [lia|].
       assert (Hle' : fuel <= fuel') by lia.
@@ -2278,7 +2728,7 @@ Proof.
       destruct (is_visited visited r); [reflexivity|].
       destruct (get_cell s r); try reflexivity.
       apply IHe; assumption.
-    + (* walk_cols *)
+    + (* Walk_cols *)
       intros k op lit dc dr col hc row acc fuel' visited s Hle Hnf.
       destruct fuel' as [|fuel']; [lia|].
       assert (Hle' : fuel <= fuel') by lia.
@@ -2331,7 +2781,7 @@ Proof.
                        (andb (PrimInt63.leb 0 (PrimInt63.add row dr))
                              (PrimInt63.ltb (PrimInt63.add row dr) NUM_ROWS)))
           eqn:Eg.
-        -- (* guard ok: distinct criteria and sum reads *)
+        -- (* Guard ok: distinct criteria and sum reads *)
            destruct (eval_at_ref fuel visited s (mkRef col row)) eqn:E1;
              simpl in Hnf; try congruence;
              rewrite (IHr (mkRef col row) fuel' visited s Hle')
@@ -2350,7 +2800,7 @@ Proof.
                 rewrite E2;
                 simpl; apply IHwc; assumption.
            ++ apply IHwc; assumption.
-        -- (* guard failed: the second read re-targets the criteria
+        -- (* Guard failed: the second read re-targets the criteria
               cell, so the one rewrite covers both occurrences *)
            destruct (eval_at_ref fuel visited s (mkRef col row)) eqn:E1;
              simpl in Hnf; try congruence;
@@ -2395,7 +2845,7 @@ Proof.
                  by congruence;
                rewrite E1);
           simpl; apply IHwc; assumption.
-    + (* walk_rows *)
+    + (* Walk_rows *)
       intros k op lit dc dr lc hc row hr acc fuel' visited s Hle Hnf.
       destruct fuel' as [|fuel']; [lia|].
       assert (Hle' : fuel <= fuel') by lia.
@@ -2409,13 +2859,13 @@ Proof.
         rewrite Esc;
         try reflexivity.
       apply IHwr; assumption.
-    + (* walk_list_cols *)
+    + (* Walk_list_cols *)
       intros col hc row acc fuel' visited s Hle Hnf.
       destruct fuel' as [|fuel']; [lia|].
       assert (Hle' : fuel <= fuel') by lia.
       simpl in Hnf. simpl.
       destruct (PrimInt63.ltb hc col); [reflexivity|].
-      (* list_cell_contrib consults the evaluation result only for
+      (* List_cell_contrib consults the evaluation result only for
          non-empty cells; the rewrite is attempted but optional. *)
       destruct (get_cell s (mkRef col row)) eqn:Hc;
         destruct (eval_at_ref fuel visited s (mkRef col row)) eqn:E1;
@@ -2424,7 +2874,7 @@ Proof.
                by congruence;
              rewrite E1);
         simpl; apply IHlc; assumption.
-    + (* walk_list_rows *)
+    + (* Walk_list_rows *)
       intros lc hc row hr acc fuel' visited s Hle Hnf.
       destruct fuel' as [|fuel']; [lia|].
       assert (Hle' : fuel <= fuel') by lia.
@@ -2436,8 +2886,9 @@ Proof.
         rewrite Esc;
         try reflexivity.
       apply IHlr; assumption.
-    + (* lookup_scan *)
-      intros x dx dy col row hc hr step fuel' visited s Hle Hnf.
+    + (* Lookup_scan *)
+      intros x dx dy col row hc hr step approx bs bv fuel' visited s
+        Hle Hnf.
       destruct fuel' as [|fuel']; [lia|].
       assert (Hle' : fuel <= fuel') by lia.
       simpl in Hnf. simpl.
@@ -2448,9 +2899,12 @@ Proof.
         rewrite E1;
         simpl;
         try (apply IHls; assumption).
-      (* EVal: the equality test decides hit vs continue. *)
-      destruct (Z.eqb _ _); [reflexivity|].
-      apply IHls; assumption.
+      (* EVal: approximate mode folds the best-so-far; exact mode's
+         equality test decides hit vs continue. *)
+      destruct approx.
+      * destruct (andb _ _); apply IHls; assumption.
+      * destruct (Z.eqb _ _); [reflexivity|].
+        apply IHls; assumption.
 Qed.
 
 Theorem eval_fuel_monotone :
@@ -2756,14 +3210,14 @@ Theorem eval_fdiv_lit : forall fuel visited s a b,
   = EFVal (PrimFloat.div a b).
 Proof. reflexivity. Qed.
 
-(* a + 0 = a, smoke at a finite literal. *)
+(* A + 0 = a, smoke at a finite literal. *)
 Theorem eval_float_add_zero_smoke :
   let one_five := PrimFloat.of_uint63 3%uint63 in
   eval_expr 2 empty_visited new_sheet (EFAdd (EFloat one_five) (EFloat (PrimFloat.of_uint63 0%uint63)))
   = EFVal one_five.
 Proof. vm_compute. reflexivity. Qed.
 
-(* a * 0 = 0, smoke at a finite literal. *)
+(* A * 0 = 0, smoke at a finite literal. *)
 Theorem eval_float_mul_zero_smoke :
   eval_expr 2 empty_visited new_sheet
     (EFMul (EFloat (PrimFloat.of_uint63 7%uint63))
@@ -2814,7 +3268,7 @@ Theorem eval_len_lit : forall fuel visited s sv,
   = EVal (Uint63.to_Z (PrimString.length sv)).
 Proof. reflexivity. Qed.
 
-(* len (concat a b) = len a + len b, smoke. *)
+(* Len (concat a b) = len a + len b, smoke. *)
 Theorem eval_len_concat_smoke :
   let a := "ab"%pstring in
   let b := "cd"%pstring in
@@ -2822,7 +3276,7 @@ Theorem eval_len_concat_smoke :
   = (Uint63.to_Z (PrimString.length a) + Uint63.to_Z (PrimString.length b))%Z.
 Proof. vm_compute. reflexivity. Qed.
 
-(* concat_assoc, smoke. *)
+(* Concat_assoc, smoke. *)
 Theorem eval_concat_assoc_smoke :
   let a := "a"%pstring in
   let b := "b"%pstring in
@@ -2831,23 +3285,23 @@ Theorem eval_concat_assoc_smoke :
   = PrimString.cat a (PrimString.cat b c).
 Proof. vm_compute. reflexivity. Qed.
 
-(* concat_empty_l, smoke. *)
+(* Concat_empty_l, smoke. *)
 Theorem eval_concat_empty_l_smoke :
   PrimString.cat ""%pstring "x"%pstring = "x"%pstring.
 Proof. vm_compute. reflexivity. Qed.
 
-(* concat_empty_r, smoke. *)
+(* Concat_empty_r, smoke. *)
 Theorem eval_concat_empty_r_smoke :
   PrimString.cat "x"%pstring ""%pstring = "x"%pstring.
 Proof. vm_compute. reflexivity. Qed.
 
-(* substr_full = id, smoke. *)
+(* Substr_full = id, smoke. *)
 Theorem eval_substr_full_smoke :
   let s := "hello"%pstring in
   PrimString.sub s 0%uint63 (PrimString.length s) = s.
 Proof. vm_compute. reflexivity. Qed.
 
-(* len_substr_le_len, smoke. *)
+(* Len_substr_le_len, smoke. *)
 Theorem eval_len_substr_le_len_smoke :
   (Uint63.to_Z (PrimString.length (PrimString.sub "hello"%pstring
                                                   1%uint63 3%uint63))
@@ -2860,19 +3314,19 @@ Theorem eval_bool_lit : forall fuel visited s b,
   eval_expr (S fuel) visited s (EBool b) = EValB b.
 Proof. reflexivity. Qed.
 
-(* not_not b = b *)
+(* Not_not b = b *)
 Theorem eval_bnot_not : forall fuel visited s b,
   eval_expr (S (S (S fuel))) visited s (EBNot (EBNot (EBool b)))
   = EValB b.
 Proof. intros. simpl. rewrite Bool.negb_involutive. reflexivity. Qed.
 
-(* and_comm *)
+(* And_comm *)
 Theorem eval_band_comm : forall fuel visited s a b,
   eval_expr (S (S fuel)) visited s (EBAnd (EBool a) (EBool b))
   = eval_expr (S (S fuel)) visited s (EBAnd (EBool b) (EBool a)).
 Proof. intros. simpl. rewrite Bool.andb_comm. reflexivity. Qed.
 
-(* or_comm *)
+(* Or_comm *)
 Theorem eval_bor_comm : forall fuel visited s a b,
   eval_expr (S (S fuel)) visited s (EBOr (EBool a) (EBool b))
   = eval_expr (S (S fuel)) visited s (EBOr (EBool b) (EBool a)).
@@ -2885,13 +3339,13 @@ Theorem eval_de_morgan : forall fuel visited s a b,
       (EBOr (EBNot (EBool a)) (EBNot (EBool b))).
 Proof. intros. simpl. rewrite Bool.negb_andb. reflexivity. Qed.
 
-(* if_true_then *)
+(* If_true_then *)
 Theorem eval_if_true_then : forall fuel visited s t e,
   eval_expr (S (S fuel)) visited s (EIf (EBool true) t e)
   = eval_expr (S fuel) visited s t.
 Proof. reflexivity. Qed.
 
-(* if_false_else *)
+(* If_false_else *)
 Theorem eval_if_false_else : forall fuel visited s t e,
   eval_expr (S (S fuel)) visited s (EIf (EBool false) t e)
   = eval_expr (S fuel) visited s e.
@@ -2899,7 +3353,7 @@ Proof. reflexivity. Qed.
 
 (* --- MIN / MAX theorems -------------------------------------------- *)
 
-(* min_in_range, smoke: min of a 1x4 row of 5/3/9/2 = 2. *)
+(* Min_in_range, smoke: min of a 1x4 row of 5/3/9/2 = 2. *)
 Theorem eval_min_in_range_smoke :
   let s0 := new_sheet in
   let s1 := set_cell s0 (mkRef 0 0) (CLit 5%Z) in
@@ -2911,7 +3365,7 @@ Theorem eval_min_in_range_smoke :
   eval_cell DEFAULT_FUEL s r = EVal 2%Z.
 Proof. vm_compute. reflexivity. Qed.
 
-(* max_ge_min, smoke: max >= min over the same 4 cells. *)
+(* Max_ge_min, smoke: max >= min over the same 4 cells. *)
 Theorem eval_max_ge_min_smoke :
   let s0 := new_sheet in
   let s1 := set_cell s0 (mkRef 0 0) (CLit 5%Z) in
@@ -2927,6 +3381,79 @@ Theorem eval_max_ge_min_smoke :
   | _, _ => False
   end.
 Proof. vm_compute. easy. Qed.
+
+(* Approximate VLOOKUP: keys 10/20/30 down column A, payload in
+   column B; key 25 selects the row of 20 (largest key <= 25). *)
+Theorem eval_vlookup_approx_smoke :
+  let s0 := new_sheet in
+  let s1 := set_cell s0 (mkRef 0 0) (CLit 10%Z) in
+  let s2 := set_cell s1 (mkRef 0 1) (CLit 20%Z) in
+  let s3 := set_cell s2 (mkRef 0 2) (CLit 30%Z) in
+  let s4 := set_cell s3 (mkRef 1 1) (CLit 222%Z) in
+  let r := mkRef 5 5 in
+  let s5 := set_cell s4 r
+              (CForm (EVLookupA (EInt 25%Z) (mkRef 0 0) (mkRef 1 2)
+                                (EInt 2%Z))) in
+  eval_cell DEFAULT_FUEL s5 r = EVal 222%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+(* Approximate MATCH: same keys, position of the best match is
+   1-based. *)
+Theorem eval_match_approx_smoke :
+  let s0 := new_sheet in
+  let s1 := set_cell s0 (mkRef 0 0) (CLit 10%Z) in
+  let s2 := set_cell s1 (mkRef 0 1) (CLit 20%Z) in
+  let s3 := set_cell s2 (mkRef 0 2) (CLit 30%Z) in
+  let r := mkRef 5 5 in
+  let s4 := set_cell s3 r
+              (CForm (EMatchA (EInt 25%Z) (mkRef 0 0) (mkRef 0 2))) in
+  eval_cell DEFAULT_FUEL s4 r = EVal 2%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+(* Approximate lookup misses when every key exceeds x. *)
+Theorem eval_vlookup_approx_all_above :
+  let s0 := new_sheet in
+  let s1 := set_cell s0 (mkRef 0 0) (CLit 10%Z) in
+  let s2 := set_cell s1 (mkRef 0 1) (CLit 20%Z) in
+  let r := mkRef 5 5 in
+  let s3 := set_cell s2 r
+              (CForm (EVLookupA (EInt 5%Z) (mkRef 0 0) (mkRef 1 1)
+                                (EInt 1%Z))) in
+  eval_cell DEFAULT_FUEL s3 r = EErr.
+Proof. vm_compute. reflexivity. Qed.
+
+(* An exact key still hits exactly in approximate mode. *)
+Theorem eval_vlookup_approx_exact_key :
+  let s0 := new_sheet in
+  let s1 := set_cell s0 (mkRef 0 0) (CLit 10%Z) in
+  let s2 := set_cell s1 (mkRef 0 1) (CLit 20%Z) in
+  let s3 := set_cell s2 (mkRef 0 2) (CLit 30%Z) in
+  let r := mkRef 5 5 in
+  let s4 := set_cell s3 r
+              (CForm (EVLookupA (EInt 20%Z) (mkRef 0 0) (mkRef 1 2)
+                                (EInt 1%Z))) in
+  eval_cell DEFAULT_FUEL s4 r = EVal 20%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+(* DATEDIF through the evaluator, composed with DATE construction:
+   whole years between 2000-06-04 and 2026-06-04. *)
+Theorem eval_datedif_smoke :
+  let r := mkRef 0 0 in
+  let s := set_cell new_sheet r
+             (CForm (EDatedif
+                       (EDate3 (EInt 2000%Z) (EInt 6%Z) (EInt 4%Z))
+                       (EDate3 (EInt 2026%Z) (EInt 6%Z) (EInt 4%Z))
+                       (EInt 2%Z))) in
+  eval_cell DEFAULT_FUEL s r = EVal 26%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+(* DATEDIF rejects a reversed interval. *)
+Theorem eval_datedif_reversed_err :
+  let r := mkRef 0 0 in
+  let s := set_cell new_sheet r
+             (CForm (EDatedif (EInt 100%Z) (EInt 0%Z) (EInt 0%Z))) in
+  eval_cell DEFAULT_FUEL s r = EErr.
+Proof. vm_compute. reflexivity. Qed.
 
 End Rocqsheet.
 

@@ -60,7 +60,8 @@ Definition trans (st : State) : State + option Z :=
         match get_cell (st_sheet st) r with
         | CEmpty   => inl (mkSt (st_sheet st) (PCApply (Some 0%Z)) (st_stack st))
         | CLit n   => inl (mkSt (st_sheet st) (PCApply (Some n)) (st_stack st))
-        | CFloat _ => inr None  (* cofix evaluator covers Z only *)
+        | CDate d  => inl (mkSt (st_sheet st) (PCApply (Some d)) (st_stack st))
+        | CFloat _ => inr None  (* Cofix evaluator covers Z only *)
         | CStr _   => inr None
         | CBool _  => inr None
         | CForm e' => inl (mkSt (st_sheet st)
@@ -147,36 +148,45 @@ Definition trans (st : State) : State + option Z :=
   | PCEval _ (EBOr _ _) => inr None
   | PCEval _ (EMin _ _) => inr None
   | PCEval _ (EMax _ _) => inr None
-  (* Item 79: the cofix machine mirrors integer-only evaluation; the
+  (* The cofix machine mirrors integer-only evaluation; the
      counting aggregates bail out like EAvg / EMin / EMax. *)
   | PCEval _ (ECountN _ _) => inr None
   | PCEval _ (ECountA _ _) => inr None
-  (* Item 25: IF-aggregates bail out the same way. *)
+  (* IF-aggregates bail out the same way. *)
   | PCEval _ (ESumIf _ _ _ _ _) => inr None
   | PCEval _ (ECountIf _ _ _ _) => inr None
   | PCEval _ (EAvgIf _ _ _ _ _) => inr None
-  (* Item 27: statistics bail out the same way. *)
+  (* Statistics bail out the same way. *)
   | PCEval _ (EVarSamp _ _) => inr None
   | PCEval _ (EVarPop _ _) => inr None
   | PCEval _ (EStdevSamp _ _) => inr None
   | PCEval _ (EStdevPop _ _) => inr None
-  (* Item 22: string operators bail out the same way. *)
+  (* String operators bail out the same way. *)
   | PCEval _ (EUpper _) => inr None
   | PCEval _ (ELower _) => inr None
   | PCEval _ (ETrim _) => inr None
   | PCEval _ (EFind _ _) => inr None
   | PCEval _ (EReplaceS _ _ _ _) => inr None
-  (* Items 23 / 24: list-materializing aggregates bail out too. *)
+  (* List-materializing aggregates bail out too. *)
   | PCEval _ (EMedian _ _) => inr None
   | PCEval _ (EModeV _ _) => inr None
   | PCEval _ (ERank _ _ _) => inr None
   | PCEval _ (EPercentile _ _ _) => inr None
   | PCEval _ (ENpvZ _ _ _) => inr None
-  (* Item 21: lookups bail out the same way. *)
+  (* Lookups bail out the same way. *)
   | PCEval _ (EVLookup _ _ _ _) => inr None
   | PCEval _ (EHLookup _ _ _ _) => inr None
   | PCEval _ (EMatchV _ _ _) => inr None
+  | PCEval _ (EVLookupA _ _ _ _) => inr None
+  | PCEval _ (EHLookupA _ _ _ _) => inr None
+  | PCEval _ (EMatchA _ _ _) => inr None
   | PCEval _ (EIndex _ _ _ _) => inr None
+  (* Date functions bail out the same way. *)
+  | PCEval _ (EDate3 _ _ _) => inr None
+  | PCEval _ (EWeekdayF _) => inr None
+  | PCEval _ (EEdateF _ _) => inr None
+  | PCEval _ (EEomonthF _ _) => inr None
+  | PCEval _ (EDatedif _ _ _) => inr None
   | PCSumStep visited lc hc col row hr acc =>
       if PrimInt63.ltb hr row then
         inl (mkSt (st_sheet st) (PCApply (Some acc)) (st_stack st))
@@ -290,7 +300,8 @@ Definition eval_cell_co (s : Sheet) (r : CellRef) : itree NoE (option Z) :=
   match get_cell s r with
   | CEmpty   => Ret (Some 0%Z)
   | CLit n   => Ret (Some n)
-  | CFloat _ => Ret None  (* cofix evaluator covers Z only *)
+  | CDate d  => Ret (Some d)
+  | CFloat _ => Ret None  (* Cofix evaluator covers Z only *)
   | CStr _   => Ret None
   | CBool _  => Ret None
   | CForm e  => eval_co (mark_visited empty_visited r) s e

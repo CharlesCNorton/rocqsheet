@@ -86,6 +86,12 @@ assert_eval F13 1
 assert_eval A14 20608
 assert_eval B14 20609
 
+# approximate-match lookup over the sorted key column, and DATEDIF
+# whole years across the formula pipeline.
+assert_eval D16 222
+assert_eval E16 2
+assert_eval F16 26
+
 # --print-csv produces non-empty output.
 csv_lines=$("$BIN" --headless --load "$FIX" --print-csv | wc -l)
 if [ "$csv_lines" -lt 1 ]; then

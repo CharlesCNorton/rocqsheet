@@ -476,6 +476,38 @@ Fixpoint show_expr (e : Expr) : PrimString.string :=
       (PrimString.cat (show_expr a)
         (PrimString.cat ","
           (PrimString.cat (show_expr b) ")")))
+  | EDatedif a b c =>
+    PrimString.cat "DATEDIF("
+      (PrimString.cat (show_expr a)
+        (PrimString.cat ","
+          (PrimString.cat (show_expr b)
+            (PrimString.cat ","
+              (PrimString.cat (show_expr c) ")")))))
+  | EVLookupA x tl br i =>
+    PrimString.cat "VLOOKUP("
+      (PrimString.cat (show_expr x)
+        (PrimString.cat ","
+          (PrimString.cat (cell_label tl)
+            (PrimString.cat ":"
+              (PrimString.cat (cell_label br)
+                (PrimString.cat ","
+                  (PrimString.cat (show_expr i) ",1)")))))))
+  | EHLookupA x tl br i =>
+    PrimString.cat "HLOOKUP("
+      (PrimString.cat (show_expr x)
+        (PrimString.cat ","
+          (PrimString.cat (cell_label tl)
+            (PrimString.cat ":"
+              (PrimString.cat (cell_label br)
+                (PrimString.cat ","
+                  (PrimString.cat (show_expr i) ",1)")))))))
+  | EMatchA x tl br =>
+    PrimString.cat "MATCH("
+      (PrimString.cat (show_expr x)
+        (PrimString.cat ","
+          (PrimString.cat (cell_label tl)
+            (PrimString.cat ":"
+              (PrimString.cat (cell_label br) ",1)")))))
   | EBAnd a b => PrimString.cat "BAND("
                   (PrimString.cat (show_expr a)
                     (PrimString.cat ","

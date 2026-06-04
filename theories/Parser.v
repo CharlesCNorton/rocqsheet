@@ -128,7 +128,8 @@ Inductive token : Type :=
   | TDate3
   | TWeekday
   | TEdate
-  | TEomonth.
+  | TEomonth
+  | TDatedif.
 
 (* INT64_MAX / 10 = 922337203685477580; one extra digit must not
    exceed (INT64_MAX mod 10) = 7.  The negated form accepts one extra
@@ -555,6 +556,13 @@ Fixpoint tokenize_aux
         then
           (* "EDATE(" *)
           tokenize_aux fuel' s len i6 (TEdate :: acc)
+        else if PrimInt63.eqb c0 68 && PrimInt63.eqb c1u 65 &&
+                PrimInt63.eqb c2u 84 && PrimInt63.eqb c3u 69 &&
+                PrimInt63.eqb c4u 68 && PrimInt63.eqb c5u 73 &&
+                PrimInt63.eqb c6u 70 && seven_letter_kw_lp
+        then
+          (* "DATEDIF(" *)
+          tokenize_aux fuel' s len i8 (TDatedif :: acc)
         else if PrimInt63.eqb c0 68 && PrimInt63.eqb c1u 65 &&
                 PrimInt63.eqb c2u 84 && PrimInt63.eqb c3u 69 &&
                 four_letter_kw_lp
@@ -1012,37 +1020,88 @@ with parse_factor (fuel : nat) (toks : list token)
         end
       | _ => None
       end
+    | TDatedif :: rest =>
+      (* DATEDIF(start, end, unit): unit 0 = days, 1 = months,
+         2 = years. *)
+      match parse_top fuel' rest with
+      | Some (a, TComma :: rest1) =>
+        match parse_top fuel' rest1 with
+        | Some (b, TComma :: rest2) =>
+          match parse_top fuel' rest2 with
+          | Some (u, TRParen :: rest3) => Some (EDatedif a b u, rest3)
+          | _ => None
+          end
+        | _ => None
+        end
+      | _ => None
+      end
     (* Exact-match lookups. *)
     | TVLookup :: rest =>
-      (* VLOOKUP(x, range, col) *)
+      (* VLOOKUP(x, range, col[, mode]): a literal fourth argument of
+         1 or TRUE selects approximate (sorted-range) matching; 0 or
+         FALSE keeps the exact form. *)
       match parse_top fuel' rest with
       | Some (x, TComma :: TRef r1 :: TColon :: TRef r2
                    :: TComma :: rest1) =>
         match parse_top fuel' rest1 with
         | Some (ci, TRParen :: rest2) =>
           Some (EVLookup x r1 r2 ci, rest2)
+        | Some (ci, TComma :: rest2) =>
+          match parse_top fuel' rest2 with
+          | Some (EInt 0%Z, TRParen :: rest3) =>
+            Some (EVLookup x r1 r2 ci, rest3)
+          | Some (EBool false, TRParen :: rest3) =>
+            Some (EVLookup x r1 r2 ci, rest3)
+          | Some (EInt 1%Z, TRParen :: rest3) =>
+            Some (EVLookupA x r1 r2 ci, rest3)
+          | Some (EBool true, TRParen :: rest3) =>
+            Some (EVLookupA x r1 r2 ci, rest3)
+          | _ => None
+          end
         | _ => None
         end
       | _ => None
       end
     | THLookup :: rest =>
-      (* HLOOKUP(x, range, row) *)
+      (* HLOOKUP(x, range, row[, mode]) — mode as in VLOOKUP. *)
       match parse_top fuel' rest with
       | Some (x, TComma :: TRef r1 :: TColon :: TRef r2
                    :: TComma :: rest1) =>
         match parse_top fuel' rest1 with
         | Some (ri, TRParen :: rest2) =>
           Some (EHLookup x r1 r2 ri, rest2)
+        | Some (ri, TComma :: rest2) =>
+          match parse_top fuel' rest2 with
+          | Some (EInt 0%Z, TRParen :: rest3) =>
+            Some (EHLookup x r1 r2 ri, rest3)
+          | Some (EBool false, TRParen :: rest3) =>
+            Some (EHLookup x r1 r2 ri, rest3)
+          | Some (EInt 1%Z, TRParen :: rest3) =>
+            Some (EHLookupA x r1 r2 ri, rest3)
+          | Some (EBool true, TRParen :: rest3) =>
+            Some (EHLookupA x r1 r2 ri, rest3)
+          | _ => None
+          end
         | _ => None
         end
       | _ => None
       end
     | TMatchV :: rest =>
-      (* MATCH(x, range) *)
+      (* MATCH(x, range[, type]): literal type 0 = exact (default),
+         1 = approximate. *)
       match parse_top fuel' rest with
       | Some (x, TComma :: TRef r1 :: TColon :: TRef r2
                    :: TRParen :: rest') =>
         Some (EMatchV x r1 r2, rest')
+      | Some (x, TComma :: TRef r1 :: TColon :: TRef r2
+                   :: TComma :: rest1) =>
+        match parse_top fuel' rest1 with
+        | Some (EInt 0%Z, TRParen :: rest2) =>
+          Some (EMatchV x r1 r2, rest2)
+        | Some (EInt 1%Z, TRParen :: rest2) =>
+          Some (EMatchA x r1 r2, rest2)
+        | _ => None
+        end
       | _ => None
       end
     | TIndex :: TRef r1 :: TColon :: TRef r2 :: TComma :: rest =>
@@ -1162,14 +1221,15 @@ Fixpoint expr_depth (e : Expr) : nat :=
   | EVarSamp _ _ | EVarPop _ _ | EStdevSamp _ _ | EStdevPop _ _
   | EMedian _ _ | EModeV _ _ => 1
   | ERank x _ _ | EPercentile x _ _ | ENpvZ x _ _
-  | EMatchV x _ _ => S (expr_depth x)
-  | EVLookup x _ _ i | EHLookup x _ _ i =>
+  | EMatchV x _ _ | EMatchA x _ _ => S (expr_depth x)
+  | EVLookup x _ _ i | EHLookup x _ _ i
+  | EVLookupA x _ _ i | EHLookupA x _ _ i =>
     S (Nat.max (expr_depth x) (expr_depth i))
   | EIndex _ _ a b => S (Nat.max (expr_depth a) (expr_depth b))
   | EWeekdayF a => S (expr_depth a)
   | EEdateF a b | EEomonthF a b =>
     S (Nat.max (expr_depth a) (expr_depth b))
-  | EDate3 a b c =>
+  | EDate3 a b c | EDatedif a b c =>
     S (Nat.max (expr_depth a) (Nat.max (expr_depth b) (expr_depth c)))
   | ENot a | ELen a | EBNot a
   | EUpper a | ELower a | ETrim a => S (expr_depth a)

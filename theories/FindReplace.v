@@ -91,6 +91,17 @@ Fixpoint replace_int_in_expr (from to : Z) (e : Expr) : Expr :=
   | EEomonthF a b =>
     EEomonthF (replace_int_in_expr from to a)
               (replace_int_in_expr from to b)
+  | EDatedif a b c =>
+    EDatedif (replace_int_in_expr from to a)
+             (replace_int_in_expr from to b)
+             (replace_int_in_expr from to c)
+  | EVLookupA x tl br i =>
+    EVLookupA (replace_int_in_expr from to x) tl br
+              (replace_int_in_expr from to i)
+  | EHLookupA x tl br i =>
+    EHLookupA (replace_int_in_expr from to x) tl br
+              (replace_int_in_expr from to i)
+  | EMatchA x tl br => EMatchA (replace_int_in_expr from to x) tl br
   end.
 
 Theorem replace_idempotent_when_equal :

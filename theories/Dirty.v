@@ -34,10 +34,11 @@ Fixpoint expr_references (r : CellRef) (e : Expr) : bool :=
   | EMedian tl br | EModeV tl br =>
     orb (cellref_eqb r tl) (cellref_eqb r br)
   | ERank x tl br | EPercentile x tl br | ENpvZ x tl br
-  | EMatchV x tl br =>
+  | EMatchV x tl br | EMatchA x tl br =>
     orb (expr_references r x)
         (orb (cellref_eqb r tl) (cellref_eqb r br))
-  | EVLookup x tl br i | EHLookup x tl br i =>
+  | EVLookup x tl br i | EHLookup x tl br i
+  | EVLookupA x tl br i | EHLookupA x tl br i =>
     orb (orb (expr_references r x) (expr_references r i))
         (orb (cellref_eqb r tl) (cellref_eqb r br))
   | EIndex tl br a b =>
@@ -46,7 +47,7 @@ Fixpoint expr_references (r : CellRef) (e : Expr) : bool :=
   | EWeekdayF a => expr_references r a
   | EEdateF a b | EEomonthF a b =>
     orb (expr_references r a) (expr_references r b)
-  | EDate3 a b c =>
+  | EDate3 a b c | EDatedif a b c =>
     orb (expr_references r a)
         (orb (expr_references r b) (expr_references r c))
   | ESum tl br | EAvg tl br | ECount tl br

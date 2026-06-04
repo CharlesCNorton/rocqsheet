@@ -99,6 +99,18 @@ Fixpoint shift_refs (dc dr : int) (e : Expr) : Expr :=
   | EEdateF a b => EEdateF (shift_refs dc dr a) (shift_refs dc dr b)
   | EEomonthF a b =>
     EEomonthF (shift_refs dc dr a) (shift_refs dc dr b)
+  | EDatedif a b c =>
+    EDatedif (shift_refs dc dr a) (shift_refs dc dr b)
+             (shift_refs dc dr c)
+  | EVLookupA x tl br i =>
+    EVLookupA (shift_refs dc dr x) (shift_ref dc dr tl)
+              (shift_ref dc dr br) (shift_refs dc dr i)
+  | EHLookupA x tl br i =>
+    EHLookupA (shift_refs dc dr x) (shift_ref dc dr tl)
+              (shift_ref dc dr br) (shift_refs dc dr i)
+  | EMatchA x tl br =>
+    EMatchA (shift_refs dc dr x) (shift_ref dc dr tl)
+            (shift_ref dc dr br)
   end.
 
 Theorem shift_ref_zero : forall r, shift_ref 0 0 r = r.
