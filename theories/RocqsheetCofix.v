@@ -147,6 +147,10 @@ Definition trans (st : State) : State + option Z :=
   | PCEval _ (EBOr _ _) => inr None
   | PCEval _ (EMin _ _) => inr None
   | PCEval _ (EMax _ _) => inr None
+  (* Item 79: the cofix machine mirrors integer-only evaluation; the
+     counting aggregates bail out like EAvg / EMin / EMax. *)
+  | PCEval _ (ECountN _ _) => inr None
+  | PCEval _ (ECountA _ _) => inr None
   | PCSumStep visited lc hc col row hr acc =>
       if PrimInt63.ltb hr row then
         inl (mkSt (st_sheet st) (PCApply (Some acc)) (st_stack st))

@@ -93,7 +93,13 @@ Inductive Expr : Type :=
   | EBAnd  : Expr -> Expr -> Expr
   | EBOr   : Expr -> Expr -> Expr
   | EMin   : CellRef -> CellRef -> Expr
-  | EMax   : CellRef -> CellRef -> Expr.
+  | EMax   : CellRef -> CellRef -> Expr
+  (* Item 79: COUNT counts numeric cells (CLit / CFloat / numeric
+     formula results); COUNTA counts non-empty cells.  The original
+     rectangle-cardinality [ECount] stays and is surfaced in the
+     parser as RANGE_SIZE. *)
+  | ECountN : CellRef -> CellRef -> Expr
+  | ECountA : CellRef -> CellRef -> Expr.
 
 Inductive Cell : Type :=
   | CEmpty : Cell
@@ -353,6 +359,17 @@ Fixpoint eval_expr (fuel : nat) (visited : VisitedSet) (s : Sheet)
         let cs := PrimInt63.add (PrimInt63.sub hc lc) 1 in
         let rs := PrimInt63.add (PrimInt63.sub hr lr) 1 in
         EVal (Uint63.to_Z (PrimInt63.mul cs rs))
+    (* Item 79: COUNT (numeric cells only) and COUNTA (non-empty
+       cells).  Degenerate rectangles fall out of the walkers'
+       boundary tests as EVal 0 with no special-casing. *)
+    | ECountN tl br =>
+      count_rows fuel' true visited s
+        (cell_col_of tl) (cell_col_of br)
+        (cell_row_of tl) (cell_row_of br) 0%Z
+    | ECountA tl br =>
+      count_rows fuel' false visited s
+        (cell_col_of tl) (cell_col_of br)
+        (cell_row_of tl) (cell_row_of br) 0%Z
     | EAvg tl br =>
       let lc := cell_col_of tl in
       let hc := cell_col_of br in
@@ -580,6 +597,72 @@ with max_rows (fuel : nat) (visited : VisitedSet) (s : Sheet)
     else
       match max_cols fuel' visited s lc hc row acc with
       | EVal acc' => max_rows fuel' visited s lc hc
+                       (PrimInt63.add row 1) hr acc'
+      | EFVal _   => EErr
+      | EValS _   => EErr
+      | EValB _   => EErr
+      | EErr      => EErr
+      | EFuel     => EFuel
+      end
+  end
+
+(* Item 79: one cell-counting step.  [numeric] = true counts numeric
+   cells only (COUNT); false counts every non-empty cell (COUNTA).
+   Formula cells evaluate through [eval_at_ref]: numeric results
+   count toward both modes, typed (string/bool) and error results
+   count toward COUNTA only — matching the Excel convention where
+   COUNT skips errors but COUNTA counts any occupied cell. *)
+with count_cols (fuel : nat) (numeric : bool) (visited : VisitedSet)
+                (s : Sheet) (col hc : int) (row : int) (acc : Z)
+                : EvalResult :=
+  match fuel with
+  | O => EFuel
+  | S fuel' =>
+    if PrimInt63.ltb hc col then EVal acc
+    else
+      match get_cell s (mkRef col row) with
+      | CEmpty   => count_cols fuel' numeric visited s
+                      (PrimInt63.add col 1) hc row acc
+      | CLit _   => count_cols fuel' numeric visited s
+                      (PrimInt63.add col 1) hc row (Z.add acc 1%Z)
+      | CFloat _ => count_cols fuel' numeric visited s
+                      (PrimInt63.add col 1) hc row (Z.add acc 1%Z)
+      | CStr _   => count_cols fuel' numeric visited s
+                      (PrimInt63.add col 1) hc row
+                      (if numeric then acc else Z.add acc 1%Z)
+      | CBool _  => count_cols fuel' numeric visited s
+                      (PrimInt63.add col 1) hc row
+                      (if numeric then acc else Z.add acc 1%Z)
+      | CForm _  =>
+        match eval_at_ref fuel' visited s (mkRef col row) with
+        | EVal _  => count_cols fuel' numeric visited s
+                       (PrimInt63.add col 1) hc row (Z.add acc 1%Z)
+        | EFVal _ => count_cols fuel' numeric visited s
+                       (PrimInt63.add col 1) hc row (Z.add acc 1%Z)
+        | EValS _ => count_cols fuel' numeric visited s
+                       (PrimInt63.add col 1) hc row
+                       (if numeric then acc else Z.add acc 1%Z)
+        | EValB _ => count_cols fuel' numeric visited s
+                       (PrimInt63.add col 1) hc row
+                       (if numeric then acc else Z.add acc 1%Z)
+        | EErr    => count_cols fuel' numeric visited s
+                       (PrimInt63.add col 1) hc row
+                       (if numeric then acc else Z.add acc 1%Z)
+        | EFuel   => EFuel
+        end
+      end
+  end
+
+with count_rows (fuel : nat) (numeric : bool) (visited : VisitedSet)
+                (s : Sheet) (lc hc : int) (row hr : int) (acc : Z)
+                : EvalResult :=
+  match fuel with
+  | O => EFuel
+  | S fuel' =>
+    if PrimInt63.ltb hr row then EVal acc
+    else
+      match count_cols fuel' numeric visited s lc hc row acc with
+      | EVal acc' => count_rows fuel' numeric visited s lc hc
                        (PrimInt63.add row 1) hr acc'
       | EFVal _   => EErr
       | EValS _   => EErr
@@ -971,13 +1054,26 @@ Lemma fuel_monotone_all : forall fuel,
      fuel <= fuel' ->
      max_rows fuel visited s lc hc row hr acc <> EFuel ->
      max_rows fuel' visited s lc hc row hr acc =
-     max_rows fuel visited s lc hc row hr acc).
+     max_rows fuel visited s lc hc row hr acc) /\
+  (forall numeric col hc row acc fuel' visited s,
+     fuel <= fuel' ->
+     count_cols fuel numeric visited s col hc row acc <> EFuel ->
+     count_cols fuel' numeric visited s col hc row acc =
+     count_cols fuel numeric visited s col hc row acc) /\
+  (forall numeric lc hc row hr acc fuel' visited s,
+     fuel <= fuel' ->
+     count_rows fuel numeric visited s lc hc row hr acc <> EFuel ->
+     count_rows fuel' numeric visited s lc hc row hr acc =
+     count_rows fuel numeric visited s lc hc row hr acc).
 Proof.
   induction fuel as [|fuel IH].
-  - split; [|split; [|split; [|split; [|split; [|split; [|split]]]]]];
+  - split; [|split; [|split; [|split; [|split; [|split; [|split;
+      [|split; [|split]]]]]]]];
       intros until s; intros _ Hnf; simpl in *; congruence.
-  - destruct IH as [IHe [IHr [IHc [IHs [IHmc [IHmr [IHxc IHxr]]]]]]].
-    split; [|split; [|split; [|split; [|split; [|split; [|split]]]]]].
+  - destruct IH as
+      [IHe [IHr [IHc [IHs [IHmc [IHmr [IHxc [IHxr [IHcc IHcr]]]]]]]]].
+    split; [|split; [|split; [|split; [|split; [|split; [|split;
+      [|split; [|split]]]]]]]].
     + (* eval_expr *)
       intros e fuel' visited s Hle Hnf.
       destruct fuel' as [|fuel']; [lia|].
@@ -1113,6 +1209,10 @@ Proof.
           rewrite Eat;
           try reflexivity.
         apply IHxr; assumption.
+      * (* ECountN *)
+        apply IHcr; assumption.
+      * (* ECountA *)
+        apply IHcr; assumption.
     + (* eval_at_ref *)
       intros r fuel' visited s Hle Hnf.
       destruct fuel' as [|fuel']; [lia|].
@@ -1213,6 +1313,34 @@ Proof.
         rewrite Esc;
         try reflexivity.
       apply IHxr; assumption.
+    + (* count_cols *)
+      intros numeric col hc row acc fuel' visited s Hle Hnf.
+      destruct fuel' as [|fuel']; [lia|].
+      assert (Hle' : fuel <= fuel') by lia.
+      simpl in Hnf. simpl.
+      destruct (PrimInt63.ltb hc col); [reflexivity|].
+      destruct (get_cell s (mkRef col row)) eqn:Hc;
+        try (apply IHcc; assumption).
+      (* CForm: the cell evaluates through eval_at_ref before the
+         walk continues; every value-shaped arm recurses. *)
+      destruct (eval_at_ref fuel visited s (mkRef col row)) eqn:Eat;
+        try congruence;
+        rewrite (IHr (mkRef col row) fuel' visited s Hle') by congruence;
+        rewrite Eat;
+        apply IHcc; assumption.
+    + (* count_rows *)
+      intros numeric lc hc row hr acc fuel' visited s Hle Hnf.
+      destruct fuel' as [|fuel']; [lia|].
+      assert (Hle' : fuel <= fuel') by lia.
+      simpl in Hnf. simpl.
+      destruct (PrimInt63.ltb hr row); [reflexivity|].
+      destruct (count_cols fuel numeric visited s lc hc row acc) eqn:Esc;
+        try congruence;
+        rewrite (IHcc numeric lc hc row acc fuel' visited s Hle')
+          by congruence;
+        rewrite Esc;
+        try reflexivity.
+      apply IHcr; assumption.
 Qed.
 
 Theorem eval_fuel_monotone :

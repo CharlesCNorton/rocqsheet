@@ -42,3 +42,6 @@ N=Refs
 3,9,=-2.5
 4,9,="hello"
 5,9,=2^-3
+0,10,=COUNT(A1:D1)
+1,10,=COUNTA(A1:F1)
+2,10,=RANGE_SIZE(A1:F1)

@@ -689,21 +689,21 @@ with parse_factor (fuel : nat) (toks : list token)
     | TAvg :: TRef r1 :: TColon :: TRef r2 :: TRParen :: rest' =>
       Some (EAvg r1 r2, rest')
     | TCount :: TRef r1 :: TColon :: TRef r2 :: TRParen :: rest' =>
-      Some (ECount r1 r2, rest')
+      (* Item 79: COUNT now counts numeric cells (Excel semantics);
+         the rectangle-cardinality ECount is reachable as RANGE_SIZE. *)
+      Some (ECountN r1 r2, rest')
     | TMin :: TRef r1 :: TColon :: TRef r2 :: TRParen :: rest' =>
       Some (EMin r1 r2, rest')
     | TMax :: TRef r1 :: TColon :: TRef r2 :: TRParen :: rest' =>
       Some (EMax r1 r2, rest')
-    (* RANGE_SIZE is a more descriptive spelling for the rectangle-
-       cardinality semantics of the existing ECount.  Maps to the
-       same kernel constructor.  COUNTA (non-empty count) still
-       requires a new ECountA constructor and is deferred; for now
-       it parses to ECount (rectangle size) too so users at least
-       get something, with a tracking comment in TODO item 90. *)
+    (* RANGE_SIZE is the rectangle-cardinality semantics of the
+       original ECount constructor, kept under its own spelling now
+       that COUNT means "numeric cells" (item 79). *)
     | TRangeSize :: TRef r1 :: TColon :: TRef r2 :: TRParen :: rest' =>
       Some (ECount r1 r2, rest')
     | TCounta :: TRef r1 :: TColon :: TRef r2 :: TRParen :: rest' =>
-      Some (ECount r1 r2, rest')
+      (* Item 79: COUNTA counts non-empty cells. *)
+      Some (ECountA r1 r2, rest')
     | TIfs :: rest =>
       (* IFS(c1, v1, c2, v2, ..., default).  Parsed as a flat
          comma-separated list with the final entry treated as the
@@ -768,7 +768,8 @@ Definition formula_depth_max : nat := 64%nat.
 Fixpoint expr_depth (e : Expr) : nat :=
   match e with
   | EInt _ | ERef _ | EFloat _ | EStr _ | EBool _ => 1
-  | ESum _ _ | EAvg _ _ | ECount _ _ | EMin _ _ | EMax _ _ => 1
+  | ESum _ _ | EAvg _ _ | ECount _ _ | EMin _ _ | EMax _ _
+  | ECountN _ _ | ECountA _ _ => 1
   | ENot a | ELen a | EBNot a => S (expr_depth a)
   | EAdd a b | ESub a b | EMul a b | EDiv a b
   | EEq a b | ELt a b | EGt a b

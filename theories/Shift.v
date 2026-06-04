@@ -48,6 +48,8 @@ Fixpoint shift_refs (dc dr : int) (e : Expr) : Expr :=
   | EBOr a b => EBOr (shift_refs dc dr a) (shift_refs dc dr b)
   | EMin tl br => EMin (shift_ref dc dr tl) (shift_ref dc dr br)
   | EMax tl br => EMax (shift_ref dc dr tl) (shift_ref dc dr br)
+  | ECountN tl br => ECountN (shift_ref dc dr tl) (shift_ref dc dr br)
+  | ECountA tl br => ECountA (shift_ref dc dr tl) (shift_ref dc dr br)
   end.
 
 Theorem shift_ref_zero : forall r, shift_ref 0 0 r = r.

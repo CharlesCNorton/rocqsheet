@@ -271,7 +271,19 @@ Fixpoint show_expr (e : Expr) : PrimString.string :=
         (PrimString.cat ":"
           (PrimString.cat (cell_label br) ")")))
   | ECount tl br =>
+    (* Item 79: the rectangle-cardinality constructor is spelled
+       RANGE_SIZE at the surface; COUNT is the numeric counter. *)
+    PrimString.cat "RANGE_SIZE("
+      (PrimString.cat (cell_label tl)
+        (PrimString.cat ":"
+          (PrimString.cat (cell_label br) ")")))
+  | ECountN tl br =>
     PrimString.cat "COUNT("
+      (PrimString.cat (cell_label tl)
+        (PrimString.cat ":"
+          (PrimString.cat (cell_label br) ")")))
+  | ECountA tl br =>
+    PrimString.cat "COUNTA("
       (PrimString.cat (cell_label tl)
         (PrimString.cat ":"
           (PrimString.cat (cell_label br) ")")))

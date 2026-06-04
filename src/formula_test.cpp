@@ -120,6 +120,13 @@ int main() {
   want_fail("if-bare",     "IF");
   want_fail("eq-trailing", "A1=");
 
+  // Item 79: counting aggregates.
+  want_ok("count",        "COUNT(A1:B2)");
+  want_ok("counta",       "COUNTA(A1:B2)");
+  want_ok("range-size",   "RANGE_SIZE(A1:B2)");
+  want_fail("count-bare", "COUNT");
+  want_fail("counta-noargs", "COUNTA()");
+
   // Item 89: float / string / bool literals.
   want_ok("float",           "1.5");
   want_ok("float-pi",        "3.14");

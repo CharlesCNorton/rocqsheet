@@ -333,6 +333,46 @@ void test_aggregation_with_holes() {
             325 - 13);
 }
 
+// Item 79: COUNT counts numeric cells, COUNTA counts non-empty
+// cells, RANGE_SIZE keeps the original rectangle cardinality.
+void test_count_counta() {
+  // A1=1, B1=2.5f, C1="x", D1=TRUE, E1 empty, F1==A1+1, G1==1/0.
+  auto s = lit(S::new_sheet, 0, 0, 1);
+  s = put(s, 1, 0, S::Cell::cfloat(2.5));
+  s = put(s, 2, 0, S::Cell::cstr("x"));
+  s = put(s, 3, 0, S::Cell::cbool(true));
+  s = form(s, 5, 0, S::Expr::eadd(S::Expr::eref(S::CellRef{0, 0}),
+                                  S::Expr::eint(1)));
+  s = form(s, 6, 0, S::Expr::ediv(S::Expr::eint(1), S::Expr::eint(0)));
+  S::CellRef tl{0, 0}, br{6, 0};
+  // Numeric: A1 lit, B1 float, F1 numeric formula.
+  s = form(s, 0, 1, S::Expr::ecountn(tl, br));
+  check_int("COUNT numeric",
+            as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{0, 1})), 3);
+  // Non-empty: everything but E1 (errors count as occupied).
+  s = form(s, 1, 1, S::Expr::ecounta(tl, br));
+  check_int("COUNTA non-empty",
+            as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{1, 1})), 6);
+  // Rectangle cardinality is unchanged under the RANGE_SIZE spelling.
+  s = form(s, 2, 1, S::Expr::ecount(tl, br));
+  check_int("RANGE_SIZE",
+            as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{2, 1})), 7);
+  // The Excel-mismatch the TODO called out: COUNT over an
+  // empty 5x6 range is 0, not 30.
+  S::CellRef etl{0, 19}, ebr{4, 24};
+  s = form(s, 3, 1, S::Expr::ecountn(etl, ebr));
+  check_int("COUNT empty-range",
+            as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{3, 1})), 0);
+  s = form(s, 4, 1, S::Expr::ecount(etl, ebr));
+  check_int("RANGE_SIZE 5x6",
+            as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{4, 1})), 30);
+  // COUNTA sees through to formula cells that reference the counted
+  // range without double-counting: inverted rectangle is 0.
+  s = form(s, 5, 1, S::Expr::ecounta(br, tl));
+  check_int("COUNTA inverted",
+            as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{5, 1})), 0);
+}
+
 void test_boolean_ops() {
   auto s = put(S::new_sheet, 0, 0, S::Cell::cbool(true));
   s = put(s, 1, 0, S::Cell::cbool(false));
@@ -512,6 +552,7 @@ int main() {
   test_saturation();
   test_aggregations();
   test_aggregation_with_holes();
+  test_count_counta();
   test_boolean_ops();
   test_string_ops();
   test_correspondence_corpus();

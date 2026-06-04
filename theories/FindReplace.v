@@ -45,6 +45,8 @@ Fixpoint replace_int_in_expr (from to : Z) (e : Expr) : Expr :=
   | EBOr a b => EBOr (replace_int_in_expr from to a) (replace_int_in_expr from to b)
   | EMin tl br => EMin tl br
   | EMax tl br => EMax tl br
+  | ECountN tl br => ECountN tl br
+  | ECountA tl br => ECountA tl br
   end.
 
 Theorem replace_idempotent_when_equal :
