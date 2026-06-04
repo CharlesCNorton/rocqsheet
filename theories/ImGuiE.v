@@ -62,6 +62,15 @@ Inductive imguiE : Type -> Type :=
   | ENextWindowInitialPosSize : Z -> Z -> Z -> Z -> imguiE unit
   | EFileRead         : PrimString.string -> imguiE (PrimString.string * bool)
   | EFileWrite        : PrimString.string -> PrimString.string -> imguiE bool
+  (* Atomic save: write content to [path].tmp, fsync, then rename to
+     [path].  Rotates [path].bak.1 ... [path].bak.3 before the rename
+     so the last three save snapshots survive a midpoint crash.
+     Returns [true] on success. *)
+  | EFileSaveAtomic   : PrimString.string -> PrimString.string -> imguiE bool
+  (* Acquire an advisory flock on [path].  Returns [true] when the
+     caller now holds the lock and is safe to write; [false] when
+     another process holds it. *)
+  | EFileLock         : PrimString.string -> imguiE bool
   | EClipboardGet     : imguiE PrimString.string
   | EClipboardSet     : PrimString.string -> imguiE unit
   | ECtrlKeyPressed   : PrimString.string -> imguiE bool
@@ -151,6 +160,10 @@ Definition file_read (path : PrimString.string)
   : itree imguiE (PrimString.string * bool) := trigger (EFileRead path).
 Definition file_write (path : PrimString.string) (content : PrimString.string)
   : itree imguiE bool := trigger (EFileWrite path content).
+Definition file_save_atomic (path : PrimString.string) (content : PrimString.string)
+  : itree imguiE bool := trigger (EFileSaveAtomic path content).
+Definition file_lock (path : PrimString.string) : itree imguiE bool :=
+  trigger (EFileLock path).
 Definition clipboard_get : itree imguiE PrimString.string :=
   trigger EClipboardGet.
 Definition clipboard_set (s : PrimString.string) : itree imguiE unit :=
@@ -221,6 +234,8 @@ Crane Extract Inductive imguiE => ""
     "imgui_helpers::next_window_initial_pos_size(%a0, %a1, %a2, %a3)"
     "imgui_helpers::file_read(%a0)"
     "imgui_helpers::file_write(%a0, %a1)"
+    "imgui_helpers::file_save_atomic(%a0, %a1)"
+    "imgui_helpers::file_lock(%a0)"
     "imgui_helpers::clipboard_get()"
     "imgui_helpers::clipboard_set(%a0)"
     "imgui_helpers::ctrl_key_pressed(%a0)"
@@ -303,6 +318,10 @@ Crane Extract Inlined Constant file_read =>
   "imgui_helpers::file_read(%a0)" From "imgui_helpers.h".
 Crane Extract Inlined Constant file_write =>
   "imgui_helpers::file_write(%a0, %a1)" From "imgui_helpers.h".
+Crane Extract Inlined Constant file_save_atomic =>
+  "imgui_helpers::file_save_atomic(%a0, %a1)" From "imgui_helpers.h".
+Crane Extract Inlined Constant file_lock =>
+  "imgui_helpers::file_lock(%a0)" From "imgui_helpers.h".
 Crane Extract Inlined Constant clipboard_get =>
   "imgui_helpers::clipboard_get()" From "imgui_helpers.h".
 Crane Extract Inlined Constant clipboard_set =>

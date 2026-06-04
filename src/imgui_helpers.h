@@ -7,11 +7,16 @@
 #define INCLUDED_IMGUI_HELPERS
 
 #include <cstdint>
+#include <cstdio>
 #include <fstream>
 #include <sstream>
 #include <string>
 #include <memory>
+#include <unordered_map>
 #include <utility>
+
+#include <fcntl.h>
+#include <unistd.h>
 
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
@@ -316,6 +321,68 @@ inline bool file_write(const std::string& path, const std::string& content) {
   if (!f) return false;
   f << content;
   return f.good();
+}
+
+// Rotate up to three numbered backups before writing a new save:
+// <path>.bak.3 is deleted, <path>.bak.2 -> .bak.3, .bak.1 -> .bak.2,
+// then <path> -> <path>.bak.1.  Missing files are silently skipped.
+inline void rotate_bak(const std::string& path) {
+  std::string b3 = path + ".bak.3";
+  std::string b2 = path + ".bak.2";
+  std::string b1 = path + ".bak.1";
+  std::remove(b3.c_str());
+  std::rename(b2.c_str(), b3.c_str());
+  std::rename(b1.c_str(), b2.c_str());
+  std::rename(path.c_str(), b1.c_str());
+}
+
+// Atomic save: write to <path>.tmp, fsync, rotate .bak.{1,2,3},
+// rename <path>.tmp to <path>.  A crash between the open and the
+// rename leaves the previous save intact.
+inline bool file_save_atomic(const std::string& path,
+                             const std::string& content) {
+  std::string tmp_path = path + ".tmp";
+  {
+    std::ofstream f(tmp_path);
+    if (!f) return false;
+    f << content;
+    if (!f.good()) return false;
+  }
+  // Best-effort fsync so the bytes are durable before we rename.
+  int fd = ::open(tmp_path.c_str(), O_RDONLY);
+  if (fd >= 0) {
+    ::fsync(fd);
+    ::close(fd);
+  }
+  rotate_bak(path);
+  if (std::rename(tmp_path.c_str(), path.c_str()) != 0) {
+    std::remove(tmp_path.c_str());
+    return false;
+  }
+  return true;
+}
+
+// Acquire an advisory write lock on [path].  Closing the descriptor
+// (process exit) releases it.  Subsequent calls for the same path
+// return true without re-locking.  Returns false when another process
+// holds the lock.
+inline bool file_lock(const std::string& path) {
+  static std::unordered_map<std::string, int> g_locks;
+  auto it = g_locks.find(path);
+  if (it != g_locks.end()) return true;
+  int fd = ::open(path.c_str(), O_RDWR | O_CREAT, 0644);
+  if (fd < 0) return false;
+  struct flock fl{};
+  fl.l_type   = F_WRLCK;
+  fl.l_whence = SEEK_SET;
+  fl.l_start  = 0;
+  fl.l_len    = 0;
+  if (::fcntl(fd, F_SETLK, &fl) != 0) {
+    ::close(fd);
+    return false;
+  }
+  g_locks.emplace(path, fd);
+  return true;
 }
 
 // ----- Clipboard --------------------------------------------------------

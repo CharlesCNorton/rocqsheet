@@ -253,7 +253,7 @@ Definition build_save_string (ls : loop_state) : PrimString.string :=
 
 Definition do_save (ls : loop_state) : itree imguiE loop_state :=
   let _ := tt in
-  _ <- file_write save_path (build_save_string ls) ;;
+  _ <- file_save_atomic save_path (build_save_string ls) ;;
   Ret ls.
 
 Definition do_save_as (ls : loop_state) : itree imguiE loop_state :=
@@ -261,7 +261,7 @@ Definition do_save_as (ls : loop_state) : itree imguiE loop_state :=
     if all_whitespace (ls_fbar_text ls)
     then save_path
     else ls_fbar_text ls in
-  _ <- file_write path (build_save_string ls) ;;
+  _ <- file_save_atomic path (build_save_string ls) ;;
   Ret ls.
 
 (* Find/Replace driven by the formula bar.  Expects [ls_fbar_text] of

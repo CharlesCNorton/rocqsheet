@@ -284,6 +284,18 @@ int main(int argc, char** argv) {
     return run_headless(load_path, eval_ref, print_csv_flag, exec_macro);
   }
 
+  // Refuse to start two GUI instances against the same save file:
+  // the second process bails out with a clear message instead of
+  // racing on save and corrupting the data.  Headless mode skips
+  // this so CI runs can read fixtures concurrently.
+  const char* lock_path = load_path.empty() ? "rocqsheet.txt" : load_path.c_str();
+  if (!imgui_helpers::file_lock(lock_path)) {
+    std::fprintf(stderr,
+        "rocqsheet: another instance is editing %s.  "
+        "Close it before launching a new GUI.\n", lock_path);
+    return 4;
+  }
+
   glfwSetErrorCallback(glfw_error);
   if (!glfwInit()) return 1;
 
