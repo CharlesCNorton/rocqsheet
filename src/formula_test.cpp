@@ -120,6 +120,15 @@ int main() {
   want_fail("if-bare",     "IF");
   want_fail("eq-trailing", "A1=");
 
+  // Item 27: variance / standard deviation.
+  want_ok("var",       "VAR(A1:A8)");
+  want_ok("varp",      "VARP(A1:A8)");
+  want_ok("stdev",     "STDEV(A1:A8)");
+  want_ok("stdevp",    "STDEVP(A1:A8)");
+  want_ok("var-lower", "var(A1:A8)");
+  want_fail("var-bare",   "VAR");
+  want_fail("var-noargs", "VAR()");
+
   // Item 25: IF-aggregates.
   want_ok("sumif",          "SUMIF(A1:A5,>4,C1)");
   want_ok("countif",        "COUNTIF(A1:A5,=3)");

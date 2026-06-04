@@ -58,6 +58,12 @@ Fixpoint shift_refs (dc dr : int) (e : Expr) : Expr :=
   | EAvgIf tl br op lit sumtl =>
     EAvgIf (shift_ref dc dr tl) (shift_ref dc dr br) op lit
            (shift_ref dc dr sumtl)
+  | EVarSamp tl br => EVarSamp (shift_ref dc dr tl) (shift_ref dc dr br)
+  | EVarPop tl br => EVarPop (shift_ref dc dr tl) (shift_ref dc dr br)
+  | EStdevSamp tl br =>
+    EStdevSamp (shift_ref dc dr tl) (shift_ref dc dr br)
+  | EStdevPop tl br =>
+    EStdevPop (shift_ref dc dr tl) (shift_ref dc dr br)
   end.
 
 Theorem shift_ref_zero : forall r, shift_ref 0 0 r = r.

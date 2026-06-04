@@ -100,7 +100,12 @@ Inductive token : Type :=
   (* Item 25: IF-aggregates. *)
   | TSumIf
   | TCountIf
-  | TAvgIf.
+  | TAvgIf
+  (* Item 27: variance / standard deviation. *)
+  | TVar
+  | TVarP
+  | TStdev
+  | TStdevP.
 
 (* INT64_MAX / 10 = 922337203685477580; one extra digit must not
    exceed (INT64_MAX mod 10) = 7.  The negated form accepts one extra
@@ -397,6 +402,30 @@ Fixpoint tokenize_aux
         then
           (* "SUMIF(" *)
           tokenize_aux fuel' s len i6 (TSumIf :: acc)
+        else if PrimInt63.eqb c0 83 && PrimInt63.eqb c1u 84 &&
+                PrimInt63.eqb c2u 68 && PrimInt63.eqb c3u 69 &&
+                PrimInt63.eqb c4u 86 && PrimInt63.eqb c5u 80 &&
+                six_letter_kw_lp
+        then
+          (* "STDEVP(" *)
+          tokenize_aux fuel' s len i7 (TStdevP :: acc)
+        else if PrimInt63.eqb c0 83 && PrimInt63.eqb c1u 84 &&
+                PrimInt63.eqb c2u 68 && PrimInt63.eqb c3u 69 &&
+                PrimInt63.eqb c4u 86 && five_letter_kw_lp
+        then
+          (* "STDEV(" *)
+          tokenize_aux fuel' s len i6 (TStdev :: acc)
+        else if PrimInt63.eqb c0 86 && PrimInt63.eqb c1u 65 &&
+                PrimInt63.eqb c2u 82 && PrimInt63.eqb c3u 80 &&
+                four_letter_kw_lp
+        then
+          (* "VARP(" *)
+          tokenize_aux fuel' s len i5 (TVarP :: acc)
+        else if PrimInt63.eqb c0 86 && PrimInt63.eqb c1u 65 &&
+                PrimInt63.eqb c2u 82 && three_letter_kw_lp
+        then
+          (* "VAR(" *)
+          tokenize_aux fuel' s len i4 (TVar :: acc)
         else if PrimInt63.eqb c0 67 && PrimInt63.eqb c1u 79 &&
                 PrimInt63.eqb c2u 85 && PrimInt63.eqb c3u 78 &&
                 PrimInt63.eqb c4u 84 && PrimInt63.eqb c5u 65 &&
@@ -763,6 +792,15 @@ with parse_factor (fuel : nat) (toks : list token)
     | TCounta :: TRef r1 :: TColon :: TRef r2 :: TRParen :: rest' =>
       (* Item 79: COUNTA counts non-empty cells. *)
       Some (ECountA r1 r2, rest')
+    (* Item 27: variance / standard deviation. *)
+    | TVar :: TRef r1 :: TColon :: TRef r2 :: TRParen :: rest' =>
+      Some (EVarSamp r1 r2, rest')
+    | TVarP :: TRef r1 :: TColon :: TRef r2 :: TRParen :: rest' =>
+      Some (EVarPop r1 r2, rest')
+    | TStdev :: TRef r1 :: TColon :: TRef r2 :: TRParen :: rest' =>
+      Some (EStdevSamp r1 r2, rest')
+    | TStdevP :: TRef r1 :: TColon :: TRef r2 :: TRParen :: rest' =>
+      Some (EStdevPop r1 r2, rest')
     | TIfs :: rest =>
       (* IFS(c1, v1, c2, v2, ..., default).  Parsed as a flat
          comma-separated list with the final entry treated as the
@@ -829,7 +867,8 @@ Fixpoint expr_depth (e : Expr) : nat :=
   | EInt _ | ERef _ | EFloat _ | EStr _ | EBool _ => 1
   | ESum _ _ | EAvg _ _ | ECount _ _ | EMin _ _ | EMax _ _
   | ECountN _ _ | ECountA _ _
-  | ESumIf _ _ _ _ _ | ECountIf _ _ _ _ | EAvgIf _ _ _ _ _ => 1
+  | ESumIf _ _ _ _ _ | ECountIf _ _ _ _ | EAvgIf _ _ _ _ _
+  | EVarSamp _ _ | EVarPop _ _ | EStdevSamp _ _ | EStdevPop _ _ => 1
   | ENot a | ELen a | EBNot a => S (expr_depth a)
   | EAdd a b | ESub a b | EMul a b | EDiv a b
   | EEq a b | ELt a b | EGt a b

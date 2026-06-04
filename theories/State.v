@@ -315,6 +315,26 @@ Fixpoint show_expr (e : Expr) : PrimString.string :=
                 (PrimString.cat (string_of_z lit)
                   (PrimString.cat ","
                     (PrimString.cat (cell_label sumtl) ")"))))))))
+  | EVarSamp tl br =>
+    PrimString.cat "VAR("
+      (PrimString.cat (cell_label tl)
+        (PrimString.cat ":"
+          (PrimString.cat (cell_label br) ")")))
+  | EVarPop tl br =>
+    PrimString.cat "VARP("
+      (PrimString.cat (cell_label tl)
+        (PrimString.cat ":"
+          (PrimString.cat (cell_label br) ")")))
+  | EStdevSamp tl br =>
+    PrimString.cat "STDEV("
+      (PrimString.cat (cell_label tl)
+        (PrimString.cat ":"
+          (PrimString.cat (cell_label br) ")")))
+  | EStdevPop tl br =>
+    PrimString.cat "STDEVP("
+      (PrimString.cat (cell_label tl)
+        (PrimString.cat ":"
+          (PrimString.cat (cell_label br) ")")))
   | EIfErr a fb =>
     PrimString.cat "IFERROR("
       (PrimString.cat (show_expr a)

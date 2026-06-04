@@ -50,6 +50,10 @@ Fixpoint replace_int_in_expr (from to : Z) (e : Expr) : Expr :=
   | ESumIf tl br op lit sumtl => ESumIf tl br op lit sumtl
   | ECountIf tl br op lit => ECountIf tl br op lit
   | EAvgIf tl br op lit sumtl => EAvgIf tl br op lit sumtl
+  | EVarSamp tl br => EVarSamp tl br
+  | EVarPop tl br => EVarPop tl br
+  | EStdevSamp tl br => EStdevSamp tl br
+  | EStdevPop tl br => EStdevPop tl br
   end.
 
 Theorem replace_idempotent_when_equal :

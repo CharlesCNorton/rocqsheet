@@ -403,6 +403,34 @@ void test_if_aggregates() {
         is_err(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{4, 4})));
 }
 
+// Item 27: VAR / VARP / STDEV / STDEVP over integer cells.  The
+// classic dataset 2,4,4,4,5,5,7,9: n=8, mean 5, population variance
+// 4, population stdev 2.  Sample variance 32/7 truncates to 4.
+void test_var_stdev() {
+  auto s = S::new_sheet;
+  const int64_t xs[8] = {2, 4, 4, 4, 5, 5, 7, 9};
+  for (int r = 0; r < 8; ++r) s = lit(s, 0, r, xs[r]);
+  // A string and an empty cell inside the rectangle are skipped.
+  s = put(s, 1, 0, S::Cell::cstr("note"));
+  S::CellRef tl{0, 0}, br{1, 7};
+  s = form(s, 3, 0, S::Expr::evarpop(tl, br));
+  check_int("VARP", as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{3, 0})), 4);
+  s = form(s, 3, 1, S::Expr::estdevpop(tl, br));
+  check_int("STDEVP", as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{3, 1})), 2);
+  s = form(s, 3, 2, S::Expr::evarsamp(tl, br));
+  check_int("VAR", as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{3, 2})), 4);
+  s = form(s, 3, 3, S::Expr::estdevsamp(tl, br));
+  check_int("STDEV", as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{3, 3})), 2);
+  // Sample variance over a single cell divides by zero -> EErr.
+  s = form(s, 3, 4, S::Expr::evarsamp(S::CellRef{0, 0}, S::CellRef{0, 0}));
+  check("VAR single-cell → EErr",
+        is_err(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{3, 4})));
+  // Population variance over an empty range -> EErr.
+  s = form(s, 3, 5, S::Expr::evarpop(S::CellRef{0, 19}, S::CellRef{4, 24}));
+  check("VARP empty-range → EErr",
+        is_err(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{3, 5})));
+}
+
 void test_boolean_ops() {
   auto s = put(S::new_sheet, 0, 0, S::Cell::cbool(true));
   s = put(s, 1, 0, S::Cell::cbool(false));
@@ -584,6 +612,7 @@ int main() {
   test_aggregation_with_holes();
   test_count_counta();
   test_if_aggregates();
+  test_var_stdev();
   test_boolean_ops();
   test_string_ops();
   test_correspondence_corpus();

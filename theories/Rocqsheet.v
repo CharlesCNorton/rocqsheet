@@ -84,6 +84,47 @@ Definition show_cmp (op : CmpOp) : PrimString.string :=
   | CmpGt => ">"%pstring
   end.
 
+(* Item 27: integer square root by fueled binary search, for STDEV.
+   The search space is [0, 3037000499] (floor (sqrt INT64_MAX)), so
+   64 halvings always converge and mid * mid never overflows the
+   extracted int64. *)
+Definition ISQRT_HI : Z := 3037000499%Z.
+
+Fixpoint isqrt_aux (fuel : nat) (lo hi n : Z) : Z :=
+  match fuel with
+  | O => lo
+  | S fuel' =>
+    if Z.leb hi lo then lo
+    else
+      let mid := Z.div (Z.add lo (Z.add hi 1%Z)) 2%Z in
+      if Z.leb (Z.mul mid mid) n
+      then isqrt_aux fuel' mid hi n
+      else isqrt_aux fuel' lo (Z.sub mid 1%Z) n
+  end.
+
+Definition isqrt (n : Z) : Z :=
+  if Z.leb n 0%Z then 0%Z
+  else isqrt_aux 64%nat 0%Z ISQRT_HI n.
+
+Theorem isqrt_zero : isqrt 0%Z = 0%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem isqrt_neg : isqrt (-9)%Z = 0%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem isqrt_perfect_square : isqrt 16%Z = 4%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem isqrt_floors : isqrt 15%Z = 3%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem isqrt_one : isqrt 1%Z = 1%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem isqrt_int64_max :
+  isqrt 9223372036854775807%Z = 3037000499%Z.
+Proof. vm_compute. reflexivity. Qed.
+
 Inductive Expr : Type :=
   | EInt   : Z -> Expr
   | ERef   : CellRef -> Expr
@@ -131,7 +172,14 @@ Inductive Expr : Type :=
      fixed offset from the criteria cells. *)
   | ESumIf   : CellRef -> CellRef -> CmpOp -> Z -> CellRef -> Expr
   | ECountIf : CellRef -> CellRef -> CmpOp -> Z -> Expr
-  | EAvgIf   : CellRef -> CellRef -> CmpOp -> Z -> CellRef -> Expr.
+  | EAvgIf   : CellRef -> CellRef -> CmpOp -> Z -> CellRef -> Expr
+  (* Item 27: variance and standard deviation (sample and population)
+     over the integer-valued cells of a rectangle; empty and
+     non-integer cells are skipped, matching Excel's VAR family. *)
+  | EVarSamp   : CellRef -> CellRef -> Expr
+  | EVarPop    : CellRef -> CellRef -> Expr
+  | EStdevSamp : CellRef -> CellRef -> Expr
+  | EStdevPop  : CellRef -> CellRef -> Expr.
 
 Inductive Cell : Type :=
   | CEmpty : Cell
@@ -358,7 +406,13 @@ Inductive WalkKind : Type :=
   | WCountN : WalkKind
   | WCountA : WalkKind
   | WAggSum : WalkKind
-  | WAggCnt : WalkKind.
+  | WAggCnt : WalkKind
+  (* Item 27: the three statistical accumulators.  All skip empty
+     cells and cells whose evaluation is not an integer, so n, Σx,
+     and Σx² range over exactly the same cell population. *)
+  | WCountV : WalkKind
+  | WSumN   : WalkKind
+  | WSumSqN : WalkKind.
 
 (* Only SUMIF's sum mode reads a second, offset cell. *)
 Definition wants_sum (k : WalkKind) : bool :=
@@ -411,6 +465,71 @@ Definition walk_step (k : WalkKind) (op : CmpOp) (lit : Z)
     | None => EFuel
     | Some d => EVal (Z.add acc d)
     end
+  | WCountV =>
+    match cell with
+    | CEmpty => EVal acc
+    | _ =>
+      match res with
+      | EVal _ => EVal (Z.add acc 1%Z)
+      | EFuel => EFuel
+      | EFVal _ | EValS _ | EValB _ | EErr => EVal acc
+      end
+    end
+  | WSumN =>
+    match cell with
+    | CEmpty => EVal acc
+    | _ =>
+      match res with
+      | EVal v => EVal (Z.add acc v)
+      | EFuel => EFuel
+      | EFVal _ | EValS _ | EValB _ | EErr => EVal acc
+      end
+    end
+  | WSumSqN =>
+    match cell with
+    | CEmpty => EVal acc
+    | _ =>
+      match res with
+      | EVal v => EVal (Z.add acc (Z.mul v v))
+      | EFuel => EFuel
+      | EFVal _ | EValS _ | EValB _ | EErr => EVal acc
+      end
+    end
+  end.
+
+(* Item 27: combine the three statistical walks.  With n the count,
+   s the sum, and q the sum of squares:
+     population variance = (n*q - s*s) / n^2
+     sample variance     = (n*q - s*s) / (n*(n-1))
+   A non-positive denominator (empty population; single-cell sample)
+   is EErr, matching Excel's #DIV/0!. *)
+Definition var_combine (sample : bool) (cnt sm sq : EvalResult)
+    : EvalResult :=
+  match cnt with
+  | EFuel => EFuel
+  | EVal n =>
+    match sm with
+    | EFuel => EFuel
+    | EVal s =>
+      match sq with
+      | EFuel => EFuel
+      | EVal q =>
+        let denom :=
+          if sample then Z.mul n (Z.sub n 1%Z) else Z.mul n n in
+        if Z.leb denom 0%Z then EErr
+        else EVal (Z.div (Z.sub (Z.mul n q) (Z.mul s s)) denom)
+      | EFVal _ | EValS _ | EValB _ | EErr => EErr
+      end
+    | EFVal _ | EValS _ | EValB _ | EErr => EErr
+    end
+  | EFVal _ | EValS _ | EValB _ | EErr => EErr
+  end.
+
+Definition stdev_combine (sample : bool) (cnt sm sq : EvalResult)
+    : EvalResult :=
+  match var_combine sample cnt sm sq with
+  | EVal v => EVal (isqrt v)
+  | r => r
   end.
 
 Fixpoint eval_expr (fuel : nat) (visited : VisitedSet) (s : Sheet)
@@ -552,6 +671,42 @@ Fixpoint eval_expr (fuel : nat) (visited : VisitedSet) (s : Sheet)
       avgif_combine
         (walk_rows fuel' WAggCnt op lit 0 0 visited s lc hc lr hr 0%Z)
         (walk_rows fuel' WAggSum op lit dc dr visited s lc hc lr hr 0%Z)
+    | EVarSamp tl br =>
+      let lc := cell_col_of tl in
+      let hc := cell_col_of br in
+      let lr := cell_row_of tl in
+      let hr := cell_row_of br in
+      var_combine true
+        (walk_rows fuel' WCountV CmpEq 0%Z 0 0 visited s lc hc lr hr 0%Z)
+        (walk_rows fuel' WSumN CmpEq 0%Z 0 0 visited s lc hc lr hr 0%Z)
+        (walk_rows fuel' WSumSqN CmpEq 0%Z 0 0 visited s lc hc lr hr 0%Z)
+    | EVarPop tl br =>
+      let lc := cell_col_of tl in
+      let hc := cell_col_of br in
+      let lr := cell_row_of tl in
+      let hr := cell_row_of br in
+      var_combine false
+        (walk_rows fuel' WCountV CmpEq 0%Z 0 0 visited s lc hc lr hr 0%Z)
+        (walk_rows fuel' WSumN CmpEq 0%Z 0 0 visited s lc hc lr hr 0%Z)
+        (walk_rows fuel' WSumSqN CmpEq 0%Z 0 0 visited s lc hc lr hr 0%Z)
+    | EStdevSamp tl br =>
+      let lc := cell_col_of tl in
+      let hc := cell_col_of br in
+      let lr := cell_row_of tl in
+      let hr := cell_row_of br in
+      stdev_combine true
+        (walk_rows fuel' WCountV CmpEq 0%Z 0 0 visited s lc hc lr hr 0%Z)
+        (walk_rows fuel' WSumN CmpEq 0%Z 0 0 visited s lc hc lr hr 0%Z)
+        (walk_rows fuel' WSumSqN CmpEq 0%Z 0 0 visited s lc hc lr hr 0%Z)
+    | EStdevPop tl br =>
+      let lc := cell_col_of tl in
+      let hc := cell_col_of br in
+      let lr := cell_row_of tl in
+      let hr := cell_row_of br in
+      stdev_combine false
+        (walk_rows fuel' WCountV CmpEq 0%Z 0 0 visited s lc hc lr hr 0%Z)
+        (walk_rows fuel' WSumN CmpEq 0%Z 0 0 visited s lc hc lr hr 0%Z)
+        (walk_rows fuel' WSumSqN CmpEq 0%Z 0 0 visited s lc hc lr hr 0%Z)
     | EAvg tl br =>
       let lc := cell_col_of tl in
       let hc := cell_col_of br in
@@ -1259,6 +1414,72 @@ Proof.
           rewrite (IHwr _ _ _ _ _ _ _ _ _ _ _ _ _ Hle') by congruence;
           rewrite E2;
           reflexivity.
+      * (* EVarSamp *)
+        destruct (walk_rows fuel WCountV _ _ _ _ _ _ _ _ _ _ _) eqn:E1;
+          simpl in Hnf; try congruence;
+          rewrite (IHwr _ _ _ _ _ _ _ _ _ _ _ _ _ Hle') by congruence;
+          rewrite E1;
+          try reflexivity.
+        destruct (walk_rows fuel WSumN _ _ _ _ _ _ _ _ _ _ _) eqn:E2;
+          simpl in Hnf; try congruence;
+          rewrite (IHwr _ _ _ _ _ _ _ _ _ _ _ _ _ Hle') by congruence;
+          rewrite E2;
+          try reflexivity.
+        destruct (walk_rows fuel WSumSqN _ _ _ _ _ _ _ _ _ _ _) eqn:E3;
+          simpl in Hnf; try congruence;
+          rewrite (IHwr _ _ _ _ _ _ _ _ _ _ _ _ _ Hle') by congruence;
+          rewrite E3;
+          reflexivity.
+      * (* EVarPop *)
+        destruct (walk_rows fuel WCountV _ _ _ _ _ _ _ _ _ _ _) eqn:E1;
+          simpl in Hnf; try congruence;
+          rewrite (IHwr _ _ _ _ _ _ _ _ _ _ _ _ _ Hle') by congruence;
+          rewrite E1;
+          try reflexivity.
+        destruct (walk_rows fuel WSumN _ _ _ _ _ _ _ _ _ _ _) eqn:E2;
+          simpl in Hnf; try congruence;
+          rewrite (IHwr _ _ _ _ _ _ _ _ _ _ _ _ _ Hle') by congruence;
+          rewrite E2;
+          try reflexivity.
+        destruct (walk_rows fuel WSumSqN _ _ _ _ _ _ _ _ _ _ _) eqn:E3;
+          simpl in Hnf; try congruence;
+          rewrite (IHwr _ _ _ _ _ _ _ _ _ _ _ _ _ Hle') by congruence;
+          rewrite E3;
+          reflexivity.
+      * (* EStdevSamp *)
+        unfold stdev_combine in Hnf.
+        destruct (walk_rows fuel WCountV _ _ _ _ _ _ _ _ _ _ _) eqn:E1;
+          simpl in Hnf; try congruence;
+          rewrite (IHwr _ _ _ _ _ _ _ _ _ _ _ _ _ Hle') by congruence;
+          rewrite E1;
+          try reflexivity.
+        destruct (walk_rows fuel WSumN _ _ _ _ _ _ _ _ _ _ _) eqn:E2;
+          simpl in Hnf; try congruence;
+          rewrite (IHwr _ _ _ _ _ _ _ _ _ _ _ _ _ Hle') by congruence;
+          rewrite E2;
+          try reflexivity.
+        destruct (walk_rows fuel WSumSqN _ _ _ _ _ _ _ _ _ _ _) eqn:E3;
+          simpl in Hnf; try congruence;
+          rewrite (IHwr _ _ _ _ _ _ _ _ _ _ _ _ _ Hle') by congruence;
+          rewrite E3;
+          reflexivity.
+      * (* EStdevPop *)
+        unfold stdev_combine in Hnf.
+        destruct (walk_rows fuel WCountV _ _ _ _ _ _ _ _ _ _ _) eqn:E1;
+          simpl in Hnf; try congruence;
+          rewrite (IHwr _ _ _ _ _ _ _ _ _ _ _ _ _ Hle') by congruence;
+          rewrite E1;
+          try reflexivity.
+        destruct (walk_rows fuel WSumN _ _ _ _ _ _ _ _ _ _ _) eqn:E2;
+          simpl in Hnf; try congruence;
+          rewrite (IHwr _ _ _ _ _ _ _ _ _ _ _ _ _ Hle') by congruence;
+          rewrite E2;
+          try reflexivity.
+        destruct (walk_rows fuel WSumSqN _ _ _ _ _ _ _ _ _ _ _) eqn:E3;
+          simpl in Hnf; try congruence;
+          rewrite (IHwr _ _ _ _ _ _ _ _ _ _ _ _ _ Hle') by congruence;
+          rewrite E3;
+          reflexivity.
     + (* eval_at_ref *)
       intros r fuel' visited s Hle Hnf.
       destruct fuel' as [|fuel']; [lia|].
@@ -1358,6 +1579,31 @@ Proof.
           simpl;
           try (apply IHwc; assumption);
           destruct (cmp_holds _ _ _);
+          simpl; apply IHwc; assumption.
+      * (* WCountV: the cell is consulted only to skip empties, so
+           the eval_at_ref rewrite is attempted but optional. *)
+        destruct (get_cell s (mkRef col row)) eqn:Hc;
+          destruct (eval_at_ref fuel visited s (mkRef col row)) eqn:E1;
+          simpl in Hnf; try congruence;
+          try (rewrite (IHr (mkRef col row) fuel' visited s Hle')
+                 by congruence;
+               rewrite E1);
+          simpl; apply IHwc; assumption.
+      * (* WSumN *)
+        destruct (get_cell s (mkRef col row)) eqn:Hc;
+          destruct (eval_at_ref fuel visited s (mkRef col row)) eqn:E1;
+          simpl in Hnf; try congruence;
+          try (rewrite (IHr (mkRef col row) fuel' visited s Hle')
+                 by congruence;
+               rewrite E1);
+          simpl; apply IHwc; assumption.
+      * (* WSumSqN *)
+        destruct (get_cell s (mkRef col row)) eqn:Hc;
+          destruct (eval_at_ref fuel visited s (mkRef col row)) eqn:E1;
+          simpl in Hnf; try congruence;
+          try (rewrite (IHr (mkRef col row) fuel' visited s Hle')
+                 by congruence;
+               rewrite E1);
           simpl; apply IHwc; assumption.
     + (* walk_rows *)
       intros k op lit dc dr lc hc row hr acc fuel' visited s Hle Hnf.
