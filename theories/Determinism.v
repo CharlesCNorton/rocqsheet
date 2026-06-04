@@ -58,7 +58,11 @@ Fixpoint float_free (e : Expr) : bool :=
     andb (andb (float_free a) (float_free b))
          (andb (float_free c) (float_free d))
   | EMedian _ _ | EModeV _ _ => true
-  | ERank x _ _ | EPercentile x _ _ | ENpvZ x _ _ => float_free x
+  | ERank x _ _ | EPercentile x _ _ | ENpvZ x _ _
+  | EMatchV x _ _ => float_free x
+  | EVLookup x _ _ i | EHLookup x _ _ i =>
+    andb (float_free x) (float_free i)
+  | EIndex _ _ a b => andb (float_free a) (float_free b)
   | ESum _ _ | EAvg _ _ | ECount _ _
   | EMin _ _ | EMax _ _
   | ECountN _ _ | ECountA _ _

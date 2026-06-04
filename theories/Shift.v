@@ -80,6 +80,18 @@ Fixpoint shift_refs (dc dr : int) (e : Expr) : Expr :=
                 (shift_ref dc dr br)
   | ENpvZ x tl br =>
     ENpvZ (shift_refs dc dr x) (shift_ref dc dr tl) (shift_ref dc dr br)
+  | EVLookup x tl br i =>
+    EVLookup (shift_refs dc dr x) (shift_ref dc dr tl)
+             (shift_ref dc dr br) (shift_refs dc dr i)
+  | EHLookup x tl br i =>
+    EHLookup (shift_refs dc dr x) (shift_ref dc dr tl)
+             (shift_ref dc dr br) (shift_refs dc dr i)
+  | EMatchV x tl br =>
+    EMatchV (shift_refs dc dr x) (shift_ref dc dr tl)
+            (shift_ref dc dr br)
+  | EIndex tl br a b =>
+    EIndex (shift_ref dc dr tl) (shift_ref dc dr br)
+           (shift_refs dc dr a) (shift_refs dc dr b)
   end.
 
 Theorem shift_ref_zero : forall r, shift_ref 0 0 r = r.

@@ -530,6 +530,56 @@ void test_order_stats_npv() {
         is_err(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{4, 1})));
 }
 
+// Item 21: VLOOKUP / HLOOKUP / MATCH / INDEX (exact match).
+void test_lookups() {
+  // Key column A: 10, 20, 30; value column B: 100, 200, 300; C: text.
+  auto s = S::new_sheet;
+  for (int r = 0; r < 3; ++r) {
+    s = lit(s, 0, r, 10 * (r + 1));
+    s = lit(s, 1, r, 100 * (r + 1));
+  }
+  s = put(s, 2, 1, S::Cell::cstr("twenty"));
+  S::CellRef tl{0, 0}, br{2, 2};
+  s = form(s, 4, 0, S::Expr::evlookup(S::Expr::eint(20), tl, br,
+                                      S::Expr::eint(2)));
+  check_int("VLOOKUP hit",
+            as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{4, 0})), 200);
+  s = form(s, 4, 1, S::Expr::evlookup(S::Expr::eint(99), tl, br,
+                                      S::Expr::eint(2)));
+  check("VLOOKUP miss → EErr",
+        is_err(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{4, 1})));
+  s = form(s, 4, 2, S::Expr::evlookup(S::Expr::eint(20), tl, br,
+                                      S::Expr::eint(9)));
+  check("VLOOKUP col OOB → EErr",
+        is_err(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{4, 2})));
+  // VLOOKUP returning a string cell passes the type through.
+  s = form(s, 4, 3, S::Expr::evlookup(S::Expr::eint(20), tl, br,
+                                      S::Expr::eint(3)));
+  {
+    auto v = S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{4, 3});
+    check("VLOOKUP string result",
+          std::holds_alternative<S::EvalResult::EValS>(v.v()) &&
+              std::get<S::EvalResult::EValS>(v.v()).d_a0 == "twenty");
+  }
+  s = form(s, 4, 4, S::Expr::ematchv(S::Expr::eint(30), tl, br));
+  check_int("MATCH",
+            as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{4, 4})), 3);
+  s = form(s, 4, 5, S::Expr::eindex(tl, br, S::Expr::eint(2),
+                                    S::Expr::eint(2)));
+  check_int("INDEX",
+            as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{4, 5})), 200);
+  // HLOOKUP over the transposed layout: keys in row 5.
+  for (int c = 0; c < 3; ++c) {
+    s = lit(s, c, 5, 10 * (c + 1));
+    s = lit(s, c, 6, 1000 * (c + 1));
+  }
+  s = form(s, 4, 6, S::Expr::ehlookup(S::Expr::eint(30),
+                                      S::CellRef{0, 5}, S::CellRef{2, 6},
+                                      S::Expr::eint(2)));
+  check_int("HLOOKUP",
+            as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{4, 6})), 3000);
+}
+
 void test_boolean_ops() {
   auto s = put(S::new_sheet, 0, 0, S::Cell::cbool(true));
   s = put(s, 1, 0, S::Cell::cbool(false));
@@ -715,6 +765,7 @@ int main() {
   test_csv_import();
   test_string_funcs();
   test_order_stats_npv();
+  test_lookups();
   test_boolean_ops();
   test_string_ops();
   test_correspondence_corpus();

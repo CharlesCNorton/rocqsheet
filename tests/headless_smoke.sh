@@ -77,6 +77,10 @@ assert_eval B13 ho
 assert_eval C13 100
 assert_eval D13 400
 
+# Item 21: lookups (A1..D1 all evaluate to 100).
+assert_eval E13 100
+assert_eval F13 1
+
 # --print-csv produces non-empty output.
 csv_lines=$("$BIN" --headless --load "$FIX" --print-csv | wc -l)
 if [ "$csv_lines" -lt 1 ]; then

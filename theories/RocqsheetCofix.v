@@ -172,6 +172,11 @@ Definition trans (st : State) : State + option Z :=
   | PCEval _ (ERank _ _ _) => inr None
   | PCEval _ (EPercentile _ _ _) => inr None
   | PCEval _ (ENpvZ _ _ _) => inr None
+  (* Item 21: lookups bail out the same way. *)
+  | PCEval _ (EVLookup _ _ _ _) => inr None
+  | PCEval _ (EHLookup _ _ _ _) => inr None
+  | PCEval _ (EMatchV _ _ _) => inr None
+  | PCEval _ (EIndex _ _ _ _) => inr None
   | PCSumStep visited lc hc col row hr acc =>
       if PrimInt63.ltb hr row then
         inl (mkSt (st_sheet st) (PCApply (Some acc)) (st_stack st))

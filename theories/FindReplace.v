@@ -70,6 +70,16 @@ Fixpoint replace_int_in_expr (from to : Z) (e : Expr) : Expr :=
   | EPercentile x tl br =>
     EPercentile (replace_int_in_expr from to x) tl br
   | ENpvZ x tl br => ENpvZ (replace_int_in_expr from to x) tl br
+  | EVLookup x tl br i =>
+    EVLookup (replace_int_in_expr from to x) tl br
+             (replace_int_in_expr from to i)
+  | EHLookup x tl br i =>
+    EHLookup (replace_int_in_expr from to x) tl br
+             (replace_int_in_expr from to i)
+  | EMatchV x tl br => EMatchV (replace_int_in_expr from to x) tl br
+  | EIndex tl br a b =>
+    EIndex tl br (replace_int_in_expr from to a)
+                 (replace_int_in_expr from to b)
   end.
 
 Theorem replace_idempotent_when_equal :

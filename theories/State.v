@@ -423,6 +423,40 @@ Fixpoint show_expr (e : Expr) : PrimString.string :=
           (PrimString.cat (cell_label tl)
             (PrimString.cat ":"
               (PrimString.cat (cell_label br) ")")))))
+  | EVLookup x tl br i =>
+    PrimString.cat "VLOOKUP("
+      (PrimString.cat (show_expr x)
+        (PrimString.cat ","
+          (PrimString.cat (cell_label tl)
+            (PrimString.cat ":"
+              (PrimString.cat (cell_label br)
+                (PrimString.cat ","
+                  (PrimString.cat (show_expr i) ")")))))))
+  | EHLookup x tl br i =>
+    PrimString.cat "HLOOKUP("
+      (PrimString.cat (show_expr x)
+        (PrimString.cat ","
+          (PrimString.cat (cell_label tl)
+            (PrimString.cat ":"
+              (PrimString.cat (cell_label br)
+                (PrimString.cat ","
+                  (PrimString.cat (show_expr i) ")")))))))
+  | EMatchV x tl br =>
+    PrimString.cat "MATCH("
+      (PrimString.cat (show_expr x)
+        (PrimString.cat ","
+          (PrimString.cat (cell_label tl)
+            (PrimString.cat ":"
+              (PrimString.cat (cell_label br) ")")))))
+  | EIndex tl br a b =>
+    PrimString.cat "INDEX("
+      (PrimString.cat (cell_label tl)
+        (PrimString.cat ":"
+          (PrimString.cat (cell_label br)
+            (PrimString.cat ","
+              (PrimString.cat (show_expr a)
+                (PrimString.cat ","
+                  (PrimString.cat (show_expr b) ")")))))))
   | EBAnd a b => PrimString.cat "BAND("
                   (PrimString.cat (show_expr a)
                     (PrimString.cat ","

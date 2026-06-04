@@ -120,6 +120,16 @@ int main() {
   want_fail("if-bare",     "IF");
   want_fail("eq-trailing", "A1=");
 
+  // Item 21: exact-match lookups.
+  want_ok("vlookup",      "VLOOKUP(20,A1:C3,2)");
+  want_ok("hlookup",      "HLOOKUP(20,A1:C3,2)");
+  want_ok("match",        "MATCH(30,A1:A5)");
+  want_ok("index",        "INDEX(A1:C3,2,2)");
+  want_ok("vlookup-expr", "VLOOKUP(B1+1,A1:C3,2)");
+  want_fail("vlookup-2arg", "VLOOKUP(20,A1:C3)");
+  want_fail("index-1arg",   "INDEX(A1:C3,2)");
+  want_fail("match-norange","MATCH(30)");
+
   // Items 23 / 24: order statistics and NPV.
   want_ok("median",       "MEDIAN(A1:A5)");
   want_ok("mode",         "MODE(A1:A5)");

@@ -118,7 +118,12 @@ Inductive token : Type :=
   | TModeV
   | TRank
   | TPercentile
-  | TNpv.
+  | TNpv
+  (* Item 21: exact-match lookups. *)
+  | TVLookup
+  | THLookup
+  | TMatchV
+  | TIndex.
 
 (* INT64_MAX / 10 = 922337203685477580; one extra digit must not
    exceed (INT64_MAX mod 10) = 7.  The negated form accepts one extra
@@ -499,6 +504,32 @@ Fixpoint tokenize_aux
         then
           (* "NPV(" *)
           tokenize_aux fuel' s len i4 (TNpv :: acc)
+        else if PrimInt63.eqb c0 86 && PrimInt63.eqb c1u 76 &&
+                PrimInt63.eqb c2u 79 && PrimInt63.eqb c3u 79 &&
+                PrimInt63.eqb c4u 75 && PrimInt63.eqb c5u 85 &&
+                PrimInt63.eqb c6u 80 && seven_letter_kw_lp
+        then
+          (* "VLOOKUP(" *)
+          tokenize_aux fuel' s len i8 (TVLookup :: acc)
+        else if PrimInt63.eqb c0 72 && PrimInt63.eqb c1u 76 &&
+                PrimInt63.eqb c2u 79 && PrimInt63.eqb c3u 79 &&
+                PrimInt63.eqb c4u 75 && PrimInt63.eqb c5u 85 &&
+                PrimInt63.eqb c6u 80 && seven_letter_kw_lp
+        then
+          (* "HLOOKUP(" *)
+          tokenize_aux fuel' s len i8 (THLookup :: acc)
+        else if PrimInt63.eqb c0 77 && PrimInt63.eqb c1u 65 &&
+                PrimInt63.eqb c2u 84 && PrimInt63.eqb c3u 67 &&
+                PrimInt63.eqb c4u 72 && five_letter_kw_lp
+        then
+          (* "MATCH(" *)
+          tokenize_aux fuel' s len i6 (TMatchV :: acc)
+        else if PrimInt63.eqb c0 73 && PrimInt63.eqb c1u 78 &&
+                PrimInt63.eqb c2u 68 && PrimInt63.eqb c3u 69 &&
+                PrimInt63.eqb c4u 88 && five_letter_kw_lp
+        then
+          (* "INDEX(" *)
+          tokenize_aux fuel' s len i6 (TIndex :: acc)
         else if PrimInt63.eqb c0 86 && PrimInt63.eqb c1u 65 &&
                 PrimInt63.eqb c2u 82 && three_letter_kw_lp
         then
@@ -913,6 +944,50 @@ with parse_factor (fuel : nat) (toks : list token)
         end
       | _ => None
       end
+    (* Item 21: exact-match lookups. *)
+    | TVLookup :: rest =>
+      (* VLOOKUP(x, range, col) *)
+      match parse_top fuel' rest with
+      | Some (x, TComma :: TRef r1 :: TColon :: TRef r2
+                   :: TComma :: rest1) =>
+        match parse_top fuel' rest1 with
+        | Some (ci, TRParen :: rest2) =>
+          Some (EVLookup x r1 r2 ci, rest2)
+        | _ => None
+        end
+      | _ => None
+      end
+    | THLookup :: rest =>
+      (* HLOOKUP(x, range, row) *)
+      match parse_top fuel' rest with
+      | Some (x, TComma :: TRef r1 :: TColon :: TRef r2
+                   :: TComma :: rest1) =>
+        match parse_top fuel' rest1 with
+        | Some (ri, TRParen :: rest2) =>
+          Some (EHLookup x r1 r2 ri, rest2)
+        | _ => None
+        end
+      | _ => None
+      end
+    | TMatchV :: rest =>
+      (* MATCH(x, range) *)
+      match parse_top fuel' rest with
+      | Some (x, TComma :: TRef r1 :: TColon :: TRef r2
+                   :: TRParen :: rest') =>
+        Some (EMatchV x r1 r2, rest')
+      | _ => None
+      end
+    | TIndex :: TRef r1 :: TColon :: TRef r2 :: TComma :: rest =>
+      (* INDEX(range, row, col) *)
+      match parse_top fuel' rest with
+      | Some (ri, TComma :: rest1) =>
+        match parse_top fuel' rest1 with
+        | Some (ci, TRParen :: rest2) =>
+          Some (EIndex r1 r2 ri ci, rest2)
+        | _ => None
+        end
+      | _ => None
+      end
     (* Items 23 / 24: order statistics and NPV. *)
     | TMedian :: TRef r1 :: TColon :: TRef r2 :: TRParen :: rest' =>
       Some (EMedian r1 r2, rest')
@@ -1018,7 +1093,11 @@ Fixpoint expr_depth (e : Expr) : nat :=
   | ESumIf _ _ _ _ _ | ECountIf _ _ _ _ | EAvgIf _ _ _ _ _
   | EVarSamp _ _ | EVarPop _ _ | EStdevSamp _ _ | EStdevPop _ _
   | EMedian _ _ | EModeV _ _ => 1
-  | ERank x _ _ | EPercentile x _ _ | ENpvZ x _ _ => S (expr_depth x)
+  | ERank x _ _ | EPercentile x _ _ | ENpvZ x _ _
+  | EMatchV x _ _ => S (expr_depth x)
+  | EVLookup x _ _ i | EHLookup x _ _ i =>
+    S (Nat.max (expr_depth x) (expr_depth i))
+  | EIndex _ _ a b => S (Nat.max (expr_depth a) (expr_depth b))
   | ENot a | ELen a | EBNot a
   | EUpper a | ELower a | ETrim a => S (expr_depth a)
   | EAdd a b | ESub a b | EMul a b | EDiv a b

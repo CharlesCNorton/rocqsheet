@@ -33,8 +33,15 @@ Fixpoint expr_references (r : CellRef) (e : Expr) : bool :=
         (orb (expr_references r c) (expr_references r d))
   | EMedian tl br | EModeV tl br =>
     orb (cellref_eqb r tl) (cellref_eqb r br)
-  | ERank x tl br | EPercentile x tl br | ENpvZ x tl br =>
+  | ERank x tl br | EPercentile x tl br | ENpvZ x tl br
+  | EMatchV x tl br =>
     orb (expr_references r x)
+        (orb (cellref_eqb r tl) (cellref_eqb r br))
+  | EVLookup x tl br i | EHLookup x tl br i =>
+    orb (orb (expr_references r x) (expr_references r i))
+        (orb (cellref_eqb r tl) (cellref_eqb r br))
+  | EIndex tl br a b =>
+    orb (orb (expr_references r a) (expr_references r b))
         (orb (cellref_eqb r tl) (cellref_eqb r br))
   | ESum tl br | EAvg tl br | ECount tl br
   | EMin tl br | EMax tl br

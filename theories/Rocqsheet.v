@@ -483,7 +483,17 @@ Inductive Expr : Type :=
   | EPercentile : Expr -> CellRef -> CellRef -> Expr
   (* NPV(d, range): cashflow i divided by d^i (integer divisor
      d >= 1; d = 1 is the undiscounted sum). *)
-  | ENpvZ       : Expr -> CellRef -> CellRef -> Expr.
+  | ENpvZ       : Expr -> CellRef -> CellRef -> Expr
+  (* Item 21: exact-match lookups.  VLOOKUP(x, range, c) scans the
+     range's first column for integer x and returns the cell in the
+     match row at 1-based column c of the range; HLOOKUP mirrors it
+     over the first row; MATCH returns the 1-based position of x down
+     the range's first column; INDEX(range, r, c) reads the cell at
+     the 1-based (row, column) of the range. *)
+  | EVLookup : Expr -> CellRef -> CellRef -> Expr -> Expr
+  | EHLookup : Expr -> CellRef -> CellRef -> Expr -> Expr
+  | EMatchV  : Expr -> CellRef -> CellRef -> Expr
+  | EIndex   : CellRef -> CellRef -> Expr -> Expr -> Expr.
 
 Inductive Cell : Type :=
   | CEmpty : Cell
@@ -1137,6 +1147,88 @@ Fixpoint eval_expr (fuel : nat) (visited : VisitedSet) (s : Sheet)
           end
       | EFVal _ | EValS _ | EValB _ | EErr => EErr
       end
+    (* Item 21: exact-match lookups. *)
+    | EVLookup x tl br cidx =>
+      match eval_expr fuel' visited s x,
+            eval_expr fuel' visited s cidx with
+      | EFuel, _ | _, EFuel => EFuel
+      | EVal xv, EVal ci =>
+        if orb (Z.ltb ci 1%Z)
+               (Z.ltb (Uint63.to_Z (PrimInt63.sub (cell_col_of br)
+                                                  (cell_col_of tl)))
+                      (Z.sub ci 1%Z))
+        then EErr
+        else
+          match lookup_scan fuel' xv 0 1 visited s
+                  (cell_col_of tl) (cell_row_of tl)
+                  (cell_col_of br) (cell_row_of br) 0%Z with
+          | EVal hit =>
+            eval_at_ref fuel' visited s
+              (mkRef (PrimInt63.add (cell_col_of tl)
+                        (Uint63.of_Z (Z.sub ci 1%Z)))
+                     (PrimInt63.add (cell_row_of tl)
+                        (Uint63.of_Z hit)))
+          | r => r
+          end
+      | _, _ => EErr
+      end
+    | EHLookup x tl br ridx =>
+      match eval_expr fuel' visited s x,
+            eval_expr fuel' visited s ridx with
+      | EFuel, _ | _, EFuel => EFuel
+      | EVal xv, EVal ri =>
+        if orb (Z.ltb ri 1%Z)
+               (Z.ltb (Uint63.to_Z (PrimInt63.sub (cell_row_of br)
+                                                  (cell_row_of tl)))
+                      (Z.sub ri 1%Z))
+        then EErr
+        else
+          match lookup_scan fuel' xv 1 0 visited s
+                  (cell_col_of tl) (cell_row_of tl)
+                  (cell_col_of br) (cell_row_of br) 0%Z with
+          | EVal hit =>
+            eval_at_ref fuel' visited s
+              (mkRef (PrimInt63.add (cell_col_of tl)
+                        (Uint63.of_Z hit))
+                     (PrimInt63.add (cell_row_of tl)
+                        (Uint63.of_Z (Z.sub ri 1%Z))))
+          | r => r
+          end
+      | _, _ => EErr
+      end
+    | EMatchV x tl br =>
+      match eval_expr fuel' visited s x with
+      | EFuel => EFuel
+      | EVal xv =>
+        match lookup_scan fuel' xv 0 1 visited s
+                (cell_col_of tl) (cell_row_of tl)
+                (cell_col_of tl) (cell_row_of br) 0%Z with
+        | EVal hit => EVal (Z.add hit 1%Z)
+        | r => r
+        end
+      | EFVal _ | EValS _ | EValB _ | EErr => EErr
+      end
+    | EIndex tl br ridx cidx =>
+      match eval_expr fuel' visited s ridx,
+            eval_expr fuel' visited s cidx with
+      | EFuel, _ | _, EFuel => EFuel
+      | EVal ri, EVal ci =>
+        if orb (orb (Z.ltb ri 1%Z) (Z.ltb ci 1%Z))
+               (orb (Z.ltb (Uint63.to_Z (PrimInt63.sub (cell_row_of br)
+                                                       (cell_row_of tl)))
+                           (Z.sub ri 1%Z))
+                    (Z.ltb (Uint63.to_Z (PrimInt63.sub (cell_col_of br)
+                                                       (cell_col_of tl)))
+                           (Z.sub ci 1%Z)))
+        then EErr
+        else
+          eval_at_ref fuel' visited s
+            (mkRef (PrimInt63.add (cell_col_of tl)
+                      (Uint63.of_Z (Z.sub ci 1%Z)))
+                   (PrimInt63.add (cell_row_of tl)
+                      (Uint63.of_Z (Z.sub ri 1%Z))))
+      | _, _ => EErr
+      end
     | EAvg tl br =>
       let lc := cell_col_of tl in
       let hc := cell_col_of br in
@@ -1361,6 +1453,33 @@ with walk_list_rows (fuel : nat) (visited : VisitedSet) (s : Sheet)
       | None => None
       | Some acc' => walk_list_rows fuel' visited s lc hc
                        (PrimInt63.add row 1) hr acc'
+      end
+  end
+
+(* Item 21: directional exact-match scan.  Steps by (dx, dy) from
+   (col, row) while inside (hc, hr), returning the 0-based step count
+   of the first cell whose integer value equals x; EErr when the scan
+   walks off the rectangle without a hit.  Non-integer cells never
+   match (Excel's exact-mode convention). *)
+with lookup_scan (fuel : nat) (x : Z) (dx dy : int)
+                 (visited : VisitedSet) (s : Sheet)
+                 (col row hc hr : int) (step : Z) : EvalResult :=
+  match fuel with
+  | O => EFuel
+  | S fuel' =>
+    if orb (PrimInt63.ltb hc col) (PrimInt63.ltb hr row) then EErr
+    else
+      match eval_at_ref fuel' visited s (mkRef col row) with
+      | EFuel => EFuel
+      | EVal v =>
+        if Z.eqb v x then EVal step
+        else lookup_scan fuel' x dx dy visited s
+               (PrimInt63.add col dx) (PrimInt63.add row dy) hc hr
+               (Z.add step 1%Z)
+      | EFVal _ | EValS _ | EValB _ | EErr =>
+        lookup_scan fuel' x dx dy visited s
+          (PrimInt63.add col dx) (PrimInt63.add row dy) hc hr
+          (Z.add step 1%Z)
       end
   end.
 
@@ -1736,13 +1855,18 @@ Lemma fuel_monotone_all : forall fuel,
      fuel <= fuel' ->
      walk_list_rows fuel visited s lc hc row hr acc <> None ->
      walk_list_rows fuel' visited s lc hc row hr acc =
-     walk_list_rows fuel visited s lc hc row hr acc).
+     walk_list_rows fuel visited s lc hc row hr acc) /\
+  (forall x dx dy col row hc hr step fuel' visited s,
+     fuel <= fuel' ->
+     lookup_scan fuel x dx dy visited s col row hc hr step <> EFuel ->
+     lookup_scan fuel' x dx dy visited s col row hc hr step =
+     lookup_scan fuel x dx dy visited s col row hc hr step).
 Proof.
   induction fuel as [|fuel IH].
-  - split; [|split; [|split; [|split; [|split]]]];
+  - split; [|split; [|split; [|split; [|split; [|split]]]]];
       intros until s; intros _ Hnf; simpl in *; congruence.
-  - destruct IH as [IHe [IHr [IHwc [IHwr [IHlc IHlr]]]]].
-    split; [|split; [|split; [|split; [|split]]]].
+  - destruct IH as [IHe [IHr [IHwc [IHwr [IHlc [IHlr IHls]]]]]].
+    split; [|split; [|split; [|split; [|split; [|split]]]]].
     + (* eval_expr *)
       intros e fuel' visited s Hle Hnf.
       destruct fuel' as [|fuel']; [lia|].
@@ -2024,6 +2148,69 @@ Proof.
           rewrite (IHlr _ _ _ _ _ fuel' visited s Hle') by congruence;
           rewrite El;
           reflexivity.
+      * (* EVLookup *)
+        destruct (eval_expr fuel visited s e1) eqn:Ex;
+          destruct (eval_expr fuel visited s e2) eqn:Ei;
+          simpl in Hnf; try congruence;
+          rewrite (IHe e1 fuel' visited s Hle') by congruence;
+          rewrite (IHe e2 fuel' visited s Hle') by congruence;
+          rewrite Ex, Ei;
+          try reflexivity.
+        destruct (orb _ _); [reflexivity|].
+        destruct (lookup_scan fuel _ _ _ visited s _ _ _ _ _) eqn:Eh;
+          simpl in Hnf; try congruence;
+          rewrite (IHls _ _ _ _ _ _ _ _ fuel' visited s Hle')
+            by congruence;
+          rewrite Eh;
+          try reflexivity.
+        destruct (eval_at_ref fuel visited s (mkRef _ _)) eqn:Er;
+          try congruence;
+          rewrite (IHr _ fuel' visited s Hle') by congruence;
+          rewrite Er; reflexivity.
+      * (* EHLookup *)
+        destruct (eval_expr fuel visited s e1) eqn:Ex;
+          destruct (eval_expr fuel visited s e2) eqn:Ei;
+          simpl in Hnf; try congruence;
+          rewrite (IHe e1 fuel' visited s Hle') by congruence;
+          rewrite (IHe e2 fuel' visited s Hle') by congruence;
+          rewrite Ex, Ei;
+          try reflexivity.
+        destruct (orb _ _); [reflexivity|].
+        destruct (lookup_scan fuel _ _ _ visited s _ _ _ _ _) eqn:Eh;
+          simpl in Hnf; try congruence;
+          rewrite (IHls _ _ _ _ _ _ _ _ fuel' visited s Hle')
+            by congruence;
+          rewrite Eh;
+          try reflexivity.
+        destruct (eval_at_ref fuel visited s (mkRef _ _)) eqn:Er;
+          try congruence;
+          rewrite (IHr _ fuel' visited s Hle') by congruence;
+          rewrite Er; reflexivity.
+      * (* EMatchV *)
+        destruct (eval_expr fuel visited s e) eqn:Ex;
+          simpl in Hnf; try congruence;
+          rewrite (IHe e fuel' visited s Hle') by congruence;
+          rewrite Ex;
+          try reflexivity.
+        destruct (lookup_scan fuel _ _ _ visited s _ _ _ _ _) eqn:Eh;
+          simpl in Hnf; try congruence;
+          rewrite (IHls _ _ _ _ _ _ _ _ fuel' visited s Hle')
+            by congruence;
+          rewrite Eh;
+          reflexivity.
+      * (* EIndex *)
+        destruct (eval_expr fuel visited s e1) eqn:Ex;
+          destruct (eval_expr fuel visited s e2) eqn:Ei;
+          simpl in Hnf; try congruence;
+          rewrite (IHe e1 fuel' visited s Hle') by congruence;
+          rewrite (IHe e2 fuel' visited s Hle') by congruence;
+          rewrite Ex, Ei;
+          try reflexivity.
+        destruct (orb _ _); [reflexivity|].
+        destruct (eval_at_ref fuel visited s (mkRef _ _)) eqn:Er;
+          try congruence;
+          rewrite (IHr _ fuel' visited s Hle') by congruence;
+          rewrite Er; reflexivity.
     + (* eval_at_ref *)
       intros r fuel' visited s Hle Hnf.
       destruct fuel' as [|fuel']; [lia|].
@@ -2190,6 +2377,21 @@ Proof.
         rewrite Esc;
         try reflexivity.
       apply IHlr; assumption.
+    + (* lookup_scan *)
+      intros x dx dy col row hc hr step fuel' visited s Hle Hnf.
+      destruct fuel' as [|fuel']; [lia|].
+      assert (Hle' : fuel <= fuel') by lia.
+      simpl in Hnf. simpl.
+      destruct (orb _ _); [reflexivity|].
+      destruct (eval_at_ref fuel visited s (mkRef col row)) eqn:E1;
+        simpl in Hnf; try congruence;
+        rewrite (IHr (mkRef col row) fuel' visited s Hle') by congruence;
+        rewrite E1;
+        simpl;
+        try (apply IHls; assumption).
+      (* EVal: the equality test decides hit vs continue. *)
+      destruct (Z.eqb _ _); [reflexivity|].
+      apply IHls; assumption.
 Qed.
 
 Theorem eval_fuel_monotone :
