@@ -191,6 +191,23 @@ Definition render_grid (ls : loop_state) : itree imguiE loop_state :=
   else
     Ret ls.
 
+(* After Enter commits, advance the selection one row down so the
+   user can stream a column of values without reaching for the
+   arrow keys.  Clamped at the last row.  Item 53 (Enter half).
+   Tab-advances are deferred until ImGui's Tab handler is wired to
+   bypass focus cycling. *)
+Definition advance_after_enter (ls : loop_state) : loop_state :=
+  match ls_selected ls with
+  | None => ls
+  | Some r =>
+    let r1 := PrimInt63.add (cell_row_of r) 1 in
+    let new_r :=
+      if PrimInt63.leb (int_of_nat num_rows_nat) r1
+      then PrimInt63.sub (int_of_nat num_rows_nat) 1
+      else r1 in
+    select_cell ls (mkRef (cell_col_of r) new_r)
+  end.
+
 Definition render_formula_bar (ls : loop_state) : itree imguiE loop_state :=
   let label :=
     match ls_selected ls with
@@ -202,7 +219,7 @@ Definition render_formula_bar (ls : loop_state) : itree imguiE loop_state :=
   res <- imgui_input_text "##fbar" (ls_fbar_text ls) ;;
   let '(new_text, enter) := res in
   let ls1 := update_fbar ls new_text in
-  Ret (if enter then do_commit ls1 else ls1).
+  Ret (if enter then advance_after_enter (do_commit ls1) else ls1).
 
 (* ----- PDF emission ---------------------------------------- *)
 
