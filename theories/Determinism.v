@@ -57,6 +57,8 @@ Fixpoint float_free (e : Expr) : bool :=
   | EReplaceS a b c d =>
     andb (andb (float_free a) (float_free b))
          (andb (float_free c) (float_free d))
+  | EMedian _ _ | EModeV _ _ => true
+  | ERank x _ _ | EPercentile x _ _ | ENpvZ x _ _ => float_free x
   | ESum _ _ | EAvg _ _ | ECount _ _
   | EMin _ _ | EMax _ _
   | ECountN _ _ | ECountA _ _

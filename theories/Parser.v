@@ -112,7 +112,13 @@ Inductive token : Type :=
   | TLower
   | TTrim
   | TFind
-  | TReplaceS.
+  | TReplaceS
+  (* Items 23 / 24: order statistics and NPV. *)
+  | TMedian
+  | TModeV
+  | TRank
+  | TPercentile
+  | TNpv.
 
 (* INT64_MAX / 10 = 922337203685477580; one extra digit must not
    exceed (INT64_MAX mod 10) = 7.  The negated form accepts one extra
@@ -459,6 +465,40 @@ Fixpoint tokenize_aux
         then
           (* "FIND(" *)
           tokenize_aux fuel' s len i5 (TFind :: acc)
+        else if PrimInt63.eqb c0 80 && PrimInt63.eqb c1u 69 &&
+                PrimInt63.eqb c2u 82 && PrimInt63.eqb c3u 67 &&
+                PrimInt63.eqb c4u 69 && PrimInt63.eqb c5u 78 &&
+                PrimInt63.eqb c6u 84 && PrimInt63.eqb c7u 73 &&
+                PrimInt63.eqb c8u 76 && PrimInt63.eqb c9u 69 &&
+                lparen i10
+        then
+          (* "PERCENTILE(" *)
+          tokenize_aux fuel' s len (PrimInt63.add i10 1)
+            (TPercentile :: acc)
+        else if PrimInt63.eqb c0 77 && PrimInt63.eqb c1u 69 &&
+                PrimInt63.eqb c2u 68 && PrimInt63.eqb c3u 73 &&
+                PrimInt63.eqb c4u 65 && PrimInt63.eqb c5u 78 &&
+                six_letter_kw_lp
+        then
+          (* "MEDIAN(" *)
+          tokenize_aux fuel' s len i7 (TMedian :: acc)
+        else if PrimInt63.eqb c0 77 && PrimInt63.eqb c1u 79 &&
+                PrimInt63.eqb c2u 68 && PrimInt63.eqb c3u 69 &&
+                four_letter_kw_lp
+        then
+          (* "MODE(" *)
+          tokenize_aux fuel' s len i5 (TModeV :: acc)
+        else if PrimInt63.eqb c0 82 && PrimInt63.eqb c1u 65 &&
+                PrimInt63.eqb c2u 78 && PrimInt63.eqb c3u 75 &&
+                four_letter_kw_lp
+        then
+          (* "RANK(" *)
+          tokenize_aux fuel' s len i5 (TRank :: acc)
+        else if PrimInt63.eqb c0 78 && PrimInt63.eqb c1u 80 &&
+                PrimInt63.eqb c2u 86 && three_letter_kw_lp
+        then
+          (* "NPV(" *)
+          tokenize_aux fuel' s len i4 (TNpv :: acc)
         else if PrimInt63.eqb c0 86 && PrimInt63.eqb c1u 65 &&
                 PrimInt63.eqb c2u 82 && three_letter_kw_lp
         then
@@ -873,6 +913,33 @@ with parse_factor (fuel : nat) (toks : list token)
         end
       | _ => None
       end
+    (* Items 23 / 24: order statistics and NPV. *)
+    | TMedian :: TRef r1 :: TColon :: TRef r2 :: TRParen :: rest' =>
+      Some (EMedian r1 r2, rest')
+    | TModeV :: TRef r1 :: TColon :: TRef r2 :: TRParen :: rest' =>
+      Some (EModeV r1 r2, rest')
+    | TRank :: rest =>
+      (* RANK(x, range) *)
+      match parse_top fuel' rest with
+      | Some (x, TComma :: TRef r1 :: TColon :: TRef r2
+                   :: TRParen :: rest') =>
+        Some (ERank x r1 r2, rest')
+      | _ => None
+      end
+    | TPercentile :: TRef r1 :: TColon :: TRef r2 :: TComma :: rest =>
+      (* PERCENTILE(range, k) *)
+      match parse_top fuel' rest with
+      | Some (k, TRParen :: rest') => Some (EPercentile k r1 r2, rest')
+      | _ => None
+      end
+    | TNpv :: rest =>
+      (* NPV(d, range) *)
+      match parse_top fuel' rest with
+      | Some (d, TComma :: TRef r1 :: TColon :: TRef r2
+                   :: TRParen :: rest') =>
+        Some (ENpvZ d r1 r2, rest')
+      | _ => None
+      end
     (* Item 27: variance / standard deviation. *)
     | TVar :: TRef r1 :: TColon :: TRef r2 :: TRParen :: rest' =>
       Some (EVarSamp r1 r2, rest')
@@ -949,7 +1016,9 @@ Fixpoint expr_depth (e : Expr) : nat :=
   | ESum _ _ | EAvg _ _ | ECount _ _ | EMin _ _ | EMax _ _
   | ECountN _ _ | ECountA _ _
   | ESumIf _ _ _ _ _ | ECountIf _ _ _ _ | EAvgIf _ _ _ _ _
-  | EVarSamp _ _ | EVarPop _ _ | EStdevSamp _ _ | EStdevPop _ _ => 1
+  | EVarSamp _ _ | EVarPop _ _ | EStdevSamp _ _ | EStdevPop _ _
+  | EMedian _ _ | EModeV _ _ => 1
+  | ERank x _ _ | EPercentile x _ _ | ENpvZ x _ _ => S (expr_depth x)
   | ENot a | ELen a | EBNot a
   | EUpper a | ELower a | ETrim a => S (expr_depth a)
   | EAdd a b | ESub a b | EMul a b | EDiv a b

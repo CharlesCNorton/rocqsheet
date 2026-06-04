@@ -7,7 +7,9 @@
 From Stdlib Require Import List BinInt Lia Permutation Sorted.
 Import ListNotations.
 
-Open Scope Z_scope.
+(* Local: a plain Open Scope leaks through Require Import and would
+   repin <= / number literals to Z in every importer. *)
+Local Open Scope Z_scope.
 
 Fixpoint insert_z (n : Z) (xs : list Z) : list Z :=
   match xs with

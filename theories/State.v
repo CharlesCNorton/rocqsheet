@@ -394,6 +394,35 @@ Fixpoint show_expr (e : Expr) : PrimString.string :=
               (PrimString.cat (show_expr c)
                 (PrimString.cat ","
                   (PrimString.cat (show_expr d) ")")))))))
+  | EMedian tl br =>
+    PrimString.cat "MEDIAN("
+      (PrimString.cat (cell_label tl)
+        (PrimString.cat ":" (PrimString.cat (cell_label br) ")")))
+  | EModeV tl br =>
+    PrimString.cat "MODE("
+      (PrimString.cat (cell_label tl)
+        (PrimString.cat ":" (PrimString.cat (cell_label br) ")")))
+  | ERank x tl br =>
+    PrimString.cat "RANK("
+      (PrimString.cat (show_expr x)
+        (PrimString.cat ","
+          (PrimString.cat (cell_label tl)
+            (PrimString.cat ":"
+              (PrimString.cat (cell_label br) ")")))))
+  | EPercentile x tl br =>
+    PrimString.cat "PERCENTILE("
+      (PrimString.cat (cell_label tl)
+        (PrimString.cat ":"
+          (PrimString.cat (cell_label br)
+            (PrimString.cat ","
+              (PrimString.cat (show_expr x) ")")))))
+  | ENpvZ x tl br =>
+    PrimString.cat "NPV("
+      (PrimString.cat (show_expr x)
+        (PrimString.cat ","
+          (PrimString.cat (cell_label tl)
+            (PrimString.cat ":"
+              (PrimString.cat (cell_label br) ")")))))
   | EBAnd a b => PrimString.cat "BAND("
                   (PrimString.cat (show_expr a)
                     (PrimString.cat ","

@@ -120,6 +120,17 @@ int main() {
   want_fail("if-bare",     "IF");
   want_fail("eq-trailing", "A1=");
 
+  // Items 23 / 24: order statistics and NPV.
+  want_ok("median",       "MEDIAN(A1:A5)");
+  want_ok("mode",         "MODE(A1:A5)");
+  want_ok("rank",         "RANK(5,A1:A5)");
+  want_ok("rank-expr",    "RANK(B1+1,A1:A5)");
+  want_ok("percentile",   "PERCENTILE(A1:A5,50)");
+  want_ok("npv",          "NPV(2,A1:A5)");
+  want_fail("median-noargs", "MEDIAN()");
+  want_fail("rank-norange",  "RANK(5)");
+  want_fail("npv-norange",   "NPV(2)");
+
   // Item 22: string operators.
   want_ok("upper",        "UPPER(\"x\")");
   want_ok("lower",        "LOWER(A1)");

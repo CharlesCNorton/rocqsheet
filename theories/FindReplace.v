@@ -64,6 +64,12 @@ Fixpoint replace_int_in_expr (from to : Z) (e : Expr) : Expr :=
               (replace_int_in_expr from to b)
               (replace_int_in_expr from to c)
               (replace_int_in_expr from to d)
+  | EMedian tl br => EMedian tl br
+  | EModeV tl br => EModeV tl br
+  | ERank x tl br => ERank (replace_int_in_expr from to x) tl br
+  | EPercentile x tl br =>
+    EPercentile (replace_int_in_expr from to x) tl br
+  | ENpvZ x tl br => ENpvZ (replace_int_in_expr from to x) tl br
   end.
 
 Theorem replace_idempotent_when_equal :

@@ -73,6 +73,10 @@ assert_eval B12 0
 assert_eval A13 HI
 assert_eval B13 ho
 
+# Items 23 / 24: order statistics and NPV (A1..D1 all evaluate to 100).
+assert_eval C13 100
+assert_eval D13 400
+
 # --print-csv produces non-empty output.
 csv_lines=$("$BIN" --headless --load "$FIX" --print-csv | wc -l)
 if [ "$csv_lines" -lt 1 ]; then

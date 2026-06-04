@@ -52,3 +52,5 @@ N=Refs
 1,11,=STDEV(A1:D1)
 0,12,=UPPER("hi")
 1,12,=LOWER("HO")
+2,12,=MEDIAN(A1:D1)
+3,12,=NPV(1,A1:D1)

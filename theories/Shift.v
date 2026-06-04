@@ -71,6 +71,15 @@ Fixpoint shift_refs (dc dr : int) (e : Expr) : Expr :=
   | EReplaceS a b c d =>
     EReplaceS (shift_refs dc dr a) (shift_refs dc dr b)
               (shift_refs dc dr c) (shift_refs dc dr d)
+  | EMedian tl br => EMedian (shift_ref dc dr tl) (shift_ref dc dr br)
+  | EModeV tl br => EModeV (shift_ref dc dr tl) (shift_ref dc dr br)
+  | ERank x tl br =>
+    ERank (shift_refs dc dr x) (shift_ref dc dr tl) (shift_ref dc dr br)
+  | EPercentile x tl br =>
+    EPercentile (shift_refs dc dr x) (shift_ref dc dr tl)
+                (shift_ref dc dr br)
+  | ENpvZ x tl br =>
+    ENpvZ (shift_refs dc dr x) (shift_ref dc dr tl) (shift_ref dc dr br)
   end.
 
 Theorem shift_ref_zero : forall r, shift_ref 0 0 r = r.

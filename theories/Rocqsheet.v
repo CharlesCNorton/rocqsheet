@@ -40,6 +40,8 @@ Crane Extract Inlined Constant Z.div =>
 Crane Extract Inlined Constant Z.modulo =>
   "((%a1 == 0) ? INT64_C(0) : (((%a0 == INT64_MIN) && (%a1 == -1)) ? INT64_C(0) : ((%a0) % (%a1))))".
 
+From Rocqsheet Require Import InsertionSort.
+
 (* Item 22: single-character string construction (no upstream Crane
    mapping exists for PrimString.make). *)
 Crane Extract Inlined Constant PrimString.make =>
@@ -277,6 +279,137 @@ Theorem str_replace_smoke :
   str_replace "abcdef"%pstring 2%Z 3%Z "XY"%pstring = "aXYef"%pstring.
 Proof. vm_compute. reflexivity. Qed.
 
+(* ----- Items 23 / 24: order statistics and NPV over list Z -------- *)
+(* The range is materialized into a list by the walk_list walkers in
+   the evaluation fixpoint; these combiners are pure list functions
+   (InsertionSort.isort supplies the order). *)
+
+(* Local list plumbing with fresh names: the stdlib's length is
+   shadowed by PrimString.length here, and qualified List.* references
+   make the extractor emit a C++ `List` module that collides with the
+   helper headers' forward declarations. *)
+Fixpoint zlist_len_aux (xs : list Z) (acc : nat) : nat :=
+  match xs with
+  | nil => acc
+  | _ :: t => zlist_len_aux t (S acc)
+  end.
+
+Definition zlist_len (xs : list Z) : nat := zlist_len_aux xs O.
+
+Fixpoint zlist_nth (xs : list Z) (n : nat) : option Z :=
+  match xs, n with
+  | nil, _ => None
+  | x :: _, O => Some x
+  | _ :: t, S n' => zlist_nth t n'
+  end.
+
+Fixpoint zlist_rev_app (xs acc : list Z) : list Z :=
+  match xs with
+  | nil => acc
+  | x :: t => zlist_rev_app t (x :: acc)
+  end.
+
+Definition zlist_rev (xs : list Z) : list Z := zlist_rev_app xs nil.
+
+Fixpoint zlist_count_gt (x : Z) (xs : list Z) : Z :=
+  match xs with
+  | nil => 0%Z
+  | y :: t =>
+    Z.add (if Z.ltb x y then 1%Z else 0%Z) (zlist_count_gt x t)
+  end.
+
+Definition median_z (xs : list Z) : option Z :=
+  let s := isort xs in
+  let n := zlist_len s in
+  if Nat.eqb n 0 then None
+  else if Nat.eqb (Nat.modulo n 2) 1
+  then zlist_nth s (Nat.div n 2)
+  else
+    match zlist_nth s (Nat.sub (Nat.div n 2) 1),
+          zlist_nth s (Nat.div n 2) with
+    | Some a, Some b => Some (Z.div (Z.add a b) 2%Z)
+    | _, _ => None
+    end.
+
+(* Most frequent value of a sorted run; ties resolve to the smaller
+   value (the first maximal run in sorted order). *)
+Fixpoint mode_aux (xs : list Z) (cur : Z) (curn : nat)
+    (best : Z) (bestn : nat) : Z :=
+  match xs with
+  | nil => if Nat.ltb bestn curn then cur else best
+  | x :: t =>
+    if Z.eqb x cur then mode_aux t cur (S curn) best bestn
+    else if Nat.ltb bestn curn then mode_aux t x 1 cur curn
+    else mode_aux t x 1 best bestn
+  end.
+
+Definition mode_z (xs : list Z) : option Z :=
+  match isort xs with
+  | nil => None
+  | h :: t => Some (mode_aux t h 1 h 0)
+  end.
+
+(* Excel RANK with descending order (the default): 1 + the number of
+   strictly greater values. *)
+Definition rank_z (x : Z) (xs : list Z) : Z :=
+  Z.add 1%Z (zlist_count_gt x xs).
+
+(* Nearest-rank percentile with k in [0, 100]. *)
+Definition percentile_z (k : Z) (xs : list Z) : option Z :=
+  if orb (Z.ltb k 0%Z) (Z.gtb k 100%Z) then None
+  else
+    let s := isort xs in
+    let n := Z.of_nat (zlist_len s) in
+    if Z.eqb n 0%Z then None
+    else
+      let idx := Z.max 1%Z (Z.div (Z.add (Z.mul k n) 99%Z) 100%Z) in
+      zlist_nth s (Z.to_nat (Z.sub idx 1%Z)).
+
+(* Integer NPV: cashflow i (1-based) is divided by d^i, mirroring
+   Finance.v's pv over Z.  d must be >= 1 (enforced at the eval
+   site); d = 1 sums the flows undiscounted. *)
+Fixpoint npv_aux (cfs : list Z) (dpow d : Z) : Z :=
+  match cfs with
+  | nil => 0%Z
+  | cf :: t => Z.add (Z.div cf dpow) (npv_aux t (Z.mul dpow d) d)
+  end.
+
+Definition npv_z (d : Z) (cfs : list Z) : Z := npv_aux cfs d d.
+
+Theorem median_odd_smoke : median_z (9 :: 1 :: 5 :: nil)%Z = Some 5%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem median_even_smoke :
+  median_z (1 :: 9 :: 5 :: 3 :: nil)%Z = Some 4%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem median_empty : median_z nil = None.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem mode_smoke : mode_z (4 :: 2 :: 4 :: 9 :: nil)%Z = Some 4%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem rank_smoke : rank_z 5%Z (9 :: 1 :: 5 :: 7 :: nil)%Z = 3%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem percentile_smoke :
+  percentile_z 50%Z (1 :: 2 :: 3 :: 4 :: nil)%Z = Some 2%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem percentile_100_smoke :
+  percentile_z 100%Z (1 :: 2 :: 3 :: 4 :: nil)%Z = Some 4%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem npv_undiscounted_smoke :
+  npv_z 1%Z (10 :: 20 :: 30 :: nil)%Z = 60%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem npv_halving_smoke :
+  npv_z 2%Z (100 :: 100 :: nil)%Z = 75%Z.
+Proof. vm_compute. reflexivity. Qed.
+
+
+
 Inductive Expr : Type :=
   | EInt   : Z -> Expr
   | ERef   : CellRef -> Expr
@@ -339,7 +472,18 @@ Inductive Expr : Type :=
   (* FIND(needle, hay): 1-based position, EErr when absent. *)
   | EFind     : Expr -> Expr -> Expr
   (* REPLACE(text, start(1-based), count, rep). *)
-  | EReplaceS : Expr -> Expr -> Expr -> Expr -> Expr.
+  | EReplaceS : Expr -> Expr -> Expr -> Expr -> Expr
+  (* Items 23 / 24: order statistics and integer NPV over the numeric
+     cells of a rectangle. *)
+  | EMedian     : CellRef -> CellRef -> Expr
+  | EModeV      : CellRef -> CellRef -> Expr
+  (* RANK(x, range): descending rank of x among the range values. *)
+  | ERank       : Expr -> CellRef -> CellRef -> Expr
+  (* PERCENTILE(range, k): nearest-rank percentile, k in [0,100]. *)
+  | EPercentile : Expr -> CellRef -> CellRef -> Expr
+  (* NPV(d, range): cashflow i divided by d^i (integer divisor
+     d >= 1; d = 1 is the undiscounted sum). *)
+  | ENpvZ       : Expr -> CellRef -> CellRef -> Expr.
 
 Inductive Cell : Type :=
   | CEmpty : Cell
@@ -499,6 +643,21 @@ Fixpoint float_pow_nat (x : PrimFloat.float) (n : nat) : PrimFloat.float :=
    walker bodies have a single match around the recursive call — the
    guard checker's cost explodes on nested matches whose arms hold
    recursive calls.  [None] means fuel exhaustion must propagate. *)
+
+(* One numeric cell's contribution to a range materialization;
+   non-numeric and empty cells are skipped, fuel propagates as None
+   (the same population rule as the WCountV/WSumN family). *)
+Definition list_cell_contrib (cell : Cell) (res : EvalResult)
+    (acc : list Z) : option (list Z) :=
+  match cell with
+  | CEmpty => Some acc
+  | CLit _ | CFloat _ | CStr _ | CBool _ | CForm _ =>
+    match res with
+    | EVal v => Some (v :: acc)
+    | EFuel => None
+    | EFVal _ | EValS _ | EValB _ | EErr => Some acc
+    end
+  end.
 
 (* COUNT / COUNTA contribution of one cell.  [res] is the cell's
    evaluation result and is only consulted for formula cells. *)
@@ -912,6 +1071,72 @@ Fixpoint eval_expr (fuel : nat) (visited : VisitedSet) (s : Sheet)
           EValS (str_replace tv sv cv rv)
       | _, _, _, _ => EErr
       end
+    (* Items 23 / 24: materialize the range, combine over the list. *)
+    | EMedian tl br =>
+      match walk_list_rows fuel' visited s
+              (cell_col_of tl) (cell_col_of br)
+              (cell_row_of tl) (cell_row_of br) nil with
+      | None => EFuel
+      | Some xs =>
+        match median_z xs with
+        | Some m => EVal m
+        | None => EErr
+        end
+      end
+    | EModeV tl br =>
+      match walk_list_rows fuel' visited s
+              (cell_col_of tl) (cell_col_of br)
+              (cell_row_of tl) (cell_row_of br) nil with
+      | None => EFuel
+      | Some xs =>
+        match mode_z xs with
+        | Some m => EVal m
+        | None => EErr
+        end
+      end
+    | ERank x tl br =>
+      match eval_expr fuel' visited s x with
+      | EFuel => EFuel
+      | EVal v =>
+        match walk_list_rows fuel' visited s
+                (cell_col_of tl) (cell_col_of br)
+                (cell_row_of tl) (cell_row_of br) nil with
+        | None => EFuel
+        | Some xs => EVal (rank_z v xs)
+        end
+      | EFVal _ | EValS _ | EValB _ | EErr => EErr
+      end
+    | EPercentile k tl br =>
+      match eval_expr fuel' visited s k with
+      | EFuel => EFuel
+      | EVal kv =>
+        match walk_list_rows fuel' visited s
+                (cell_col_of tl) (cell_col_of br)
+                (cell_row_of tl) (cell_row_of br) nil with
+        | None => EFuel
+        | Some xs =>
+          match percentile_z kv xs with
+          | Some p => EVal p
+          | None => EErr
+          end
+        end
+      | EFVal _ | EValS _ | EValB _ | EErr => EErr
+      end
+    | ENpvZ d tl br =>
+      match eval_expr fuel' visited s d with
+      | EFuel => EFuel
+      | EVal dv =>
+        if Z.ltb dv 1%Z then EErr
+        else
+          match walk_list_rows fuel' visited s
+                  (cell_col_of tl) (cell_col_of br)
+                  (cell_row_of tl) (cell_row_of br) nil with
+          | None => EFuel
+          (* The walker collects in reverse row-major order. *)
+          | Some xs => EVal (npv_z dv (zlist_rev xs))
+          end
+      | EFVal _ | EValS _ | EValB _ | EErr => EErr
+      end
     | EAvg tl br =>
       let lc := cell_col_of tl in
       let hc := cell_col_of br in
@@ -1101,6 +1326,41 @@ with walk_rows (fuel : nat) (k : WalkKind) (op : CmpOp) (lit : Z)
       | EValB _   => EErr
       | EErr      => EErr
       | EFuel     => EFuel
+      end
+  end
+
+(* Items 23 / 24: materialize a rectangle's numeric cells into a
+   list Z (reverse row-major order).  None propagates fuel
+   exhaustion; non-numeric cells are skipped via
+   [list_cell_contrib]. *)
+with walk_list_cols (fuel : nat) (visited : VisitedSet) (s : Sheet)
+                    (col hc : int) (row : int) (acc : list Z)
+                    : option (list Z) :=
+  match fuel with
+  | O => None
+  | S fuel' =>
+    if PrimInt63.ltb hc col then Some acc
+    else
+      match list_cell_contrib (get_cell s (mkRef col row))
+              (eval_at_ref fuel' visited s (mkRef col row)) acc with
+      | None => None
+      | Some acc' => walk_list_cols fuel' visited s
+                       (PrimInt63.add col 1) hc row acc'
+      end
+  end
+
+with walk_list_rows (fuel : nat) (visited : VisitedSet) (s : Sheet)
+                    (lc hc : int) (row hr : int) (acc : list Z)
+                    : option (list Z) :=
+  match fuel with
+  | O => None
+  | S fuel' =>
+    if PrimInt63.ltb hr row then Some acc
+    else
+      match walk_list_cols fuel' visited s lc hc row acc with
+      | None => None
+      | Some acc' => walk_list_rows fuel' visited s lc hc
+                       (PrimInt63.add row 1) hr acc'
       end
   end.
 
@@ -1466,13 +1726,23 @@ Lemma fuel_monotone_all : forall fuel,
      fuel <= fuel' ->
      walk_rows fuel k op lit dc dr visited s lc hc row hr acc <> EFuel ->
      walk_rows fuel' k op lit dc dr visited s lc hc row hr acc =
-     walk_rows fuel k op lit dc dr visited s lc hc row hr acc).
+     walk_rows fuel k op lit dc dr visited s lc hc row hr acc) /\
+  (forall col hc row acc fuel' visited s,
+     fuel <= fuel' ->
+     walk_list_cols fuel visited s col hc row acc <> None ->
+     walk_list_cols fuel' visited s col hc row acc =
+     walk_list_cols fuel visited s col hc row acc) /\
+  (forall lc hc row hr acc fuel' visited s,
+     fuel <= fuel' ->
+     walk_list_rows fuel visited s lc hc row hr acc <> None ->
+     walk_list_rows fuel' visited s lc hc row hr acc =
+     walk_list_rows fuel visited s lc hc row hr acc).
 Proof.
   induction fuel as [|fuel IH].
-  - split; [|split; [|split]];
+  - split; [|split; [|split; [|split; [|split]]]];
       intros until s; intros _ Hnf; simpl in *; congruence.
-  - destruct IH as [IHe [IHr [IHwc IHwr]]].
-    split; [|split; [|split]].
+  - destruct IH as [IHe [IHr [IHwc [IHwr [IHlc IHlr]]]]].
+    split; [|split; [|split; [|split; [|split]]]].
     + (* eval_expr *)
       intros e fuel' visited s Hle Hnf.
       destruct fuel' as [|fuel']; [lia|].
@@ -1708,6 +1978,52 @@ Proof.
              rewrite (IHe e3 fuel' visited s Hle') by congruence;
              rewrite (IHe e4 fuel' visited s Hle') by congruence;
              rewrite Et, Es, Ec, Er; reflexivity).
+      * (* EMedian *)
+        destruct (walk_list_rows fuel visited s _ _ _ _ nil) eqn:El;
+          simpl in Hnf; try congruence;
+          rewrite (IHlr _ _ _ _ _ fuel' visited s Hle') by congruence;
+          rewrite El;
+          reflexivity.
+      * (* EModeV *)
+        destruct (walk_list_rows fuel visited s _ _ _ _ nil) eqn:El;
+          simpl in Hnf; try congruence;
+          rewrite (IHlr _ _ _ _ _ fuel' visited s Hle') by congruence;
+          rewrite El;
+          reflexivity.
+      * (* ERank *)
+        destruct (eval_expr fuel visited s e) eqn:Ex;
+          simpl in Hnf; try congruence;
+          rewrite (IHe e fuel' visited s Hle') by congruence;
+          rewrite Ex;
+          try reflexivity.
+        destruct (walk_list_rows fuel visited s _ _ _ _ nil) eqn:El;
+          simpl in Hnf; try congruence;
+          rewrite (IHlr _ _ _ _ _ fuel' visited s Hle') by congruence;
+          rewrite El;
+          reflexivity.
+      * (* EPercentile *)
+        destruct (eval_expr fuel visited s e) eqn:Ex;
+          simpl in Hnf; try congruence;
+          rewrite (IHe e fuel' visited s Hle') by congruence;
+          rewrite Ex;
+          try reflexivity.
+        destruct (walk_list_rows fuel visited s _ _ _ _ nil) eqn:El;
+          simpl in Hnf; try congruence;
+          rewrite (IHlr _ _ _ _ _ fuel' visited s Hle') by congruence;
+          rewrite El;
+          reflexivity.
+      * (* ENpvZ *)
+        destruct (eval_expr fuel visited s e) eqn:Ex;
+          simpl in Hnf; try congruence;
+          rewrite (IHe e fuel' visited s Hle') by congruence;
+          rewrite Ex;
+          try reflexivity.
+        destruct (Z.ltb _ 1%Z); [reflexivity|].
+        destruct (walk_list_rows fuel visited s _ _ _ _ nil) eqn:El;
+          simpl in Hnf; try congruence;
+          rewrite (IHlr _ _ _ _ _ fuel' visited s Hle') by congruence;
+          rewrite El;
+          reflexivity.
     + (* eval_at_ref *)
       intros r fuel' visited s Hle Hnf.
       destruct fuel' as [|fuel']; [lia|].
@@ -1847,6 +2163,33 @@ Proof.
         rewrite Esc;
         try reflexivity.
       apply IHwr; assumption.
+    + (* walk_list_cols *)
+      intros col hc row acc fuel' visited s Hle Hnf.
+      destruct fuel' as [|fuel']; [lia|].
+      assert (Hle' : fuel <= fuel') by lia.
+      simpl in Hnf. simpl.
+      destruct (PrimInt63.ltb hc col); [reflexivity|].
+      (* list_cell_contrib consults the evaluation result only for
+         non-empty cells; the rewrite is attempted but optional. *)
+      destruct (get_cell s (mkRef col row)) eqn:Hc;
+        destruct (eval_at_ref fuel visited s (mkRef col row)) eqn:E1;
+        simpl in Hnf; try congruence;
+        try (rewrite (IHr (mkRef col row) fuel' visited s Hle')
+               by congruence;
+             rewrite E1);
+        simpl; apply IHlc; assumption.
+    + (* walk_list_rows *)
+      intros lc hc row hr acc fuel' visited s Hle Hnf.
+      destruct fuel' as [|fuel']; [lia|].
+      assert (Hle' : fuel <= fuel') by lia.
+      simpl in Hnf. simpl.
+      destruct (PrimInt63.ltb hr row); [reflexivity|].
+      destruct (walk_list_cols fuel visited s lc hc row acc) eqn:Esc;
+        try congruence;
+        rewrite (IHlc lc hc row acc fuel' visited s Hle') by congruence;
+        rewrite Esc;
+        try reflexivity.
+      apply IHlr; assumption.
 Qed.
 
 Theorem eval_fuel_monotone :
@@ -1905,7 +2248,7 @@ Theorem walk_rows_fuel_monotone :
     walk_rows fuel' k op lit dc dr visited s lc hc row hr acc = EVal v.
 Proof.
   intros fuel k op lit dc dr lc hc row hr acc fuel' visited s v Hle Hev.
-  rewrite (proj2 (proj2 (proj2 (fuel_monotone_all fuel)))
+  rewrite (proj1 (proj2 (proj2 (proj2 (fuel_monotone_all fuel))))
              k op lit dc dr lc hc row hr acc fuel' visited s Hle)
     by (rewrite Hev; congruence).
   exact Hev.

@@ -166,6 +166,12 @@ Definition trans (st : State) : State + option Z :=
   | PCEval _ (ETrim _) => inr None
   | PCEval _ (EFind _ _) => inr None
   | PCEval _ (EReplaceS _ _ _ _) => inr None
+  (* Items 23 / 24: list-materializing aggregates bail out too. *)
+  | PCEval _ (EMedian _ _) => inr None
+  | PCEval _ (EModeV _ _) => inr None
+  | PCEval _ (ERank _ _ _) => inr None
+  | PCEval _ (EPercentile _ _ _) => inr None
+  | PCEval _ (ENpvZ _ _ _) => inr None
   | PCSumStep visited lc hc col row hr acc =>
       if PrimInt63.ltb hr row then
         inl (mkSt (st_sheet st) (PCApply (Some acc)) (st_stack st))

@@ -501,6 +501,35 @@ void test_string_funcs() {
   check("SUBSTR OOB clamps", str_at(s, 7, 0) == "");
 }
 
+// Items 23 / 24: MEDIAN / MODE / RANK / PERCENTILE / NPV.
+void test_order_stats_npv() {
+  auto s = S::new_sheet;
+  const int64_t xs[5] = {9, 1, 5, 7, 5};
+  for (int r = 0; r < 5; ++r) s = lit(s, 0, r, xs[r]);
+  // A skipped string cell inside the rectangle.
+  s = put(s, 1, 0, S::Cell::cstr("n/a"));
+  S::CellRef tl{0, 0}, br{1, 4};
+  s = form(s, 3, 0, S::Expr::emedian(tl, br));
+  check_int("MEDIAN", as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{3, 0})), 5);
+  s = form(s, 3, 1, S::Expr::emodev(tl, br));
+  check_int("MODE", as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{3, 1})), 5);
+  s = form(s, 3, 2, S::Expr::erank(S::Expr::eint(5), tl, br));
+  check_int("RANK", as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{3, 2})), 3);
+  s = form(s, 3, 3, S::Expr::epercentile(S::Expr::eint(100), tl, br));
+  check_int("PERCENTILE 100",
+            as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{3, 3})), 9);
+  s = form(s, 3, 4, S::Expr::enpvz(S::Expr::eint(1), tl, br));
+  check_int("NPV d=1 sums",
+            as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{3, 4})), 27);
+  // Empty range -> EErr; NPV with d < 1 -> EErr.
+  s = form(s, 4, 0, S::Expr::emedian(S::CellRef{0, 19}, S::CellRef{4, 24}));
+  check("MEDIAN empty → EErr",
+        is_err(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{4, 0})));
+  s = form(s, 4, 1, S::Expr::enpvz(S::Expr::eint(0), tl, br));
+  check("NPV d=0 → EErr",
+        is_err(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{4, 1})));
+}
+
 void test_boolean_ops() {
   auto s = put(S::new_sheet, 0, 0, S::Cell::cbool(true));
   s = put(s, 1, 0, S::Cell::cbool(false));
@@ -685,6 +714,7 @@ int main() {
   test_var_stdev();
   test_csv_import();
   test_string_funcs();
+  test_order_stats_npv();
   test_boolean_ops();
   test_string_ops();
   test_correspondence_corpus();
