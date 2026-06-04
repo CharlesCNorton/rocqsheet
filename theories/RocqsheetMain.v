@@ -35,8 +35,14 @@ Local Open Scope pstring_scope.
 Definition process_frame (ls : loop_state) : itree imguiE (bool * loop_state) :=
   glfw_poll_events ;;
   closing <- glfw_should_close ;;
-  if closing then Ret (true, ls)
+  (* Item 3: a clean workbook closes immediately; a dirty one cancels
+     the close and opens the save-confirm modal, whose pump handles
+     each exit path. *)
+  if andb closing (negb (ls_dirty ls)) then Ret (true, ls)
   else
+    (if closing
+     then set_should_close false ;; modal_open "Unsaved changes"
+     else Ret tt) ;;
     imgui_new_frame ;;
     imgui_full_viewport ;;
     imgui_next_window_menu_bar ;;
@@ -61,8 +67,10 @@ Definition process_frame (ls : loop_state) : itree imguiE (bool * loop_state) :=
     render_charts ls4b ;;
     imgui_end_window ;;
     ls5 <- handle_shortcuts ls4b ;;
+    (* Item 1: 30-second autosave of a dirty workbook. *)
+    ls6 <- do_autosave ls5 ;;
     imgui_render_frame ;;
-    Ret (false, ls5).
+    Ret (false, ls6).
 
 (* ----- Top-level loop ----------------------------------- *)
 
@@ -78,6 +86,11 @@ CoFixpoint run_app (ls : loop_state) : itree imguiE c_int :=
   else Tau (run_app ls').
 
 Definition rocqsheet_run : itree imguiE c_int :=
+  (* Item 2: when an autosave outlives the last user save (a crash or
+     kill landed between saves), arm the recovery modal before the
+     first frame. *)
+  rec <- file_newer autosave_path save_path ;;
+  (if rec then modal_open "Recover autosave?" else Ret tt) ;;
   run_app initial_loop_state.
 
 Crane Extraction "rocqsheet" rocqsheet_run smoke eval_cell

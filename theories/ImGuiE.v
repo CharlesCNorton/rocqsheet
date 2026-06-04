@@ -89,6 +89,21 @@ Inductive imguiE : Type -> Type :=
      (done, (find_text, replace_text)); [done] is true exactly on
      the frame Replace All is clicked. *)
   | EModalFindReplace : imguiE (bool * (PrimString.string * PrimString.string))
+  (* Item 3: three-button confirm (id, message, b1, b2, b3).
+     Returns 0 while pending or closed, 1 / 2 / 3 on a button frame. *)
+  | EModalConfirm3    : PrimString.string -> PrimString.string ->
+                        PrimString.string -> PrimString.string ->
+                        PrimString.string -> imguiE Z
+  (* Item 1: true at most once per 30-second window (C++ monotonic
+     clock); gates the autosave write. *)
+  | EAutosaveDue      : imguiE bool
+  (* Item 2: true when file [a] exists and is newer than file [b]
+     (or [b] is missing). *)
+  | EFileNewer        : PrimString.string -> PrimString.string -> imguiE bool
+  | EFileDelete       : PrimString.string -> imguiE unit
+  (* Item 3: drive glfwSetWindowShouldClose, to cancel a close while
+     the save-confirm modal runs and to re-request it afterwards. *)
+  | ESetShouldClose   : bool -> imguiE unit
   | EClipboardGet     : imguiE PrimString.string
   | EClipboardSet     : PrimString.string -> imguiE unit
   | ECtrlKeyPressed   : PrimString.string -> imguiE bool
@@ -194,6 +209,16 @@ Definition modal_confirm (id msg : PrimString.string) : itree imguiE Z :=
 Definition modal_find_replace
   : itree imguiE (bool * (PrimString.string * PrimString.string)) :=
   trigger EModalFindReplace.
+Definition modal_confirm3 (id msg b1 b2 b3 : PrimString.string)
+  : itree imguiE Z :=
+  trigger (EModalConfirm3 id msg b1 b2 b3).
+Definition autosave_due : itree imguiE bool := trigger EAutosaveDue.
+Definition file_newer (a b : PrimString.string) : itree imguiE bool :=
+  trigger (EFileNewer a b).
+Definition file_delete (path : PrimString.string) : itree imguiE unit :=
+  trigger (EFileDelete path).
+Definition set_should_close (v : bool) : itree imguiE unit :=
+  trigger (ESetShouldClose v).
 Definition clipboard_get : itree imguiE PrimString.string :=
   trigger EClipboardGet.
 Definition clipboard_set (s : PrimString.string) : itree imguiE unit :=
@@ -273,6 +298,11 @@ Crane Extract Inductive imguiE => ""
     "modal_helpers::open(%a0)"
     "modal_helpers::confirm(%a0, %a1)"
     "modal_helpers::find_replace()"
+    "modal_helpers::confirm3(%a0, %a1, %a2, %a3, %a4)"
+    "autosave_helpers::due()"
+    "autosave_helpers::newer(%a0, %a1)"
+    "autosave_helpers::remove_file(%a0)"
+    "imgui_helpers::set_should_close(%a0)"
     "imgui_helpers::clipboard_get()"
     "imgui_helpers::clipboard_set(%a0)"
     "imgui_helpers::ctrl_key_pressed(%a0)"
@@ -284,7 +314,8 @@ Crane Extract Inductive imguiE => ""
     "imgui_helpers::tab_bar_select(%a0, %a1, %a2)"
     "chart_helpers::chart_render(%a0, %a1, %a2)"
     "pdf_helpers::emit_pdf(%a0, %a1)" ]
-  From "imgui_helpers.h" "recent_helpers.h" "modal_helpers.h".
+  From "imgui_helpers.h" "recent_helpers.h" "modal_helpers.h"
+       "autosave_helpers.h".
 
 Crane Extract Inlined Constant glfw_should_close =>
   "imgui_helpers::should_close()" From "imgui_helpers.h".
@@ -370,6 +401,17 @@ Crane Extract Inlined Constant modal_confirm =>
   "modal_helpers::confirm(%a0, %a1)" From "modal_helpers.h".
 Crane Extract Inlined Constant modal_find_replace =>
   "modal_helpers::find_replace()" From "modal_helpers.h".
+Crane Extract Inlined Constant modal_confirm3 =>
+  "modal_helpers::confirm3(%a0, %a1, %a2, %a3, %a4)"
+  From "modal_helpers.h".
+Crane Extract Inlined Constant autosave_due =>
+  "autosave_helpers::due()" From "autosave_helpers.h".
+Crane Extract Inlined Constant file_newer =>
+  "autosave_helpers::newer(%a0, %a1)" From "autosave_helpers.h".
+Crane Extract Inlined Constant file_delete =>
+  "autosave_helpers::remove_file(%a0)" From "autosave_helpers.h".
+Crane Extract Inlined Constant set_should_close =>
+  "imgui_helpers::set_should_close(%a0)" From "imgui_helpers.h".
 Crane Extract Inlined Constant clipboard_get =>
   "imgui_helpers::clipboard_get()" From "imgui_helpers.h".
 Crane Extract Inlined Constant clipboard_set =>

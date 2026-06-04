@@ -54,6 +54,13 @@ enum class cell_event { None, Selected, DoubleClicked };
 inline bool should_close() {
   return g_window ? glfwWindowShouldClose(g_window) : true;
 }
+// Item 3: cancel a pending close while the save-confirm modal runs,
+// or re-request it after the user picks an exit path.
+inline void set_should_close(bool v) {
+  if (g_window) {
+    glfwSetWindowShouldClose(g_window, v ? GLFW_TRUE : GLFW_FALSE);
+  }
+}
 inline void poll_events() { glfwPollEvents(); }
 
 inline void new_frame() {

@@ -78,7 +78,8 @@ inline LoopState commit_new_sheet(LoopState ls, Sheet new_sheet,
     std::move(ls.ls_sheet_names),
     ls.ls_show_formulas,
     ls.ls_zoom,
-    ls.ls_auto_recalc};
+    ls.ls_auto_recalc,
+    true};  // every operation through here mutates the workbook
 }
 
 // do_undo: pop ls_undo's head pair onto (ls_sheet, ...), push the
@@ -113,7 +114,8 @@ inline LoopState do_undo(LoopState ls) {
     std::move(ls.ls_sheet_names),
     ls.ls_show_formulas,
     ls.ls_zoom,
-    ls.ls_auto_recalc};
+    ls.ls_auto_recalc,
+    true};  // every operation through here mutates the workbook
   // Note: do_undo pushes onto ls_redo (not ls_undo), so we do not
   // trim here -- ls_redo is bounded by however many undos came before.
 }
@@ -150,7 +152,8 @@ inline LoopState do_redo(LoopState ls) {
     std::move(ls.ls_sheet_names),
     ls.ls_show_formulas,
     ls.ls_zoom,
-    ls.ls_auto_recalc};
+    ls.ls_auto_recalc,
+    true};  // every operation through here mutates the workbook
 }
 
 // do_clear: replace ls_sheet with [empty_sheet], reset ls_selected /
@@ -179,7 +182,8 @@ inline LoopState do_clear(LoopState ls, Sheet empty_sheet) {
     std::move(ls.ls_sheet_names),
     ls.ls_show_formulas,
     ls.ls_zoom,
-    ls.ls_auto_recalc};
+    ls.ls_auto_recalc,
+    true};  // every operation through here mutates the workbook
 }
 
 // do_merge_right shape: install [new_merges] in place of ls.ls_merges

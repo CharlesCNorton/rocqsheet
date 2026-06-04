@@ -66,6 +66,37 @@ inline int64_t confirm(const std::string& id, const std::string& msg) {
   return result;
 }
 
+// Item 3: three-button confirm.  Returns 1 / 2 / 3 on the frame the
+// corresponding button is clicked, 0 otherwise.
+inline int64_t confirm3(const std::string& id, const std::string& msg,
+                        const std::string& b1, const std::string& b2,
+                        const std::string& b3) {
+  int64_t result = 0;
+  consume_pending(id.c_str());
+  if (ImGui::BeginPopupModal(id.c_str(), nullptr,
+                             ImGuiWindowFlags_AlwaysAutoResize)) {
+    ImGui::TextUnformatted(msg.c_str());
+    ImGui::Separator();
+    if (ImGui::Button(b1.c_str())) {
+      result = 1;
+      ImGui::CloseCurrentPopup();
+    }
+    ImGui::SetItemDefaultFocus();
+    ImGui::SameLine();
+    if (ImGui::Button(b2.c_str())) {
+      result = 2;
+      ImGui::CloseCurrentPopup();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button(b3.c_str())) {
+      result = 3;
+      ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
+  }
+  return result;
+}
+
 // Item 39: Find / Replace modal.  Two integer-literal fields; the
 // pair is reported once, on the Replace All frame, with the buffers
 // left intact for the next invocation.

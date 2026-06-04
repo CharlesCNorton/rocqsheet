@@ -253,11 +253,18 @@ Definition build_save_string (ls : loop_state) : PrimString.string :=
   (PrimString.cat (save_all_edits_aux (ls_edit_buf ls) "")
   (save_all_sheets_aux ls 0 16 ""))))))))).
 
+(* Item 1: the autosave snapshot path. *)
+Definition autosave_path : PrimString.string :=
+  PrimString.cat save_path ".autosave".
+
 Definition do_save (ls : loop_state) : itree imguiE loop_state :=
   let _ := tt in
   _ <- file_save_atomic save_path (build_save_string ls) ;;
   recent_record save_path ;;
-  Ret ls.
+  (* Items 1-3: a user save clears the dirty flag and retires any
+     autosave snapshot. *)
+  file_delete autosave_path ;;
+  Ret (set_dirty ls false).
 
 Definition do_save_as (ls : loop_state) : itree imguiE loop_state :=
   let path :=
@@ -266,6 +273,18 @@ Definition do_save_as (ls : loop_state) : itree imguiE loop_state :=
     else ls_fbar_text ls in
   _ <- file_save_atomic path (build_save_string ls) ;;
   recent_record path ;;
+  file_delete autosave_path ;;
+  Ret (set_dirty ls false).
+
+(* Item 1: when the workbook is dirty and the 30-second C++ timer has
+   elapsed, write the autosave snapshot.  The dirty flag stays set:
+   only a user-initiated save counts as saved. *)
+Definition do_autosave (ls : loop_state) : itree imguiE loop_state :=
+  due <- autosave_due ;;
+  (if andb due (ls_dirty ls)
+   then _ <- file_save_atomic autosave_path (build_save_string ls) ;;
+        Ret tt
+   else Ret tt) ;;
   Ret ls.
 
 Definition csv_path : PrimString.string := "rocqsheet.csv".
@@ -336,6 +355,7 @@ Definition do_replace_user (ls : loop_state) : loop_state :=
            (ls_formats ls)
            (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
            (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls)
+           true
   end.
 
 (* Item 39: apply the Find / Replace modal's committed pair.  Both
@@ -352,18 +372,9 @@ Definition do_replace_pair (ls : loop_state)
            (ls_formats ls)
            (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
            (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls)
-           (ls_zoom ls) (ls_auto_recalc ls)
+           (ls_zoom ls) (ls_auto_recalc ls) true
   | _, _ => ls
   end.
-
-(* Item 36 / 39: per-frame modal pump.  Renders every registered
-   modal; the active one (armed via [modal_open]) draws and reports
-   the user's answer on its commit frame. *)
-Definition render_modals (ls : loop_state) : itree imguiE loop_state :=
-  res <- modal_find_replace ;;
-  let '(done, ft) := res in
-  let '(ftxt, ttxt) := ft in
-  Ret (if done then do_replace_pair ls ftxt ttxt else ls).
 
 Fixpoint parse_uint_aux (fuel : nat) (s : PrimString.string) (len i : int)
     (acc : Z) (any : bool) : option (Z * int) :=
@@ -436,7 +447,7 @@ Definition apply_sheet_rename
                       (ls_undo ls) (ls_redo ls) (ls_formats ls)
                       (ls_other_sheets ls) (ls_active ls)
                       (ls_charts ls) (ls_merges ls) new_names
-                      (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls) in
+                      (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls) (ls_dirty ls) in
     (ls', next_i).
 
 (* Parse a single uint terminated by [stop_char] starting at [i].
@@ -528,7 +539,7 @@ Definition apply_format_line
                (ls_undo ls) (ls_redo ls)
                new_fmts
                (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
-               (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls) in
+               (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls) (ls_dirty ls) in
       (ls', next_i)
     end end end end end end end.
 
@@ -573,7 +584,7 @@ Definition apply_merge_line
                  (ls_edit_buf ls) (ls_parse_errs ls)
                  (ls_undo ls) (ls_redo ls) (ls_formats ls)
                  (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
-                 new_merges (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls) in
+                 new_merges (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls) (ls_dirty ls) in
         (ls', next_i)
       else (ls, next_i)
     end end end end.
@@ -636,7 +647,7 @@ Definition apply_chart_line
                    (ls_edit_buf ls) (ls_parse_errs ls)
                    (ls_undo ls) (ls_redo ls) (ls_formats ls)
                    (ls_other_sheets ls) (ls_active ls) new_charts
-                   (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls) in
+                   (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls) (ls_dirty ls) in
           (ls', next_i)
         else (ls, next_i)
       end end end end.
@@ -680,7 +691,7 @@ Definition apply_edit_line
                    new_eb (ls_parse_errs ls)
                    (ls_undo ls) (ls_redo ls) (ls_formats ls)
                    (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
-                   (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls) in
+                   (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls) (ls_dirty ls) in
           (ls', next_i)
         else (ls, next_i)
     end end.
@@ -791,7 +802,7 @@ Definition do_load_from
                           nil
                           nil
                           (ls_other_sheets ls) (ls_active ls)
-                          nil nil (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls) in
+                          nil nil (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls) false in
     let len := PrimString.length content in
     let loaded := apply_load_lines cleared content len 0
                                    (S (S (nat_of_int len))) in
@@ -806,6 +817,43 @@ Definition do_load (ls : loop_state) : itree imguiE loop_state :=
 Definition do_load_recent
     (ls : loop_state) (path : PrimString.string) : itree imguiE loop_state :=
   do_load_from ls path.
+
+(* Item 36 / 39: per-frame modal pump.  Renders every registered
+   modal; the active one (armed via [modal_open]) draws and reports
+   the user's answer on its commit frame. *)
+Definition render_modals (ls : loop_state) : itree imguiE loop_state :=
+  res <- modal_find_replace ;;
+  let '(done, ft) := res in
+  let '(ftxt, ttxt) := ft in
+  (* Monadic bind rather than a bare [let .. := if ..]: loop_state
+     has no default constructor, so a declare-then-assign extraction
+     does not compile (the same trap cond_apply documents). *)
+  ls0 <- (if done then Ret (do_replace_pair ls ftxt ttxt) else Ret ls) ;;
+  (* Item 2: crash recovery.  Loading the autosave marks the workbook
+     dirty (it differs from the on-disk save); declining retires the
+     snapshot so the prompt does not reappear every launch. *)
+  rec <- modal_confirm "Recover autosave?"
+           "An autosave newer than the last save exists. Load it?" ;;
+  ls1 <- (if Z.eqb rec 1%Z
+          then l <- do_load_from ls0 autosave_path ;;
+               Ret (set_dirty l true)
+          else Ret ls0) ;;
+  (if Z.eqb rec 2%Z then file_delete autosave_path else Ret tt) ;;
+  (* Item 3: save-before-exit.  Save-and-close saves (clearing the
+     dirty flag) and re-requests the close; discard clears the flag
+     so the next close request passes; keep-editing does nothing. *)
+  ans <- modal_confirm3 "Unsaved changes"
+           "Save your changes before closing?"
+           "Save and close" "Discard and close" "Keep editing" ;;
+  (if Z.eqb ans 1%Z
+   then l <- do_save ls1 ;;
+        set_should_close true ;;
+        Ret l
+   else if Z.eqb ans 2%Z
+   then set_should_close true ;;
+        Ret (set_dirty ls1 false)
+   else Ret ls1).
+
 
 Definition do_copy (ls : loop_state) : itree imguiE unit :=
   match ls_selected ls with

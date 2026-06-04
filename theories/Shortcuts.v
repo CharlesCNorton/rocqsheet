@@ -148,7 +148,7 @@ Definition do_toggle_show_formulas (ls : loop_state) : loop_state :=
          (ls_undo ls) (ls_redo ls) (ls_formats ls)
          (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
          (ls_merges ls) (ls_sheet_names ls)
-         (negb (ls_show_formulas ls)) (ls_zoom ls) (ls_auto_recalc ls).
+         (negb (ls_show_formulas ls)) (ls_zoom ls) (ls_auto_recalc ls) (ls_dirty ls).
 
 (* Item 73: toggle Auto-Recalc. *)
 Definition do_toggle_auto_recalc (ls : loop_state) : loop_state :=
@@ -157,7 +157,8 @@ Definition do_toggle_auto_recalc (ls : loop_state) : loop_state :=
          (ls_undo ls) (ls_redo ls) (ls_formats ls)
          (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
          (ls_merges ls) (ls_sheet_names ls)
-         (ls_show_formulas ls) (ls_zoom ls) (negb (ls_auto_recalc ls)).
+         (ls_show_formulas ls) (ls_zoom ls) (negb (ls_auto_recalc ls))
+         (ls_dirty ls).
 
 (* Item 60: zoom helpers.  Clamp to [50, 300] in steps of 10. *)
 Definition zoom_min : Z := 50%Z.
@@ -177,7 +178,7 @@ Definition do_zoom_in (ls : loop_state) : loop_state :=
          (ls_merges ls) (ls_sheet_names ls)
          (ls_show_formulas ls)
          (clamp_zoom (Z.add (ls_zoom ls) zoom_step))
-         (ls_auto_recalc ls).
+         (ls_auto_recalc ls) (ls_dirty ls).
 
 Definition do_zoom_out (ls : loop_state) : loop_state :=
   mkLoop (ls_sheet ls) (ls_selected ls) (ls_fbar_text ls)
@@ -187,7 +188,7 @@ Definition do_zoom_out (ls : loop_state) : loop_state :=
          (ls_merges ls) (ls_sheet_names ls)
          (ls_show_formulas ls)
          (clamp_zoom (Z.sub (ls_zoom ls) zoom_step))
-         (ls_auto_recalc ls).
+         (ls_auto_recalc ls) (ls_dirty ls).
 
 Definition do_zoom_reset (ls : loop_state) : loop_state :=
   mkLoop (ls_sheet ls) (ls_selected ls) (ls_fbar_text ls)
@@ -195,7 +196,7 @@ Definition do_zoom_reset (ls : loop_state) : loop_state :=
          (ls_undo ls) (ls_redo ls) (ls_formats ls)
          (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
          (ls_merges ls) (ls_sheet_names ls)
-         (ls_show_formulas ls) 100%Z (ls_auto_recalc ls).
+         (ls_show_formulas ls) 100%Z (ls_auto_recalc ls) (ls_dirty ls).
 
 (* Item 53 (Tab half) helper: commit the current edit, then advance
    the selection one column right.  See [handle_shortcuts] below. *)
