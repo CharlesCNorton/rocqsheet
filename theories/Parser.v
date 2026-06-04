@@ -85,18 +85,33 @@ Inductive token : Type :=
   | TSum
   | TMin
   | TMax
-  | TColon.
+  | TColon
+  | TNeq.
 
 (* INT64_MAX / 10 = 922337203685477580; one extra digit must not
-   exceed (INT64_MAX mod 10) = 7. *)
+   exceed (INT64_MAX mod 10) = 7.  The negated form accepts one extra
+   ones-digit because |INT64_MIN| = INT64_MAX + 1 (last digit `8`). *)
 Definition Z_int_max_div10 : Z := 922337203685477580%Z.
 Definition Z_int_max_lastd : Z := 7%Z.
+Definition Z_int_neg_lastd : Z := 8%Z.
 
 Definition acc_digit (acc : Z) (d : Z) : option Z :=
   if Z.ltb acc Z_int_max_div10 then Some (Z.add (Z.mul acc 10) d)
   else if Z.gtb acc Z_int_max_div10 then None
   else if Z.leb d Z_int_max_lastd then Some (Z.add (Z.mul acc 10) d)
   else None.
+
+(* Variant of [acc_digit] used when a leading minus sign has already
+   been consumed.  Accumulates negative values directly: acc starts at
+   0 and steps to [acc*10 - d].  Necessary because the extracted Z
+   arithmetic saturates, so the positive-then-negate path stops one
+   short of INT64_MIN (INT64_MAX+1 saturates back to INT64_MAX). *)
+Definition acc_digit_neg (acc : Z) (d : Z) : option Z :=
+  if Z.ltb acc (Z.opp Z_int_max_div10) then None
+  else if Z.eqb acc (Z.opp Z_int_max_div10) then
+    if Z.leb d Z_int_neg_lastd then Some (Z.sub (Z.mul acc 10) d)
+    else None
+  else Some (Z.sub (Z.mul acc 10) d).
 
 (* Read a run of digits starting at position [i] of [s].  Returns
    the accumulated value and the next position, or None on
@@ -115,6 +130,28 @@ Fixpoint read_digits
         | None => None
         | Some acc' =>
             read_digits fuel' s len (PrimInt63.add i 1) acc' true
+        end
+      else Some (acc, i, any)
+    else Some (acc, i, any)
+  end.
+
+(* Variant of [read_digits] used when a leading minus is in effect.
+   Uses [acc_digit_neg] so [9223372036854775808] (the digits of
+   |INT64_MIN|) accumulates without overflow. *)
+Fixpoint read_digits_neg
+    (fuel : nat) (s : PrimString.string) (len i : int) (acc : Z)
+    (any : bool)
+    : option (Z * int * bool) :=
+  match fuel with
+  | O => Some (acc, i, any)
+  | S fuel' =>
+    if PrimInt63.ltb i len then
+      let c := PrimString.get s i in
+      if is_digit c then
+        match acc_digit_neg acc (digit_value c) with
+        | None => None
+        | Some acc' =>
+            read_digits_neg fuel' s len (PrimInt63.add i 1) acc' true
         end
       else Some (acc, i, any)
     else Some (acc, i, any)
@@ -202,7 +239,12 @@ Fixpoint tokenize_aux
       else if PrimInt63.eqb n 61 then
         tokenize_aux fuel' s len (PrimInt63.add i 1) (TEq :: acc)
       else if PrimInt63.eqb n 60 then
-        tokenize_aux fuel' s len (PrimInt63.add i 1) (TLt :: acc)
+        (* `<` followed by `>` is the not-equal operator. *)
+        let i1 := PrimInt63.add i 1 in
+        if andb (PrimInt63.ltb i1 len)
+                (PrimInt63.eqb (char_to_int (PrimString.get s i1)) 62)
+        then tokenize_aux fuel' s len (PrimInt63.add i1 1) (TNeq :: acc)
+        else tokenize_aux fuel' s len i1 (TLt :: acc)
       else if PrimInt63.eqb n 62 then
         tokenize_aux fuel' s len (PrimInt63.add i 1) (TGt :: acc)
       else if PrimInt63.eqb n 40 then
@@ -336,6 +378,13 @@ Fixpoint parse_top (fuel : nat) (toks : list token)
       | TGt :: rest' =>
         match parse_expr fuel' rest' with
         | Some (rhs, rest'') => Some (EGt lhs rhs, rest'')
+        | None => None
+        end
+      | TNeq :: rest' =>
+        (* `a <> b` desugars to `NOT(a = b)` so no new Expr constructor is
+           required for the kernel; the surface change is parser-only. *)
+        match parse_expr fuel' rest' with
+        | Some (rhs, rest'') => Some (ENot (EEq lhs rhs), rest'')
         | None => None
         end
       | _ => Some (lhs, rest)
@@ -494,24 +543,59 @@ with parse_factor (fuel : nat) (toks : list token)
 
 (* ----- Top-level entry points ----- *)
 
-Definition parse_formula (s : PrimString.string) : option Expr :=
-  match tokenize s with
-  | None => None
-  | Some toks =>
-    (* parse_top -> parse_expr -> parse_term -> parse_factor consumes
-       four levels per leaf, plus deeper nesting through TLParen,
-       TMinus, and TIf.  The bound is linear in token count with a
-       constant safety margin. *)
-    let fuel := plus 100 (mult 8 (length toks)) in
-    match parse_top fuel toks with
-    | Some (e, []) => Some e
-    | _ => None
-    end
+(* Maximum formula input length.  Past this point the parser rejects
+   without tokenizing — a pathological 1MB string in a cell otherwise
+   pegs a CPU core.  4096 chars is well past any realistic formula. *)
+Definition formula_input_max : int := 4096%uint63.
+
+(* Maximum tree depth for parsed expressions.  Past this point the
+   parser rejects with `None`.  Deep nesting that bypasses this cap
+   would otherwise fuel-exhaust silently at evaluation time. *)
+Definition formula_depth_max : nat := 64%nat.
+
+(* Recursive depth check on an [Expr]: returns the maximum nesting
+   depth.  Constant subtrees count as 1. *)
+Fixpoint expr_depth (e : Expr) : nat :=
+  match e with
+  | EInt _ | ERef _ | EFloat _ | EStr _ | EBool _ => 1
+  | ESum _ _ | EAvg _ _ | ECount _ _ | EMin _ _ | EMax _ _ => 1
+  | ENot a | ELen a | EBNot a => S (expr_depth a)
+  | EAdd a b | ESub a b | EMul a b | EDiv a b
+  | EEq a b | ELt a b | EGt a b
+  | EMod a b | EPow a b
+  | EAnd a b | EOr a b
+  | EIfErr a b
+  | EFAdd a b | EFSub a b | EFMul a b | EFDiv a b
+  | EConcat a b
+  | EBAnd a b | EBOr a b => S (Nat.max (expr_depth a) (expr_depth b))
+  | EIf a b c | ESubstr a b c =>
+    S (Nat.max (expr_depth a) (Nat.max (expr_depth b) (expr_depth c)))
   end.
+
+Definition parse_formula (s : PrimString.string) : option Expr :=
+  let len := PrimString.length s in
+  if PrimInt63.ltb formula_input_max len then None
+  else
+    match tokenize s with
+    | None => None
+    | Some toks =>
+      (* parse_top -> parse_expr -> parse_term -> parse_factor consumes
+         four levels per leaf, plus deeper nesting through TLParen,
+         TMinus, and TIf.  The bound is linear in token count with a
+         constant safety margin. *)
+      let fuel := plus 100 (mult 8 (length toks)) in
+      match parse_top fuel toks with
+      | Some (e, []) =>
+          if Nat.ltb formula_depth_max (expr_depth e) then None
+          else Some e
+      | _ => None
+      end
+    end.
 
 (* Standalone integer-literal parser used for non-formula cell
    input.  Accepts surrounding whitespace and an optional leading
-   minus sign. *)
+   minus sign.  The negated path uses [read_digits_neg] so the user
+   can enter [-9223372036854775808] (INT64_MIN). *)
 Definition parse_int_literal (s : PrimString.string) : option Z :=
   let len := PrimString.length s in
   let fuel := S (nat_of_int len) in
@@ -520,11 +604,16 @@ Definition parse_int_literal (s : PrimString.string) : option Z :=
     if PrimInt63.ltb i len &&
        PrimInt63.eqb (char_to_int (PrimString.get s i)) 45
     then (true, PrimInt63.add i 1) else (false, i) in
-  match read_digits fuel s len j 0%Z false with
+  let result :=
+    if neg
+    then read_digits_neg fuel s len j 0%Z false
+    else read_digits fuel s len j 0%Z false in
+  match result with
   | Some (v, k, true) =>
       let k' := skip_ws fuel s len k in
       if PrimInt63.leb len k' then
-        Some (if neg then Z.opp v else v)
+        (* read_digits_neg already returns a negative value. *)
+        Some v
       else None
   | _ => None
   end.

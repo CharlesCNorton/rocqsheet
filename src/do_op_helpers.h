@@ -20,6 +20,7 @@
 #define INCLUDED_DO_OP_HELPERS
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <utility>
 #include <variant>
