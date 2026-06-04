@@ -212,6 +212,23 @@ int run_headless(const std::string& load_path,
                    eval_ref.c_str());
       return 2;
     }
+    // If the cell was committed with a malformed formula it lives in
+    // ls.ls_parse_errs.  Surface that as #PARSE (matching cell_display
+    // in the GUI) so CI can distinguish "evaluated to 0" from "didn't
+    // compile".  Exit code 5 reports parse-fail.
+    {
+      auto cur = &ls.ls_parse_errs;
+      using ListCons = decltype(ls.ls_parse_errs)::Cons;
+      while (cur && std::holds_alternative<ListCons>(cur->v())) {
+        const auto& cell = std::get<ListCons>(cur->v());
+        if (cell.d_a0.ref_col == r.ref_col &&
+            cell.d_a0.ref_row == r.ref_row) {
+          std::cout << "#PARSE\n";
+          return 5;
+        }
+        cur = cell.d_a1.get();
+      }
+    }
     auto v = formula::eval_iter(ls.ls_sheet, r);
     if (v.has_value()) {
       std::cout << *v << '\n';
