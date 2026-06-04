@@ -21,6 +21,7 @@ Definition cell_to_csv (c : Cell) : PrimString.string :=
   | CStr s    => s
   | CBool b   => if b then "true" else "false"
   | CForm _   => ""
+  | CDate d   => date_to_string d
   end.
 
 Fixpoint row_to_csv (s : Sheet) (row col : nat) (count : nat) : PrimString.string :=
@@ -74,7 +75,7 @@ Theorem row_to_csv_no_leading_sep_smoke :
   row_to_csv new_sheet 0 0 0 = "".
 Proof. reflexivity. Qed.
 
-(* ----- CSV import (item 4) --------------------------------------- *)
+(* ----- CSV import ------------------------------------------------ *)
 (* RFC-4180-lite: comma-separated fields, LF- or CRLF-terminated
    rows; a double-quoted field may contain commas, newlines, and
    doubled quotes.  Each field commits like typed cell text: an
@@ -90,7 +91,11 @@ Definition csv_commit_field (s : Sheet) (field : PrimString.string)
   else
     match parse_int_literal field with
     | Some v => set_cell s (mkRef col row) (CLit v)
-    | None => set_cell s (mkRef col row) (CStr field)
+    | None =>
+      match parse_date_literal field with
+      | Some d => set_cell s (mkRef col row) (CDate d)
+      | None => set_cell s (mkRef col row) (CStr field)
+      end
     end.
 
 (* Scanner state.  [cc_next] is the next input index; the C++ side

@@ -15,7 +15,8 @@ Inductive FullCell : Type :=
   | FFloat : PrimFloat.float -> FullCell
   | FStr   : PrimString.string -> FullCell
   | FBool  : bool -> FullCell
-  | FForm  : Expr -> FullCell.
+  | FForm  : Expr -> FullCell
+  | FDate  : Z -> FullCell.
 
 Definition cell_to_full (c : Cell) : FullCell :=
   match c with
@@ -25,6 +26,7 @@ Definition cell_to_full (c : Cell) : FullCell :=
   | CStr s   => FStr s
   | CBool b  => FBool b
   | CForm e  => FForm e
+  | CDate d  => FDate d
   end.
 
 Definition full_to_cell (f : FullCell) : Cell :=
@@ -35,11 +37,12 @@ Definition full_to_cell (f : FullCell) : Cell :=
   | FStr s   => CStr s
   | FBool b  => CBool b
   | FForm e  => CForm e
+  | FDate d  => CDate d
   end.
 
 Theorem full_round_trip : forall c,
   full_to_cell (cell_to_full c) = c.
-Proof. intros [| | | | |]; reflexivity. Qed.
+Proof. intros [| | | | | |]; reflexivity. Qed.
 
 Theorem cell_to_full_inj : forall c1 c2,
   cell_to_full c1 = cell_to_full c2 -> c1 = c2.

@@ -13,7 +13,7 @@ From Rocqsheet Require Import Rocqsheet.
 Import ListNotations.
 Import Rocqsheet.
 
-(* int63 and Z both extract to int64_t under our mapping, so the
+(* Int63 and Z both extract to int64_t under our mapping, so the
    axiomatic conversions are identity casts. *)
 Crane Extract Inlined Constant Uint63Axioms.to_Z => "%a0".
 Crane Extract Inlined Constant Uint63Axioms.of_Z => "%a0".
@@ -93,37 +93,42 @@ Inductive token : Type :=
   | TSwitch
   | TCounta
   | TRangeSize
-  (* Item 89: literal tokens for the three non-integer Cell types. *)
+  (* Literal tokens for the three non-integer Cell types. *)
   | TFloat : PrimFloat.float -> token
   | TStr : PrimString.string -> token
   | TTrue
   | TFalse
-  (* Item 25: IF-aggregates. *)
+  (* IF-aggregates. *)
   | TSumIf
   | TCountIf
   | TAvgIf
-  (* Item 27: variance / standard deviation. *)
+  (* Variance / standard deviation. *)
   | TVar
   | TVarP
   | TStdev
   | TStdevP
-  (* Item 22: string operators. *)
+  (* String operators. *)
   | TUpper
   | TLower
   | TTrim
   | TFind
   | TReplaceS
-  (* Items 23 / 24: order statistics and NPV. *)
+  (* Order statistics and NPV. *)
   | TMedian
   | TModeV
   | TRank
   | TPercentile
   | TNpv
-  (* Item 21: exact-match lookups. *)
+  (* Exact-match lookups. *)
   | TVLookup
   | THLookup
   | TMatchV
-  | TIndex.
+  | TIndex
+  (* Date functions. *)
+  | TDate3
+  | TWeekday
+  | TEdate
+  | TEomonth.
 
 (* INT64_MAX / 10 = 922337203685477580; one extra digit must not
    exceed (INT64_MAX mod 10) = 7.  The negated form accepts one extra
@@ -250,7 +255,7 @@ Definition read_ref (fuel : nat) (s : PrimString.string) (len i : int)
     else None
   else None.
 
-(* Item 89: scan forward for the closing double-quote of a string
+(* Scan forward for the closing double-quote of a string
    literal.  Returns the index of the quote character itself, or
    None when the literal is unterminated. *)
 Fixpoint find_quote (fuel : nat) (s : PrimString.string) (len i : int)
@@ -312,7 +317,7 @@ Fixpoint tokenize_aux
       else if PrimInt63.eqb n 58 then
         tokenize_aux fuel' s len (PrimInt63.add i 1) (TColon :: acc)
       else if PrimInt63.eqb n 34 then
-        (* Item 89: double-quoted string literal.  The payload is the
+        (* Double-quoted string literal.  The payload is the
            raw byte span between the quotes; no escape sequences. *)
         let start := PrimInt63.add i 1 in
         match find_quote fuel s len start with
@@ -325,7 +330,7 @@ Fixpoint tokenize_aux
         match read_int fuel s len i with
         | None => None
         | Some (v, i') =>
-          (* Item 89: a '.' followed by at least one digit makes the
+          (* A '.' followed by at least one digit makes the
              literal a float.  [read_int] rejects an empty fraction,
              so "1." stays a tokenize error.  The fraction's digit
              count drives the 10^k scale divisor. *)
@@ -530,6 +535,32 @@ Fixpoint tokenize_aux
         then
           (* "INDEX(" *)
           tokenize_aux fuel' s len i6 (TIndex :: acc)
+        else if PrimInt63.eqb c0 87 && PrimInt63.eqb c1u 69 &&
+                PrimInt63.eqb c2u 69 && PrimInt63.eqb c3u 75 &&
+                PrimInt63.eqb c4u 68 && PrimInt63.eqb c5u 65 &&
+                PrimInt63.eqb c6u 89 && seven_letter_kw_lp
+        then
+          (* "WEEKDAY(" *)
+          tokenize_aux fuel' s len i8 (TWeekday :: acc)
+        else if PrimInt63.eqb c0 69 && PrimInt63.eqb c1u 79 &&
+                PrimInt63.eqb c2u 77 && PrimInt63.eqb c3u 79 &&
+                PrimInt63.eqb c4u 78 && PrimInt63.eqb c5u 84 &&
+                PrimInt63.eqb c6u 72 && seven_letter_kw_lp
+        then
+          (* "EOMONTH(" *)
+          tokenize_aux fuel' s len i8 (TEomonth :: acc)
+        else if PrimInt63.eqb c0 69 && PrimInt63.eqb c1u 68 &&
+                PrimInt63.eqb c2u 65 && PrimInt63.eqb c3u 84 &&
+                PrimInt63.eqb c4u 69 && five_letter_kw_lp
+        then
+          (* "EDATE(" *)
+          tokenize_aux fuel' s len i6 (TEdate :: acc)
+        else if PrimInt63.eqb c0 68 && PrimInt63.eqb c1u 65 &&
+                PrimInt63.eqb c2u 84 && PrimInt63.eqb c3u 69 &&
+                four_letter_kw_lp
+        then
+          (* "DATE(" *)
+          tokenize_aux fuel' s len i5 (TDate3 :: acc)
         else if PrimInt63.eqb c0 86 && PrimInt63.eqb c1u 65 &&
                 PrimInt63.eqb c2u 82 && three_letter_kw_lp
         then
@@ -583,7 +614,7 @@ Fixpoint tokenize_aux
           tokenize_aux fuel' s len i4 (TMax :: acc)
         else
           let two_letter_kw_lp := lparen i2 in
-          (* Item 89: TRUE / FALSE bare keyword literals.  The boundary
+          (* TRUE / FALSE bare keyword literals.  The boundary
              check (next char not alphanumeric) keeps "TRUEX" flowing
              into the read_ref fallback where it fails as before. *)
           let alnum_at j :=
@@ -666,7 +697,7 @@ Definition desugar_switch (args : list Expr) : option Expr :=
   | _ => None
   end.
 
-(* Item 25: parse the predicate of an IF-aggregate — a comparison
+(* Parse the predicate of an IF-aggregate — a comparison
    operator followed by an integer literal (optionally negated). *)
 Definition parse_pred (toks : list token) : option (CmpOp * Z * list token) :=
   match toks with
@@ -795,7 +826,7 @@ with parse_factor (fuel : nat) (toks : list token)
     match toks with
     | TMinus :: rest =>
       match parse_factor fuel' rest with
-      (* Item 89: negate a float literal in place so "-2.5" yields
+      (* Negate a float literal in place so "-2.5" yields
          [EFloat (-2.5)] instead of the integer-typed [ESub] that
          would degrade to EErr at evaluation. *)
       | Some (EFloat f, rest') => Some (EFloat (PrimFloat.opp f), rest')
@@ -809,7 +840,7 @@ with parse_factor (fuel : nat) (toks : list token)
       end
     | TInt n :: rest => Some (EInt n, rest)
     | TRef r :: rest => Some (ERef r, rest)
-    (* Item 89: literal tokens map directly onto the existing
+    (* Literal tokens map directly onto the existing
        EFloat / EStr / EBool constructors. *)
     | TFloat f :: rest => Some (EFloat f, rest)
     | TStr sv :: rest => Some (EStr sv, rest)
@@ -865,7 +896,7 @@ with parse_factor (fuel : nat) (toks : list token)
     | TAvg :: TRef r1 :: TColon :: TRef r2 :: TRParen :: rest' =>
       Some (EAvg r1 r2, rest')
     | TCount :: TRef r1 :: TColon :: TRef r2 :: TRParen :: rest' =>
-      (* Item 79: COUNT now counts numeric cells (Excel semantics);
+      (* COUNT now counts numeric cells (Excel semantics);
          the rectangle-cardinality ECount is reachable as RANGE_SIZE. *)
       Some (ECountN r1 r2, rest')
     | TMin :: TRef r1 :: TColon :: TRef r2 :: TRParen :: rest' =>
@@ -874,10 +905,10 @@ with parse_factor (fuel : nat) (toks : list token)
       Some (EMax r1 r2, rest')
     (* RANGE_SIZE is the rectangle-cardinality semantics of the
        original ECount constructor, kept under its own spelling now
-       that COUNT means "numeric cells" (item 79). *)
+       that COUNT means "numeric cells". *)
     | TRangeSize :: TRef r1 :: TColon :: TRef r2 :: TRParen :: rest' =>
       Some (ECount r1 r2, rest')
-    (* Item 25: SUMIF(range, pred, sum_anchor) / COUNTIF(range, pred)
+    (* SUMIF(range, pred, sum_anchor) / COUNTIF(range, pred)
        / AVERAGEIF(range, pred, sum_anchor).  The predicate is a
        comparison against an integer literal, e.g. >3, <0, =42. *)
     | TSumIf :: TRef r1 :: TColon :: TRef r2 :: TComma :: rest =>
@@ -899,9 +930,9 @@ with parse_factor (fuel : nat) (toks : list token)
       | _ => None
       end
     | TCounta :: TRef r1 :: TColon :: TRef r2 :: TRParen :: rest' =>
-      (* Item 79: COUNTA counts non-empty cells. *)
+      (* COUNTA counts non-empty cells. *)
       Some (ECountA r1 r2, rest')
-    (* Item 22: string operators. *)
+    (* String operators. *)
     | TUpper :: rest =>
       match parse_top fuel' rest with
       | Some (a, TRParen :: rest') => Some (EUpper a, rest')
@@ -944,7 +975,44 @@ with parse_factor (fuel : nat) (toks : list token)
         end
       | _ => None
       end
-    (* Item 21: exact-match lookups. *)
+    (* Date functions. *)
+    | TDate3 :: rest =>
+      match parse_top fuel' rest with
+      | Some (y, TComma :: rest1) =>
+        match parse_top fuel' rest1 with
+        | Some (m, TComma :: rest2) =>
+          match parse_top fuel' rest2 with
+          | Some (d, TRParen :: rest3) => Some (EDate3 y m d, rest3)
+          | _ => None
+          end
+        | _ => None
+        end
+      | _ => None
+      end
+    | TWeekday :: rest =>
+      match parse_top fuel' rest with
+      | Some (a, TRParen :: rest') => Some (EWeekdayF a, rest')
+      | _ => None
+      end
+    | TEdate :: rest =>
+      match parse_top fuel' rest with
+      | Some (a, TComma :: rest1) =>
+        match parse_top fuel' rest1 with
+        | Some (b, TRParen :: rest2) => Some (EEdateF a b, rest2)
+        | _ => None
+        end
+      | _ => None
+      end
+    | TEomonth :: rest =>
+      match parse_top fuel' rest with
+      | Some (a, TComma :: rest1) =>
+        match parse_top fuel' rest1 with
+        | Some (b, TRParen :: rest2) => Some (EEomonthF a b, rest2)
+        | _ => None
+        end
+      | _ => None
+      end
+    (* Exact-match lookups. *)
     | TVLookup :: rest =>
       (* VLOOKUP(x, range, col) *)
       match parse_top fuel' rest with
@@ -988,7 +1056,7 @@ with parse_factor (fuel : nat) (toks : list token)
         end
       | _ => None
       end
-    (* Items 23 / 24: order statistics and NPV. *)
+    (* Order statistics and NPV. *)
     | TMedian :: TRef r1 :: TColon :: TRef r2 :: TRParen :: rest' =>
       Some (EMedian r1 r2, rest')
     | TModeV :: TRef r1 :: TColon :: TRef r2 :: TRParen :: rest' =>
@@ -1015,7 +1083,7 @@ with parse_factor (fuel : nat) (toks : list token)
         Some (ENpvZ d r1 r2, rest')
       | _ => None
       end
-    (* Item 27: variance / standard deviation. *)
+    (* Variance / standard deviation. *)
     | TVar :: TRef r1 :: TColon :: TRef r2 :: TRParen :: rest' =>
       Some (EVarSamp r1 r2, rest')
     | TVarP :: TRef r1 :: TColon :: TRef r2 :: TRParen :: rest' =>
@@ -1098,6 +1166,11 @@ Fixpoint expr_depth (e : Expr) : nat :=
   | EVLookup x _ _ i | EHLookup x _ _ i =>
     S (Nat.max (expr_depth x) (expr_depth i))
   | EIndex _ _ a b => S (Nat.max (expr_depth a) (expr_depth b))
+  | EWeekdayF a => S (expr_depth a)
+  | EEdateF a b | EEomonthF a b =>
+    S (Nat.max (expr_depth a) (expr_depth b))
+  | EDate3 a b c =>
+    S (Nat.max (expr_depth a) (Nat.max (expr_depth b) (expr_depth c)))
   | ENot a | ELen a | EBNot a
   | EUpper a | ELower a | ETrim a => S (expr_depth a)
   | EAdd a b | ESub a b | EMul a b | EDiv a b
@@ -1135,6 +1208,42 @@ Definition parse_formula (s : PrimString.string) : option Expr :=
       | _ => None
       end
     end.
+
+(* YYYY-MM-DD date literal for non-formula cell input and
+   CSV import.  Whole-string match; the month and day must be in
+   range for the given year (no normalization at the literal level). *)
+Definition parse_date_literal (s : PrimString.string) : option Z :=
+  let len := PrimString.length s in
+  let fuel := S (nat_of_int len) in
+  let i0 := skip_ws fuel s len 0 in
+  match read_int fuel s len i0 with
+  | None => None
+  | Some (y, i1) =>
+    if negb (andb (PrimInt63.ltb i1 len)
+                  (PrimInt63.eqb (char_to_int (PrimString.get s i1)) 45))
+    then None
+    else
+      match read_int fuel s len (PrimInt63.add i1 1) with
+      | None => None
+      | Some (m, i2) =>
+        if negb (andb (PrimInt63.ltb i2 len)
+                      (PrimInt63.eqb (char_to_int (PrimString.get s i2))
+                                     45))
+        then None
+        else
+          match read_int fuel s len (PrimInt63.add i2 1) with
+          | None => None
+          | Some (d, i3) =>
+            let i4 := skip_ws fuel s len i3 in
+            if negb (PrimInt63.leb len i4) then None
+            else if orb (orb (Z.ltb m 1%Z) (Z.gtb m 12%Z))
+                        (orb (Z.ltb d 1%Z)
+                             (Z.gtb d (days_in_month y m)))
+            then None
+            else Some (date_to_days y m d)
+          end
+      end
+  end.
 
 (* Standalone integer-literal parser used for non-formula cell
    input.  Accepts surrounding whitespace and an optional leading

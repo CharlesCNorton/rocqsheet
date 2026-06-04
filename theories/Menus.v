@@ -19,7 +19,7 @@ Import Rocqsheet.
 Open Scope itree_scope.
 Local Open Scope pstring_scope.
 
-(* Item 86: walk the recent-paths list and render one menu item per
+(* Walk the recent-paths list and render one menu item per
    entry, dispatching to [do_load_recent] on click. *)
 Fixpoint recent_menu_items
     (ls : loop_state) (xs : list PrimString.string)
@@ -49,7 +49,7 @@ Definition file_menu (ls : loop_state) : itree imguiE loop_state :=
              imgui_end_menu ;;
              Ret ls'
            else Ret ls2) ;;
-  (* Item 4: CSV import at the selected anchor. *)
+  (* CSV import at the selected anchor. *)
   import_csv_clicked <- imgui_menu_item
     "Import CSV (formula bar = path)" true ;;
   ls2b <- (if import_csv_clicked then do_import_csv ls2a else Ret ls2a) ;;
@@ -92,7 +92,7 @@ Definition edit_menu (ls : loop_state) : itree imguiE loop_state :=
   let ls_s := cond_apply swp_clicked do_swap_with_next_row ls_dc in
   mrg_clicked <- imgui_menu_item "Merge Cell Right" has_sel ;;
   let ls_m := cond_apply mrg_clicked do_merge_right ls_s in
-  (* Item 39: the menu entry opens the Find / Replace modal; the
+  (* The menu entry opens the Find / Replace modal; the
      per-frame modal pump applies the committed pair. *)
   rep_clicked <- imgui_menu_item "Find / Replace... (Ctrl+H)" true ;;
   (if rep_clicked then modal_open "Find / Replace" else Ret tt) ;;
@@ -101,9 +101,7 @@ Definition edit_menu (ls : loop_state) : itree imguiE loop_state :=
   (if ren_clicked then modal_open "Rename Sheet" else Ret tt) ;;
   Ret ls_m.
 
-(* View menu: Show Formulas + Auto-Recalc toggles, Zoom controls.
-   Implements item 60 (Zoom) + item 68 (Show Formulas) +
-   item 73 (Auto-Recalc) at the menu level. *)
+(* View menu: Show Formulas + Auto-Recalc toggles, Zoom controls. *)
 Definition view_menu (ls : loop_state) : itree imguiE loop_state :=
   let sf_label :=
     if ls_show_formulas ls

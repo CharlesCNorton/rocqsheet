@@ -253,7 +253,7 @@ Definition build_save_string (ls : loop_state) : PrimString.string :=
   (PrimString.cat (save_all_edits_aux (ls_edit_buf ls) "")
   (save_all_sheets_aux ls 0 16 ""))))))))).
 
-(* Item 1: the autosave snapshot path. *)
+(* The autosave snapshot path. *)
 Definition autosave_path : PrimString.string :=
   PrimString.cat save_path ".autosave".
 
@@ -261,7 +261,7 @@ Definition do_save (ls : loop_state) : itree imguiE loop_state :=
   let _ := tt in
   _ <- file_save_atomic save_path (build_save_string ls) ;;
   recent_record save_path ;;
-  (* Items 1-3: a user save clears the dirty flag and retires any
+  (* A user save clears the dirty flag and retires any
      autosave snapshot. *)
   file_delete autosave_path ;;
   Ret (set_dirty ls false).
@@ -276,7 +276,7 @@ Definition do_save_as (ls : loop_state) : itree imguiE loop_state :=
   file_delete autosave_path ;;
   Ret (set_dirty ls false).
 
-(* Item 1: when the workbook is dirty and the 30-second C++ timer has
+(* When the workbook is dirty and the 30-second C++ timer has
    elapsed, write the autosave snapshot.  The dirty flag stays set:
    only a user-initiated save counts as saved. *)
 Definition do_autosave (ls : loop_state) : itree imguiE loop_state :=
@@ -300,7 +300,7 @@ Definition do_export_csv (ls : loop_state) : itree imguiE loop_state :=
   _ <- file_save_atomic path (Csv.to_csv (ls_sheet ls)) ;;
   Ret ls.
 
-(* Item 4: import a CSV file into the active sheet at the selected
+(* Import a CSV file into the active sheet at the selected
    anchor (A1 when nothing is selected).  Same formula-bar path
    convention as the CSV export; one undo entry covers the whole
    import. *)
@@ -385,7 +385,7 @@ Definition do_replace_user (ls : loop_state) : loop_state :=
            true
   end.
 
-(* Item 39: apply the Find / Replace modal's committed pair.  Both
+(* Apply the Find / Replace modal's committed pair.  Both
    fields must parse as integer literals; otherwise the commit is a
    no-op (the modal stays dismissed and the sheet untouched). *)
 Definition do_replace_pair (ls : loop_state)
@@ -840,12 +840,12 @@ Definition do_load_from
 Definition do_load (ls : loop_state) : itree imguiE loop_state :=
   do_load_from ls save_path.
 
-(* Item 86: Open Recent dispatcher — used by the matching submenu. *)
+(* Open Recent dispatcher — used by the matching submenu. *)
 Definition do_load_recent
     (ls : loop_state) (path : PrimString.string) : itree imguiE loop_state :=
   do_load_from ls path.
 
-(* Item 36 / 39: per-frame modal pump.  Renders every registered
+(* Per-frame modal pump.  Renders every registered
    modal; the active one (armed via [modal_open]) draws and reports
    the user's answer on its commit frame. *)
 Definition render_modals (ls : loop_state) : itree imguiE loop_state :=
@@ -860,7 +860,7 @@ Definition render_modals (ls : loop_state) : itree imguiE loop_state :=
   rn <- modal_text_prompt "Rename Sheet" "New name" ;;
   let '(rdone, rname) := rn in
   ls0b <- (if rdone then Ret (do_rename_sheet ls0 rname) else Ret ls0) ;;
-  (* Item 2: crash recovery.  Loading the autosave marks the workbook
+  (* Crash recovery.  Loading the autosave marks the workbook
      dirty (it differs from the on-disk save); declining retires the
      snapshot so the prompt does not reappear every launch. *)
   rec <- modal_confirm "Recover autosave?"
@@ -870,7 +870,7 @@ Definition render_modals (ls : loop_state) : itree imguiE loop_state :=
                Ret (set_dirty l true)
           else Ret ls0b) ;;
   (if Z.eqb rec 2%Z then file_delete autosave_path else Ret tt) ;;
-  (* Item 3: save-before-exit.  Save-and-close saves (clearing the
+  (* Save-before-exit.  Save-and-close saves (clearing the
      dirty flag) and re-requests the close; discard clears the flag
      so the next close request passes; keep-editing does nothing. *)
   ans <- modal_confirm3 "Unsaved changes"

@@ -43,6 +43,12 @@ Fixpoint expr_references (r : CellRef) (e : Expr) : bool :=
   | EIndex tl br a b =>
     orb (orb (expr_references r a) (expr_references r b))
         (orb (cellref_eqb r tl) (cellref_eqb r br))
+  | EWeekdayF a => expr_references r a
+  | EEdateF a b | EEomonthF a b =>
+    orb (expr_references r a) (expr_references r b)
+  | EDate3 a b c =>
+    orb (expr_references r a)
+        (orb (expr_references r b) (expr_references r c))
   | ESum tl br | EAvg tl br | ECount tl br
   | EMin tl br | EMax tl br
   | ECountN tl br | ECountA tl br
@@ -113,21 +119,47 @@ Theorem clean_after_eval :
   forall r, mem_dirty clear_dirty r = false.
 Proof. reflexivity. Qed.
 
-(* dirty_after_set marks the changed cell itself dirty. *)
+(* Folding more marks over the set never un-marks a member. *)
+Lemma fold_mark_preserves :
+  forall deps ds r,
+    mem_dirty ds r = true ->
+    mem_dirty (fold_left mark_dirty deps ds) r = true.
+Proof.
+  induction deps as [|d rest IH]; intros ds r Hin; simpl.
+  - exact Hin.
+  - apply IH. unfold mark_dirty.
+    destruct (mem_dirty ds d); [exact Hin|].
+    simpl. rewrite Hin. apply Bool.orb_true_r.
+Qed.
+
+(* The changed cell itself is marked, whatever the dependent list. *)
+Lemma fold_mark_cons :
+  forall deps ds r,
+    mem_dirty (fold_left mark_dirty (r :: deps) ds) r = true.
+Proof.
+  intros deps ds r. simpl.
+  apply fold_mark_preserves. apply mark_dirty_makes_dirty.
+Qed.
+
+(* dirty_after_set marks the changed cell itself dirty.  Proved by
+   instantiating the abstract-list lemma: reducing here instead
+   (simpl / cbn / vm) forces the 60000-fuel grid scan inside
+   [direct_dependents] and either runs for an hour or overflows the
+   stack at Qed. *)
 Theorem set_marks_self_dirty :
   forall s ds r, mem_dirty (dirty_after_set s ds r) r = true.
 Proof.
-  intros s ds r. unfold dirty_after_set. simpl.
-  generalize (direct_dependents s r) as deps.
-  induction deps as [|d ds_rest IH] in ds |- *.
-  - simpl. apply mark_dirty_makes_dirty.
-  - simpl. apply IH.
+  intros s ds r.
+  exact (fold_mark_cons (direct_dependents s r) ds r).
 Qed.
 
-(* Smoke: a cell whose formula references A1 ends up in the
-   direct_dependents of A1. *)
+(* Smoke: a cell whose formula references A1 is recognized as a
+   dependent by the per-cell predicate.  (Stated over
+   [cell_references] rather than [direct_dependents]: the latter is a
+   whole-grid fold of this predicate, and normalizing 52000 cells
+   under vm_compute takes the better part of an hour.) *)
 Theorem dependents_smoke :
   let r := mkRef 0 0 in
   let s := set_cell new_sheet (mkRef 1 0) (CForm (ERef r)) in
-  In (mkRef 1 0) (direct_dependents s r).
-Proof. vm_compute. left. reflexivity. Qed.
+  cell_references s r (mkRef 1 0) = true.
+Proof. reflexivity. Qed.

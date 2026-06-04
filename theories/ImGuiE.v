@@ -71,13 +71,13 @@ Inductive imguiE : Type -> Type :=
      caller now holds the lock and is safe to write; [false] when
      another process holds it. *)
   | EFileLock         : PrimString.string -> imguiE bool
-  (* Item 86: maintain a per-user "Open Recent" file at
+  (* Maintain a per-user "Open Recent" file at
      ~/.config/rocqsheet/recent.  [ERecentRecord p] prepends [p],
      dedupes, caps the list at 10, atomically rewrites the file.
      [ERecentList] returns the current list (newest first). *)
   | ERecentRecord     : PrimString.string -> imguiE unit
   | ERecentList       : imguiE (list PrimString.string)
-  (* Item 36: reusable modal framework.  Popup visibility and the
+  (* Reusable modal framework.  Popup visibility and the
      text-input buffers live C++-side in modal_helpers; the tree sees
      each modal as an effect reporting the user's committed answer.
      [EModalOpen id] arms the popup named [id]. *)
@@ -85,11 +85,11 @@ Inductive imguiE : Type -> Type :=
   (* Render a confirm modal (id, message).  Returns 0 while pending
      or closed, 1 on the OK frame, 2 on the Cancel frame. *)
   | EModalConfirm     : PrimString.string -> PrimString.string -> imguiE Z
-  (* Item 39: render the Find / Replace modal.  Returns
+  (* Render the Find / Replace modal.  Returns
      (done, (find_text, replace_text)); [done] is true exactly on
      the frame Replace All is clicked. *)
   | EModalFindReplace : imguiE (bool * (PrimString.string * PrimString.string))
-  (* Item 3: three-button confirm (id, message, b1, b2, b3).
+  (* Three-button confirm (id, message, b1, b2, b3).
      Returns 0 while pending or closed, 1 / 2 / 3 on a button frame. *)
   | EModalConfirm3    : PrimString.string -> PrimString.string ->
                         PrimString.string -> PrimString.string ->
@@ -98,14 +98,14 @@ Inductive imguiE : Type -> Type :=
      (done, text) where done is true exactly on the OK frame. *)
   | EModalTextPrompt  : PrimString.string -> PrimString.string ->
                         imguiE (bool * PrimString.string)
-  (* Item 1: true at most once per 30-second window (C++ monotonic
+  (* True at most once per 30-second window (C++ monotonic
      clock); gates the autosave write. *)
   | EAutosaveDue      : imguiE bool
-  (* Item 2: true when file [a] exists and is newer than file [b]
+  (* True when file [a] exists and is newer than file [b]
      (or [b] is missing). *)
   | EFileNewer        : PrimString.string -> PrimString.string -> imguiE bool
   | EFileDelete       : PrimString.string -> imguiE unit
-  (* Item 3: drive glfwSetWindowShouldClose, to cancel a close while
+  (* Drive glfwSetWindowShouldClose, to cancel a close while
      the save-confirm modal runs and to re-request it afterwards. *)
   | ESetShouldClose   : bool -> imguiE unit
   | EClipboardGet     : imguiE PrimString.string

@@ -141,7 +141,7 @@ Definition do_cut (ls : loop_state) : itree imguiE loop_state :=
     Ret (commit_to ls r "")
   end.
 
-(* Item 68: toggle Show Formulas render mode. *)
+(* Toggle Show Formulas render mode. *)
 Definition do_toggle_show_formulas (ls : loop_state) : loop_state :=
   mkLoop (ls_sheet ls) (ls_selected ls) (ls_fbar_text ls)
          (ls_edit_buf ls) (ls_parse_errs ls)
@@ -150,7 +150,7 @@ Definition do_toggle_show_formulas (ls : loop_state) : loop_state :=
          (ls_merges ls) (ls_sheet_names ls)
          (negb (ls_show_formulas ls)) (ls_zoom ls) (ls_auto_recalc ls) (ls_dirty ls).
 
-(* Item 73: toggle Auto-Recalc. *)
+(* Toggle Auto-Recalc. *)
 Definition do_toggle_auto_recalc (ls : loop_state) : loop_state :=
   mkLoop (ls_sheet ls) (ls_selected ls) (ls_fbar_text ls)
          (ls_edit_buf ls) (ls_parse_errs ls)
@@ -160,7 +160,7 @@ Definition do_toggle_auto_recalc (ls : loop_state) : loop_state :=
          (ls_show_formulas ls) (ls_zoom ls) (negb (ls_auto_recalc ls))
          (ls_dirty ls).
 
-(* Item 60: zoom helpers.  Clamp to [50, 300] in steps of 10. *)
+(* Zoom helpers.  Clamp to [50, 300] in steps of 10. *)
 Definition zoom_min : Z := 50%Z.
 Definition zoom_max : Z := 300%Z.
 Definition zoom_step : Z := 10%Z.
@@ -198,7 +198,7 @@ Definition do_zoom_reset (ls : loop_state) : loop_state :=
          (ls_merges ls) (ls_sheet_names ls)
          (ls_show_formulas ls) 100%Z (ls_auto_recalc ls) (ls_dirty ls).
 
-(* Item 53 (Tab half) helper: commit the current edit, then advance
+(* Commit the current edit, then advance
    the selection one column right.  See [handle_shortcuts] below. *)
 Definition tab_commit_advance (ls : loop_state) : loop_state :=
   advance_after_tab (do_commit ls).
@@ -226,7 +226,7 @@ Definition handle_shortcuts (ls : loop_state) : itree imguiE loop_state :=
   let ls10 := cond_apply t do_swap_with_next_row ls9 in
   m <- ctrl_key_pressed "m" ;;
   let ls11 := cond_apply m do_merge_right ls10 in
-  (* Item 39: Ctrl+H opens the Find / Replace modal; the per-frame
+  (* Ctrl+H opens the Find / Replace modal; the per-frame
      modal pump in process_frame applies the committed pair. *)
   h <- ctrl_key_pressed "h" ;;
   (if h then modal_open "Find / Replace" else Ret tt) ;;
@@ -235,7 +235,7 @@ Definition handle_shortcuts (ls : loop_state) : itree imguiE loop_state :=
   ls13 <- (if p then do_pdf_export ls12 else Ret ls12) ;;
   shift_s <- ctrl_shift_key_pressed "s" ;;
   ls14 <- (if shift_s then do_save_as ls13 else Ret ls13) ;;
-  (* Item 64 — Home / End / PageUp / PageDown. *)
+  (* Home / End / PageUp / PageDown. *)
   pu <- key_pressed "PageUp" ;;
   let ls15 := cond_apply pu do_page_up ls14 in
   pd <- key_pressed "PageDown" ;;
@@ -244,7 +244,7 @@ Definition handle_shortcuts (ls : loop_state) : itree imguiE loop_state :=
   let ls17 := cond_apply hk do_home ls16 in
   ek <- key_pressed "End" ;;
   let ls18 := cond_apply ek do_end ls17 in
-  (* Item 62 — Ctrl+arrow jumps to next non-empty cell. *)
+  (* Ctrl+arrow jumps to next non-empty cell. *)
   cu <- ctrl_arrow_pressed "Up" ;;
   let ls19 := cond_apply cu do_ctrl_up ls18 in
   cd <- ctrl_arrow_pressed "Down" ;;
@@ -253,28 +253,28 @@ Definition handle_shortcuts (ls : loop_state) : itree imguiE loop_state :=
   let ls21 := cond_apply cl do_ctrl_left ls20 in
   cr <- ctrl_arrow_pressed "Right" ;;
   let ls22 := cond_apply cr do_ctrl_right ls21 in
-  (* Item 73 — Delete clears the selected cell; Ctrl+X copies then clears. *)
+  (* Delete clears the selected cell; Ctrl+X copies then clears. *)
   del <- key_pressed "Delete" ;;
   let ls23 := cond_apply del do_clear_cell ls22 in
   x <- ctrl_key_pressed "x" ;;
   ls24 <- (if x then do_cut ls23 else Ret ls23) ;;
-  (* Item 68 — Ctrl+` toggles Show Formulas mode. *)
+  (* Ctrl+` toggles Show Formulas mode. *)
   tilde <- ctrl_key_pressed "`" ;;
   let ls25 := cond_apply tilde do_toggle_show_formulas ls24 in
-  (* Item 60 — Ctrl+= zoom in, Ctrl+- zoom out, Ctrl+0 reset. *)
+  (* Ctrl+= zoom in, Ctrl+- zoom out, Ctrl+0 reset. *)
   zin <- ctrl_key_pressed "=" ;;
   let ls26 := cond_apply zin do_zoom_in ls25 in
   zout <- ctrl_key_pressed "-" ;;
   let ls27 := cond_apply zout do_zoom_out ls26 in
   zres <- ctrl_key_pressed "0" ;;
   let ls28 := cond_apply zres do_zoom_reset ls27 in
-  (* Item 53 (Tab half) — commit, then move selection one column right.
+  (* commit, then move selection one column right.
      Wrapped as one pure step so cond_apply can hand the extracted
      C++ a function pointer (loop_state has no default ctor, so a raw
      [if .. then .. else ..] won't extract cleanly). *)
   tab <- key_pressed "Tab" ;;
   let ls29 := cond_apply tab tab_commit_advance ls28 in
-  (* Item 61 — Ctrl+Shift+I inserts a column, Ctrl+Shift+D deletes one. *)
+  (* Ctrl+Shift+I inserts a column, Ctrl+Shift+D deletes one. *)
   ins_col <- ctrl_shift_key_pressed "i" ;;
   let ls30 := cond_apply ins_col do_insert_col ls29 in
   del_col <- ctrl_shift_key_pressed "d" ;;

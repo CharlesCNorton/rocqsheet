@@ -178,6 +178,10 @@ std::string csv_cell(const Rocqsheet::Sheet& sheet,
   if (std::holds_alternative<Rocqsheet::Cell::CLit>(c.v())) {
     return std::to_string(std::get<Rocqsheet::Cell::CLit>(c.v()).d_a0);
   }
+  if (std::holds_alternative<Rocqsheet::Cell::CDate>(c.v())) {
+    return Rocqsheet::date_to_string(
+        std::get<Rocqsheet::Cell::CDate>(c.v()).d_a0);
+  }
   if (std::holds_alternative<Rocqsheet::Cell::CFloat>(c.v())) {
     return std::to_string(std::get<Rocqsheet::Cell::CFloat>(c.v()).d_a0);
   }
@@ -286,7 +290,7 @@ int run_headless(const std::string& load_path,
       std::cout << *v << '\n';
       return 0;
     }
-    // Item 89: nullopt covers typed results as well as errors, so
+    // nullopt covers typed results as well as errors, so
     // fall through to the extracted [eval_cell] where float / string
     // / bool results surface with their values instead of degrading
     // to #ERR through the integer-only [formula::eval_iter] contract.
@@ -318,8 +322,8 @@ int run_headless(const std::string& load_path,
   }
   if (!exec_macro.empty()) {
     std::fprintf(stderr,
-                 "headless: --exec requires the macro engine "
-                 "(see TODO item 96)\n");
+                 "headless: --exec requires the macro engine, "
+                 "which is not built yet\n");
     return 3;
   }
   // Plain --headless --load <path>: just verify the load round-trips.
@@ -430,7 +434,7 @@ int main(int argc, char** argv) {
     }
   }
 
-  // Item 100: drag-and-drop file open.  GLFW's drop callback fires
+  // drag-and-drop file open.  GLFW's drop callback fires
   // outside our frame loop; capture the path in a static, then
   // [apply_save_blob] at the top of the next frame.  Empty paths
   // are ignored.  Only the first file of a multi-file drop is used.

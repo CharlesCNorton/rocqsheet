@@ -260,7 +260,7 @@ Definition snapshot_at (log : OpLog) (t : Z) : OpLog :=
 Definition hist (log : OpLog) (r : CellRef) (t : Z) : Cell :=
   deliver (snapshot_at log t) r.
 
-(* hist factors through the OpLog prefix at [t] (definitional). *)
+(* Hist factors through the OpLog prefix at [t] (definitional). *)
 Theorem hist_factors_through_prefix : forall log r t,
   hist log r t = deliver (snapshot_at log t) r.
 Proof. reflexivity. Qed.

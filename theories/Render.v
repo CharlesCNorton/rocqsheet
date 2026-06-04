@@ -29,7 +29,7 @@ Definition render_one_cell
   let '(disp_raw, is_err) :=
     cell_display (ls_sheet ls) (ls_merges ls) (ls_parse_errs ls)
                  (ls_formats ls) ref in
-  (* Item 68: when Show Formulas mode is on, replace each cell's
+  (* When Show Formulas mode is on, replace each cell's
      evaluated value with its source text (the `=A1+B1` etc.).  We
      keep the parse-error tag so [#PARSE] still surfaces visibly. *)
   let disp :=
@@ -96,7 +96,7 @@ Fixpoint clipper_loop
       Ret ls
   end.
 
-(* Item 60: scale column widths by ls_zoom%.  Base width 80 at 100%
+(* Scale column widths by ls_zoom%.  Base width 80 at 100%
    zoom; clamped at runtime to [40, 240] so the grid stays usable
    even at extreme zoom levels. *)
 Definition zoomed_col_width (zoom_pct : Z) : Z :=
@@ -216,7 +216,7 @@ Definition render_grid (ls : loop_state) : itree imguiE loop_state :=
 
 (* After Enter commits, advance the selection one row down so the
    user can stream a column of values without reaching for the
-   arrow keys.  Clamped at the last row.  Item 53 (Enter half).
+   arrow keys.  Clamped at the last row.
    Tab-advances are deferred until ImGui's Tab handler is wired to
    bypass focus cycling. *)
 Definition advance_after_enter (ls : loop_state) : loop_state :=
@@ -231,7 +231,7 @@ Definition advance_after_enter (ls : loop_state) : loop_state :=
     select_cell ls (mkRef (cell_col_of r) new_r)
   end.
 
-(* Item 53 (Tab half): advance selection one column right, clamped at
+(* Advance selection one column right, clamped at
    the last column.  Invoked from [handle_shortcuts] when the user
    presses Tab — we read the key before ImGui's focus-cycling handler
    acts on it, so the formula-bar text is committed and the selection
@@ -248,7 +248,7 @@ Definition advance_after_tab (ls : loop_state) : loop_state :=
     select_cell ls (mkRef new_c (cell_row_of r))
   end.
 
-(* Item 64: count '(' and ')' in the formula-bar text.  The byte-
+(* Count '(' and ')' in the formula-bar text.  The byte-
    exact scan is fine because '(' and ')' are single-byte ASCII even
    under any multi-byte encoding we'd care about. *)
 Fixpoint parens_balance_aux (s : PrimString.string) (i : int)
@@ -270,7 +270,7 @@ Fixpoint parens_balance_aux (s : PrimString.string) (i : int)
 Definition parens_balance (s : PrimString.string) : Z * Z :=
   parens_balance_aux s 0 (PrimString.length s) 4096 (0%Z, 0%Z).
 
-(* Item 64: scan the formula-bar text and compute (open, close)
+(* Scan the formula-bar text and compute (open, close)
    parenthesis counts.  Equal counts + nonzero ≡ balanced; anything
    else surfaces a small indicator next to the input. *)
 Definition parens_indicator (txt : PrimString.string) : PrimString.string :=
@@ -298,13 +298,13 @@ Definition render_formula_bar (ls : loop_state) : itree imguiE loop_state :=
   let ls1 := update_fbar ls new_text in
   Ret (if enter then advance_after_enter (do_commit ls1) else ls1).
 
-(* ----- Status bar (item 51) -------------------------------- *)
+(* ----- Status bar ------------------------------------------ *)
 (* Per-frame aggregate over the active sheet: sum, count, avg, min,
    max, non-empty count.  Surfaced at the bottom of the main window
    so the user does not have to type a [SUM(...)] formula into a
    scratch cell to see the total.  When [ls_selected] resolves to a
    numeric cell, that cell's value and label are appended.  Once the
-   selection model is widened to a range (item 50), this driver
+   selection model is widened to a range, this driver
    becomes the range-aggregate path. *)
 
 Record sheet_agg : Type := mkAgg {
@@ -340,6 +340,7 @@ Definition agg_cell_step (s : Sheet) (acc : sheet_agg) (idx : int)
   match PrimArray.get s idx with
   | CEmpty   => acc
   | CLit n   => merge_z acc n
+  | CDate d  => merge_z acc d
   | CFloat _ => merge_nonempty acc
   | CStr _   => merge_nonempty acc
   | CBool _  => merge_nonempty acc
@@ -426,6 +427,7 @@ Definition pdf_text_of_cell (s : Sheet) (r : CellRef) : PrimString.string :=
   | CFloat f => string_of_float f
   | CStr str => str
   | CBool b  => if b then "TRUE" else "FALSE"
+  | CDate d  => date_to_string d
   | CForm e =>
     match eval_expr DEFAULT_FUEL (mark_visited empty_visited r) s e with
     | EVal v   => string_of_z v

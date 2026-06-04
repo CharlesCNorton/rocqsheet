@@ -12,11 +12,11 @@ Open Scope Z_scope.
    side resolves these to concrete values; until interpretation, the
    expressions are deterministic terms over events. *)
 Inductive clockE : Type -> Type :=
-  | ETodayEv : clockE Z      (* days since epoch *)
-  | ENowEv   : clockE Z.     (* seconds since epoch *)
+  | ETodayEv : clockE Z      (* Days since epoch *)
+  | ENowEv   : clockE Z.     (* Seconds since epoch *)
 
 Inductive randE : Type -> Type :=
-  | ERandEv : randE Z.       (* nondeterministic Z (semantics caps to [0, scale)) *)
+  | ERandEv : randE Z.       (* Nondeterministic Z (semantics caps to [0, scale)) *)
 
 Definition today : itree clockE Z := trigger ETodayEv.
 Definition now   : itree clockE Z := trigger ENowEv.
@@ -48,10 +48,11 @@ Definition const_rand (v : Z) : forall T, randE T -> T :=
    seconds, and now / 86400 = today. *)
 Theorem today_le_now :
   forall today_val now_val,
+    0 <= today_val ->
     today_val * 86400 <= now_val < (today_val + 1) * 86400 ->
     today_val <= now_val.
 Proof.
-  intros td nv [Hlo Hhi]. nia.
+  intros td nv Hnn [Hlo Hhi]. nia.
 Qed.
 
 (* RAND value within a half-open range [0, n) when the interpreter

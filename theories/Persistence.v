@@ -90,6 +90,7 @@ Definition cell_to_pcell (c : Cell) : option PCell :=
   | CBool b  => Some (PBool b)
   | CStr _   => None
   | CForm _  => None
+  | CDate _  => None
   end.
 
 Definition pcell_to_cell (p : PCell) : Cell :=

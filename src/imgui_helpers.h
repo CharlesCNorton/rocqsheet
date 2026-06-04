@@ -54,7 +54,7 @@ enum class cell_event { None, Selected, DoubleClicked };
 inline bool should_close() {
   return g_window ? glfwWindowShouldClose(g_window) : true;
 }
-// Item 3: cancel a pending close while the save-confirm modal runs,
+// cancel a pending close while the save-confirm modal runs,
 // or re-request it after the user picks an exit path.
 inline void set_should_close(bool v) {
   if (g_window) {
@@ -394,7 +394,7 @@ inline bool file_lock(const std::string& path) {
 
 // ----- Clipboard --------------------------------------------------------
 //
-// Item 102 (OS clipboard interop) — the GLFW ImGui backend's default
+// OS clipboard interop: the GLFW ImGui backend's default
 // clipboard handlers are `glfwGetClipboardString` / `glfwSetClipboardString`
 // which sit directly on top of the OS clipboard (X11 selection / Wayland
 // data device / macOS pasteboard / Win32 OpenClipboard).  So
@@ -402,10 +402,10 @@ inline bool file_lock(const std::string& path) {
 // into another application picks the cell text up, and pasting from
 // another application drops its text into the formula bar.
 //
-// What's NOT yet done is the TSV-format part of item 102: when the
+// What's NOT yet done is the TSV-format half: when the
 // selection is a multi-cell range, `do_copy` should emit tab-separated
 // values so a paste into Excel / Numbers / LibreOffice unpacks into a
-// matching range.  That work depends on item 59 (replace `ls_selected`
+// matching range.  That work depends on range selection (replace `ls_selected`
 // with a (TL, BR) range) and is deferred here.
 
 inline std::string clipboard_get() {

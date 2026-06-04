@@ -21,7 +21,7 @@ Record Chart : Type := mkChart
   { chart_kind  : ChartKind
   ; chart_tl    : CellRef
   ; chart_br    : CellRef
-  ; chart_title : list nat   (* placeholder for a title *) }.
+  ; chart_title : list nat   (* Placeholder for a title *) }.
 
 Definition Charts : Type := list Chart.
 

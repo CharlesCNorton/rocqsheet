@@ -63,6 +63,11 @@ Fixpoint float_free (e : Expr) : bool :=
   | EVLookup x _ _ i | EHLookup x _ _ i =>
     andb (float_free x) (float_free i)
   | EIndex _ _ a b => andb (float_free a) (float_free b)
+  | EWeekdayF a => float_free a
+  | EEdateF a b | EEomonthF a b =>
+    andb (float_free a) (float_free b)
+  | EDate3 a b c =>
+    andb (float_free a) (andb (float_free b) (float_free c))
   | ESum _ _ | EAvg _ _ | ECount _ _
   | EMin _ _ | EMax _ _
   | ECountN _ _ | ECountA _ _
@@ -71,7 +76,7 @@ Fixpoint float_free (e : Expr) : bool :=
   | EFloat _ | EFAdd _ _ | EFSub _ _ | EFMul _ _ | EFDiv _ _ => false
   end.
 
-(* float-free [Expr] never produces an [EFVal] result on a sheet
+(* Float-free [Expr] never produces an [EFVal] result on a sheet
    whose stored [CFloat] cells are not referenced from [e].  Stated
    here as a structural property of [float_free]: every constructor
    recurses through [float_free] except the [EF*] family which is

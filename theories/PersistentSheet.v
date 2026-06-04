@@ -54,8 +54,11 @@ Lemma psheet_get_remove_other :
 Proof.
   induction s as [|[r0 c0] rest IH]; intros r r' Hne; simpl.
   - reflexivity.
-  - destruct (cellref_eqb r0 r') eqn:E0.
-    + apply IH; assumption.
+  - destruct (cellref_eqb r' r0) eqn:E0.
+    + (* The head is the removed ref, so the right-hand lookup also
+         falls through to the tail. *)
+      apply cellref_eqb_sound in E0. subst r0.
+      rewrite Hne. apply IH; assumption.
     + simpl. destruct (cellref_eqb r r0) eqn:E1.
       * reflexivity.
       * apply IH; assumption.

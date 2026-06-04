@@ -8,7 +8,7 @@
    reference cycles or non-literal divisors are out of scope. *)
 
 From Stdlib Require Import List BinInt Bool Lia.
-From Corelib Require Import PrimInt63.
+From Corelib Require Import PrimInt63 PrimFloat.
 From Crane Require Import Mapping.NatIntStd Mapping.ZInt.
 From Rocqsheet Require Import Rocqsheet.
 Import ListNotations.
@@ -127,11 +127,14 @@ Proof.
   split; [left; reflexivity|vm_compute; reflexivity].
 Qed.
 
+(* The analyzer still flags a negative literal exponent (the static
+   class is advisory), while evaluation now produces the float
+   reciprocal: 2^-1 = 0.5. *)
 Theorem neg_pow_witness_smoke :
   let r := mkRef 0 0 in
   let s := set_cell new_sheet r (CForm (EPow (EInt 2%Z) (EInt (-1)%Z))) in
   In EClassNegPow (analyze_expr (EPow (EInt 2%Z) (EInt (-1)%Z))) /\
-  eval_cell DEFAULT_FUEL s r = EErr.
+  eval_cell DEFAULT_FUEL s r = EFVal 0.5%float.
 Proof.
   split; [left; reflexivity|vm_compute; reflexivity].
 Qed.

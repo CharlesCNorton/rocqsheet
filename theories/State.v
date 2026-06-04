@@ -271,7 +271,7 @@ Fixpoint show_expr (e : Expr) : PrimString.string :=
         (PrimString.cat ":"
           (PrimString.cat (cell_label br) ")")))
   | ECount tl br =>
-    (* Item 79: the rectangle-cardinality constructor is spelled
+    (* The rectangle-cardinality constructor is spelled
        RANGE_SIZE at the surface; COUNT is the numeric counter. *)
     PrimString.cat "RANGE_SIZE("
       (PrimString.cat (cell_label tl)
@@ -457,6 +457,25 @@ Fixpoint show_expr (e : Expr) : PrimString.string :=
               (PrimString.cat (show_expr a)
                 (PrimString.cat ","
                   (PrimString.cat (show_expr b) ")")))))))
+  | EDate3 a b c =>
+    PrimString.cat "DATE("
+      (PrimString.cat (show_expr a)
+        (PrimString.cat ","
+          (PrimString.cat (show_expr b)
+            (PrimString.cat ","
+              (PrimString.cat (show_expr c) ")")))))
+  | EWeekdayF a =>
+    PrimString.cat "WEEKDAY(" (PrimString.cat (show_expr a) ")")
+  | EEdateF a b =>
+    PrimString.cat "EDATE("
+      (PrimString.cat (show_expr a)
+        (PrimString.cat ","
+          (PrimString.cat (show_expr b) ")")))
+  | EEomonthF a b =>
+    PrimString.cat "EOMONTH("
+      (PrimString.cat (show_expr a)
+        (PrimString.cat ","
+          (PrimString.cat (show_expr b) ")")))
   | EBAnd a b => PrimString.cat "BAND("
                   (PrimString.cat (show_expr a)
                     (PrimString.cat ","
@@ -485,6 +504,7 @@ Definition show_cell (c : Cell) : PrimString.string :=
   | CStr s   => s
   | CBool b  => if b then "TRUE" else "FALSE"
   | CForm e  => PrimString.cat "=" (show_expr e)
+  | CDate d  => date_to_string d
   end.
 
 (* ----- Loop state --------------------------------------------- *)
@@ -522,19 +542,19 @@ Record loop_state : Type := mkLoop {
   ls_sheet_names  : list PrimString.string;
   (* Render mode: when [true], cell_display returns the raw formula
      text (with leading `=`) instead of the evaluated value.  Toggled
-     by Ctrl+` (Excel convention).  See item 68. *)
+     by Ctrl+` (Excel convention). *)
   ls_show_formulas : bool;
   (* Zoom factor as a percentage.  100 = no scaling; +10 per Ctrl+=
      press, -10 per Ctrl+-, clamped to [50, 300].  Used by render
-     to scale column widths.  See item 60. *)
+     to scale column widths. *)
   ls_zoom : Z;
   (* When [false], edits do not propagate through the dep graph until
-     the user presses F9 (Recalc).  The eval pipeline currently has
-     no memoisation layer (TODO item 9), so this flag is honoured by
+     the user presses F9 (Recalc).  The eval pipeline has no
+     memoisation layer yet, so this flag is honoured by
      [render_one_cell] which holds the last-rendered value when
-     auto-recalc is off.  See item 73. *)
+     auto-recalc is off. *)
   ls_auto_recalc : bool;
-  (* Items 1-3: true when the workbook has edits not yet written by a
+  (* True when the workbook has edits not yet written by a
      user-initiated save.  Set by every mutating commit, cleared by
      save / load.  Drives the 30-second autosave and the
      save-before-exit confirm. *)
@@ -644,7 +664,7 @@ Definition add_ref (xs : list CellRef) (r : CellRef) : list CellRef :=
 
 Definition err_marker : PrimString.string := "#ERR".
 Definition parse_marker : PrimString.string := "#PARSE".
-(* Item 66: distinguish fuel exhaustion from genuine evaluation errors. *)
+(* Distinguish fuel exhaustion from genuine evaluation errors. *)
 Definition fuel_marker : PrimString.string := "#FUEL".
 
 (* Three-state display: text, is-error (renders red), is-fuel (renders
@@ -662,6 +682,7 @@ Definition cell_display (s : Sheet) (ms : MergeList) (errs : list CellRef)
     | CFloat f => (format_float f nf, false)
     | CStr str => (str, false)
     | CBool b  => ((if b then "TRUE" else "FALSE"), false)
+    | CDate d  => (date_to_string d, false)
     | CForm e =>
       match eval_expr DEFAULT_FUEL (mark_visited empty_visited resolved) s e with
       | EVal v   => (format_z v nf, false)
@@ -725,7 +746,7 @@ Definition select_cell (ls : loop_state) (r : CellRef) : loop_state :=
          (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls)
          (ls_dirty ls).
 
-(* Item 39: rename the active sheet.  Empty names are rejected; sheet
+(* Rename the active sheet.  Empty names are rejected; sheet
    names persist via the save format's N= directive, so a rename
    dirties the workbook. *)
 Definition do_rename_sheet (ls : loop_state) (name : PrimString.string)
@@ -741,7 +762,7 @@ Definition do_rename_sheet (ls : loop_state) (name : PrimString.string)
               (nat_of_int (ls_active ls)) name)
            (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls) true.
 
-(* Items 1-3: dirty-flag writer used by save (false), load-recovery
+(* Dirty-flag writer used by save (false), load-recovery
    (true), and the discard-and-close path (false). *)
 Definition set_dirty (ls : loop_state) (d : bool) : loop_state :=
   mkLoop (ls_sheet ls) (ls_selected ls) (ls_fbar_text ls)

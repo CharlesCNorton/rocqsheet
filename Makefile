@@ -62,6 +62,7 @@ run: build
 	./$(CMAKE_DIR)/rocqsheet
 
 test: build
+	dune build theories
 	./$(CMAKE_DIR)/formula_test
 	./$(CMAKE_DIR)/kernel_test
 	./$(CMAKE_DIR)/torture_test

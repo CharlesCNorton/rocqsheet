@@ -17,7 +17,7 @@ Inductive Align : Type := AlignLeft | AlignCenter | AlignRight.
 
 Record CellFormat : Type := mkFormat
   { fmt_bold      : bool
-  ; fmt_color_rgb : Z       (* packed 0xRRGGBB *)
+  ; fmt_color_rgb : Z       (* Packed 0xRRGGBB *)
   ; fmt_border    : bool
   ; fmt_align     : Align
   ; fmt_number    : NumberFormat }.

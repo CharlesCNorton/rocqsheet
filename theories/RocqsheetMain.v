@@ -35,7 +35,7 @@ Local Open Scope pstring_scope.
 Definition process_frame (ls : loop_state) : itree imguiE (bool * loop_state) :=
   glfw_poll_events ;;
   closing <- glfw_should_close ;;
-  (* Item 3: a clean workbook closes immediately; a dirty one cancels
+  (* A clean workbook closes immediately; a dirty one cancels
      the close and opens the save-confirm modal, whose pump handles
      each exit path. *)
   if andb closing (negb (ls_dirty ls)) then Ret (true, ls)
@@ -52,10 +52,10 @@ Definition process_frame (ls : loop_state) : itree imguiE (bool * loop_state) :=
     imgui_separator ;;
     ls3 <- render_tab_bar ls2 ;;
     ls4 <- render_grid ls3 ;;
-    (* Item 51: selection summary + sheet aggregate at bottom. *)
+    (* Selection summary + sheet aggregate at bottom. *)
     imgui_separator ;;
     render_status_bar ls4 ;;
-    (* Item 36 / 39: per-frame modal pump, inside the main window so
+    (* Per-frame modal pump, inside the main window so
        the popup ID scope is stable. *)
     ls4b <- render_modals ls4 ;;
     imgui_end_window ;;
@@ -67,7 +67,7 @@ Definition process_frame (ls : loop_state) : itree imguiE (bool * loop_state) :=
     render_charts ls4b ;;
     imgui_end_window ;;
     ls5 <- handle_shortcuts ls4b ;;
-    (* Item 1: 30-second autosave of a dirty workbook. *)
+    (* 30-second autosave of a dirty workbook. *)
     ls6 <- do_autosave ls5 ;;
     imgui_render_frame ;;
     Ret (false, ls6).
@@ -86,7 +86,7 @@ CoFixpoint run_app (ls : loop_state) : itree imguiE c_int :=
   else Tau (run_app ls').
 
 Definition rocqsheet_run : itree imguiE c_int :=
-  (* Item 2: when an autosave outlives the last user save (a crash or
+  (* When an autosave outlives the last user save (a crash or
      kill landed between saves), arm the recovery modal before the
      first frame. *)
   rec <- file_newer autosave_path save_path ;;

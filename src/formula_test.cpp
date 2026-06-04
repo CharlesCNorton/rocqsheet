@@ -120,7 +120,16 @@ int main() {
   want_fail("if-bare",     "IF");
   want_fail("eq-trailing", "A1=");
 
-  // Item 21: exact-match lookups.
+  // date functions.
+  want_ok("date3",     "DATE(2026,6,4)");
+  want_ok("weekday",   "WEEKDAY(A1)");
+  want_ok("edate",     "EDATE(A1,1)");
+  want_ok("eomonth",   "EOMONTH(A1,0)");
+  want_ok("date-expr", "DATE(2026,B1,4)");
+  want_fail("date-2arg",   "DATE(2026,6)");
+  want_fail("edate-1arg",  "EDATE(A1)");
+
+  // exact-match lookups.
   want_ok("vlookup",      "VLOOKUP(20,A1:C3,2)");
   want_ok("hlookup",      "HLOOKUP(20,A1:C3,2)");
   want_ok("match",        "MATCH(30,A1:A5)");
@@ -130,7 +139,7 @@ int main() {
   want_fail("index-1arg",   "INDEX(A1:C3,2)");
   want_fail("match-norange","MATCH(30)");
 
-  // Items 23 / 24: order statistics and NPV.
+  // order statistics and NPV.
   want_ok("median",       "MEDIAN(A1:A5)");
   want_ok("mode",         "MODE(A1:A5)");
   want_ok("rank",         "RANK(5,A1:A5)");
@@ -141,7 +150,7 @@ int main() {
   want_fail("rank-norange",  "RANK(5)");
   want_fail("npv-norange",   "NPV(2)");
 
-  // Item 22: string operators.
+  // string operators.
   want_ok("upper",        "UPPER(\"x\")");
   want_ok("lower",        "LOWER(A1)");
   want_ok("trim",         "TRIM(\" x \")");
@@ -152,7 +161,7 @@ int main() {
   want_fail("find-1arg",    "FIND(A1)");
   want_fail("replace-3arg", "REPLACE(A1,2,3)");
 
-  // Item 27: variance / standard deviation.
+  // variance / standard deviation.
   want_ok("var",       "VAR(A1:A8)");
   want_ok("varp",      "VARP(A1:A8)");
   want_ok("stdev",     "STDEV(A1:A8)");
@@ -161,7 +170,7 @@ int main() {
   want_fail("var-bare",   "VAR");
   want_fail("var-noargs", "VAR()");
 
-  // Item 25: IF-aggregates.
+  // IF-aggregates.
   want_ok("sumif",          "SUMIF(A1:A5,>4,C1)");
   want_ok("countif",        "COUNTIF(A1:A5,=3)");
   want_ok("countif-neg",    "COUNTIF(A1:A5,<-3)");
@@ -171,14 +180,14 @@ int main() {
   want_fail("countif-noargs", "COUNTIF()");
   want_fail("averageif-norange", "AVERAGEIF(A1,>4,C1)");
 
-  // Item 79 (old numbering): counting aggregates.
+  // counting aggregates.
   want_ok("count",        "COUNT(A1:B2)");
   want_ok("counta",       "COUNTA(A1:B2)");
   want_ok("range-size",   "RANGE_SIZE(A1:B2)");
   want_fail("count-bare", "COUNT");
   want_fail("counta-noargs", "COUNTA()");
 
-  // Item 89: float / string / bool literals.
+  // float / string / bool literals.
   want_ok("float",           "1.5");
   want_ok("float-pi",        "3.14");
   want_ok("float-zero-frac", "2.0");

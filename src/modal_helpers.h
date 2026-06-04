@@ -1,6 +1,6 @@
 // Copyright (c) 2026 CharlesCNorton.  Licensed under the MIT License.
 //
-// Item 36: reusable ImGui modal-popup framework.  Popup visibility is
+// reusable ImGui modal-popup framework.  Popup visibility is
 // owned by ImGui (OpenPopup / BeginPopupModal); per-modal text buffers
 // are C++ statics here, mirroring the g_window / g_clipper pattern in
 // imgui_helpers.  The Coq tree drives a modal as an effect that
@@ -66,7 +66,7 @@ inline int64_t confirm(const std::string& id, const std::string& msg) {
   return result;
 }
 
-// Item 3: three-button confirm.  Returns 1 / 2 / 3 on the frame the
+// three-button confirm.  Returns 1 / 2 / 3 on the frame the
 // corresponding button is clicked, 0 otherwise.
 inline int64_t confirm3(const std::string& id, const std::string& msg,
                         const std::string& b1, const std::string& b2,
@@ -125,7 +125,7 @@ inline std::pair<bool, std::string> text_prompt(const std::string& id,
   return {done, out};
 }
 
-// Item 39: Find / Replace modal.  Two integer-literal fields; the
+// Find / Replace modal.  Two integer-literal fields; the
 // pair is reported once, on the Replace All frame, with the buffers
 // left intact for the next invocation.
 inline std::pair<bool, std::pair<std::string, std::string>> find_replace() {

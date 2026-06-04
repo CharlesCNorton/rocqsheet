@@ -12,12 +12,12 @@ Import ListNotations.
 Open Scope Z_scope.
 
 Inductive SupportedProp : Type :=
-  | PEqZ  : Z -> SupportedProp                   (* value = n *)
-  | PLtZ  : Z -> SupportedProp                   (* value < n *)
-  | PGtZ  : Z -> SupportedProp                   (* value > n *)
-  | PLeZ  : Z -> SupportedProp                   (* value <= n *)
-  | PGeZ  : Z -> SupportedProp                   (* value >= n *)
-  | PInRange : Z -> Z -> SupportedProp           (* lo <= value <= hi *)
+  | PEqZ  : Z -> SupportedProp                   (* Value = n *)
+  | PLtZ  : Z -> SupportedProp                   (* Value < n *)
+  | PGtZ  : Z -> SupportedProp                   (* Value > n *)
+  | PLeZ  : Z -> SupportedProp                   (* Value <= n *)
+  | PGeZ  : Z -> SupportedProp                   (* Value >= n *)
+  | PInRange : Z -> Z -> SupportedProp           (* Lo <= value <= hi *)
   | PAnd  : SupportedProp -> SupportedProp -> SupportedProp
   | POr   : SupportedProp -> SupportedProp -> SupportedProp
   | PNot  : SupportedProp -> SupportedProp.

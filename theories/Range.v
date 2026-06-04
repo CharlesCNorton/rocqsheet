@@ -79,12 +79,16 @@ Proof. vm_compute. reflexivity. Qed.
 (* Membership: a cell strictly inside a rectangle is in the range. *)
 Theorem range_member_inside_smoke :
   In (mkRef 1 1) (range_cells (mkRef 0 0) (mkRef 2 2)).
-Proof. vm_compute. right. left. reflexivity. Qed.
+Proof.
+  vm_compute. repeat (first [ now left | reflexivity | right ]).
+Qed.
 
 (* Membership: a cell at the rectangle corner is in the range. *)
 Theorem range_member_corner_smoke :
   In (mkRef 2 2) (range_cells (mkRef 0 0) (mkRef 2 2)).
-Proof. vm_compute. repeat (right; try (left; reflexivity)). Qed.
+Proof.
+  vm_compute. repeat (first [ now left | reflexivity | right ]).
+Qed.
 
 (* Empty range: no cells when the rectangle is inverted. *)
 Theorem range_empty_when_inverted_smoke :

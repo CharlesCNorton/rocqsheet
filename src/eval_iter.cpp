@@ -92,6 +92,8 @@ void walk_range(const Sheet& sheet, const CellRef& tl, const CellRef& br,
         v = int64_t(0);
       } else if (std::holds_alternative<Cell::CLit>(cv)) {
         v = std::get<Cell::CLit>(cv).d_a0;
+      } else if (std::holds_alternative<Cell::CDate>(cv)) {
+        v = std::get<Cell::CDate>(cv).d_a0;
       } else if (std::holds_alternative<Cell::CForm>(cv)) {
         if (visited.count(ref)) {
           v = std::nullopt;
@@ -169,8 +171,20 @@ std::optional<int64_t> apply_binop(Op op, int64_t l, int64_t r) {
     case Op::Add: return sat_add(l, r);
     case Op::Sub: return sat_sub(l, r);
     case Op::Mul: return sat_mul(l, r);
-    case Op::Div: return r == 0 ? std::optional<int64_t>{} : std::optional<int64_t>{l / r};
-    case Op::Mod: return r == 0 ? std::optional<int64_t>{} : std::optional<int64_t>{l % r};
+    case Op::Div: {
+      // Floored division, mirroring Coq's Z.div (C++ / truncates).
+      if (r == 0) return std::nullopt;
+      if (l == INT64_MIN && r == -1) return INT64_MIN;
+      int64_t q = l / r;
+      int64_t rem = l % r;
+      return (rem != 0 && ((rem < 0) != (r < 0))) ? q - 1 : q;
+    }
+    case Op::Mod: {
+      if (r == 0) return std::nullopt;
+      if (l == INT64_MIN && r == -1) return int64_t(0);
+      int64_t rem = l % r;
+      return (rem != 0 && ((rem < 0) != (r < 0))) ? rem + r : rem;
+    }
     case Op::Pow: return r < 0  ? std::optional<int64_t>{} : std::optional<int64_t>{int_pow(l, r)};
     case Op::Eq:  return int64_t(l == r);
     case Op::Lt:  return int64_t(l <  r);
@@ -196,6 +210,9 @@ std::optional<int64_t> eval_iter_impl(const Sheet& sheet,
   if (std::holds_alternative<Cell::CEmpty>(root_cell.v())) return int64_t(0);
   if (std::holds_alternative<Cell::CLit>(root_cell.v())) {
     return std::get<Cell::CLit>(root_cell.v()).d_a0;
+  }
+  if (std::holds_alternative<Cell::CDate>(root_cell.v())) {
+    return std::get<Cell::CDate>(root_cell.v()).d_a0;
   }
   if (!std::holds_alternative<Cell::CForm>(root_cell.v())) {
     return std::nullopt;  // CFloat / CStr / CBool
@@ -230,6 +247,9 @@ std::optional<int64_t> eval_iter_impl(const Sheet& sheet,
             have_val = true;
           } else if (std::holds_alternative<Cell::CLit>(tv)) {
             cur_val = std::get<Cell::CLit>(tv).d_a0;
+            have_val = true;
+          } else if (std::holds_alternative<Cell::CDate>(tv)) {
+            cur_val = std::get<Cell::CDate>(tv).d_a0;
             have_val = true;
           } else if (std::holds_alternative<Cell::CForm>(tv)) {
             owned.push_back(std::make_unique<Cell>(std::move(target_cell)));

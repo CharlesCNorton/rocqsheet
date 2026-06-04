@@ -92,6 +92,13 @@ Fixpoint shift_refs (dc dr : int) (e : Expr) : Expr :=
   | EIndex tl br a b =>
     EIndex (shift_ref dc dr tl) (shift_ref dc dr br)
            (shift_refs dc dr a) (shift_refs dc dr b)
+  | EDate3 a b c =>
+    EDate3 (shift_refs dc dr a) (shift_refs dc dr b)
+           (shift_refs dc dr c)
+  | EWeekdayF a => EWeekdayF (shift_refs dc dr a)
+  | EEdateF a b => EEdateF (shift_refs dc dr a) (shift_refs dc dr b)
+  | EEomonthF a b =>
+    EEomonthF (shift_refs dc dr a) (shift_refs dc dr b)
   end.
 
 Theorem shift_ref_zero : forall r, shift_ref 0 0 r = r.
@@ -229,7 +236,7 @@ Theorem delete_row_preserves_below_smoke :
 Proof. vm_compute. reflexivity. Qed.
 
 (* --- Insert / delete column at the data level ------------------ *)
-(* Item 61: column-shift analogues of insert_row / delete_row.
+(* Column-shift analogues of insert_row / delete_row.
    [insert_col s c] shifts every cell at col >= c one column right
    (dropping the rightmost column) and zeros out column c.  [delete_col]
    is the inverse: drops column c, shifts every col > c one to the left,

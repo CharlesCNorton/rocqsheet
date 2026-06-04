@@ -16,7 +16,7 @@ Open Scope Z_scope.
 
 Inductive NumberFormat : Type :=
   | NFInteger
-  | NFDecimal : Z -> NumberFormat   (* number of fractional digits *)
+  | NFDecimal : Z -> NumberFormat   (* Number of fractional digits *)
   | NFCurrency : NumberFormat
   | NFPercent : NumberFormat.
 

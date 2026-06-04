@@ -32,6 +32,7 @@ Definition cell_to_html (c : Cell) : PrimString.string :=
   | CStr s    => html_escape s
   | CBool b   => if b then "true" else "false"
   | CForm _   => ""
+  | CDate d   => date_to_string d
   end.
 
 Fixpoint row_to_html (s : Sheet) (row col : nat) (count : nat)

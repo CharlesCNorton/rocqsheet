@@ -1,5 +1,5 @@
 (* Copyright (c) 2026 CharlesCNorton.  Licensed under the MIT License. *)
-From Stdlib Require Import List Bool.
+From Stdlib Require Import List Bool BinInt.
 From Rocqsheet Require Import Rocqsheet.
 Import ListNotations.
 Import Rocqsheet.
@@ -60,11 +60,11 @@ Qed.
 (* Hide does not change a cell's underlying eval; the suppression
    lives entirely in the filter. *)
 Theorem hide_does_not_change_underlying_eval :
-  forall fuel hs s r r',
+  forall (fuel : nat) (hs : HiddenSet) (s : Sheet) (r r' : CellRef),
     eval_cell fuel s r = eval_cell fuel s r.
 Proof. reflexivity. Qed.
 
-(* unhide reverses hide for a freshly-hidden cell. *)
+(* Unhide reverses hide for a freshly-hidden cell. *)
 Theorem unhide_after_hide_smoke :
   forall hs r,
     is_hidden hs r = false ->

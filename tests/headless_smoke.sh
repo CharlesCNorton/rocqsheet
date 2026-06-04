@@ -47,7 +47,7 @@ assert_eval D1 100
 # Empty cell on the active sheet renders as 0.
 assert_eval Z99 0
 
-# Item 89 literals (row 10 of the Refs sheet) + item 37 neg-pow float.
+# Typed literals (row 10 of the Refs sheet) + negative-power float.
 assert_eval A10 TRUE
 assert_eval B10 FALSE
 assert_eval C10 3.14
@@ -55,31 +55,36 @@ assert_eval D10 -2.5
 assert_eval E10 hello
 assert_eval F10 0.125
 
-# Item 79: COUNT (numeric), COUNTA (non-empty), RANGE_SIZE (cardinality).
+# COUNT (numeric), COUNTA (non-empty), RANGE_SIZE (cardinality).
 assert_eval A11 4
 assert_eval B11 4
 assert_eval C11 6
 
-# Item 25: IF-aggregates over the Refs row (A1..D1 all evaluate to 100).
+# IF-aggregates over the Refs row (A1..D1 all evaluate to 100).
 assert_eval D11 4
 assert_eval E11 400
 assert_eval F11 100
 
-# Item 27: variance over four identical values is 0.
+# variance over four identical values is 0.
 assert_eval A12 0
 assert_eval B12 0
 
-# Item 22: string operators.
+# string operators.
 assert_eval A13 HI
 assert_eval B13 ho
 
-# Items 23 / 24: order statistics and NPV (A1..D1 all evaluate to 100).
+# order statistics and NPV (A1..D1 all evaluate to 100).
 assert_eval C13 100
 assert_eval D13 400
 
-# Item 21: lookups (A1..D1 all evaluate to 100).
+# lookups (A1..D1 all evaluate to 100).
 assert_eval E13 100
 assert_eval F13 1
+
+# a YYYY-MM-DD literal commits as a date cell (epoch
+# days); dates are integers to the evaluator.
+assert_eval A14 20608
+assert_eval B14 20609
 
 # --print-csv produces non-empty output.
 csv_lines=$("$BIN" --headless --load "$FIX" --print-csv | wc -l)

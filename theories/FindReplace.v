@@ -80,6 +80,17 @@ Fixpoint replace_int_in_expr (from to : Z) (e : Expr) : Expr :=
   | EIndex tl br a b =>
     EIndex tl br (replace_int_in_expr from to a)
                  (replace_int_in_expr from to b)
+  | EDate3 a b c =>
+    EDate3 (replace_int_in_expr from to a)
+           (replace_int_in_expr from to b)
+           (replace_int_in_expr from to c)
+  | EWeekdayF a => EWeekdayF (replace_int_in_expr from to a)
+  | EEdateF a b =>
+    EEdateF (replace_int_in_expr from to a)
+            (replace_int_in_expr from to b)
+  | EEomonthF a b =>
+    EEomonthF (replace_int_in_expr from to a)
+              (replace_int_in_expr from to b)
   end.
 
 Theorem replace_idempotent_when_equal :
@@ -88,12 +99,11 @@ Proof.
   intros n e. induction e; simpl; try reflexivity;
     try (rewrite IHe1; rewrite IHe2; reflexivity);
     try (rewrite IHe; reflexivity);
-    try (rewrite IHe1, IHe2, IHe3, IHe4; reflexivity).
-  - destruct (Z.eqb z n) eqn:H.
-    + apply Z.eqb_eq in H. subst. reflexivity.
-    + reflexivity.
-  - rewrite IHe1, IHe2, IHe3. reflexivity.
-  - rewrite IHe1, IHe2, IHe3. reflexivity.
+    try (rewrite IHe1, IHe2, IHe3, IHe4; reflexivity);
+    try (rewrite IHe1, IHe2, IHe3; reflexivity).
+  destruct (Z.eqb z n) eqn:H.
+  - apply Z.eqb_eq in H. subst. reflexivity.
+  - reflexivity.
 Qed.
 
 Theorem replace_int_smoke :

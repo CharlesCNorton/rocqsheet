@@ -100,7 +100,7 @@ Definition cell_satisfies_contract (c : CellContract) (s : Sheet) (r : CellRef)
   match c r, get_cell s r with
   | None, _ => True
   | Some _, CEmpty | Some _, CFloat _ | Some _, CStr _
-  | Some _, CBool _ | Some _, CForm _ => True
+  | Some _, CBool _ | Some _, CForm _ | Some _, CDate _ => True
   | Some pred, CLit v => pred v = true
   end.
 

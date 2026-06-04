@@ -1,6 +1,6 @@
 // Copyright (c) 2026 CharlesCNorton.  Licensed under the MIT License.
 //
-// Items 1-2: the autosave cadence timer and the crash-recovery file
+// the autosave cadence timer and the crash-recovery file
 // probes.  The 30-second window lives on a C++ monotonic clock so the
 // Coq tree needs no notion of wall time.
 

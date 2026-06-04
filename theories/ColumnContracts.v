@@ -23,7 +23,7 @@ Definition put_invariant (ci : ColumnInvariant) (col : PrimInt63.int)
     (p : Z -> bool) : ColumnInvariant :=
   fun col' => if PrimInt63.eqb col col' then Some p else ci col'.
 
-(* discharge ci col val: does the value satisfy the column's invariant? *)
+(* Discharge ci col val: does the value satisfy the column's invariant? *)
 Definition discharge (ci : ColumnInvariant) (col : PrimInt63.int) (val : Z)
     : bool :=
   match ci col with

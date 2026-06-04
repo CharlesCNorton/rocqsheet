@@ -93,7 +93,7 @@ Definition commit_to (ls : loop_state) (r : CellRef) (txt : PrimString.string)
     let body := strip_leading_eq txt in
     match parse_formula body with
     | Some e =>
-      (* Item 89: a formula that is just a literal collapses into the
+      (* A formula that is just a literal collapses into the
          matching Cell constructor — "=TRUE" lands as [CBool true],
          "=3.14" as [CFloat], "="hello"" as [CStr] — so the save
          format and renderer see a plain value, not a formula. *)
@@ -130,12 +130,24 @@ Definition commit_to (ls : loop_state) (r : CellRef) (txt : PrimString.string)
              (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
              (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls) true
     | None =>
-      let new_eb := put_edit (ls_edit_buf ls) r txt in
-      let new_pe := add_ref (ls_parse_errs ls) r in
-      mkLoop before (ls_selected ls) (ls_fbar_text ls)
-             new_eb new_pe (ls_undo ls) (ls_redo ls) (ls_formats ls)
-             (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
-             (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls) true
+      (* A YYYY-MM-DD literal commits as a date cell. *)
+      match parse_date_literal txt with
+      | Some d =>
+        let new_sheet := set_cell before r (CDate d) in
+        let new_eb := put_edit (ls_edit_buf ls) r txt in
+        let new_pe := remove_ref (ls_parse_errs ls) r in
+        mkLoop new_sheet (ls_selected ls) (ls_fbar_text ls)
+               new_eb new_pe (trim_undo ((before, "edit cell"%pstring) :: ls_undo ls)) nil (ls_formats ls)
+               (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
+               (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls) true
+      | None =>
+        let new_eb := put_edit (ls_edit_buf ls) r txt in
+        let new_pe := add_ref (ls_parse_errs ls) r in
+        mkLoop before (ls_selected ls) (ls_fbar_text ls)
+               new_eb new_pe (ls_undo ls) (ls_redo ls) (ls_formats ls)
+               (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
+               (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls) true
+      end
     end.
 
 Definition do_commit (ls : loop_state) : loop_state :=
@@ -248,7 +260,7 @@ Definition do_delete_row (ls : loop_state) : loop_state :=
            (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls) true
   end.
 
-(* Item 61: column analogues of do_insert_row / do_delete_row.
+(* Column analogues of do_insert_row / do_delete_row.
    Inserts a fresh column at the selected cell's column position
    (shifts every cell at col >= c one column right; drops the
    rightmost column).  Delete is the inverse. *)

@@ -13,9 +13,9 @@ Import Rocqsheet.
 Open Scope int63.
 
 Inductive CondPred : Type :=
-  | CPGtZ : Z -> CondPred                  (* highlight when value > n *)
-  | CPLtZ : Z -> CondPred                  (* highlight when value < n *)
-  | CPEqZ : Z -> CondPred                  (* highlight when value = n *).
+  | CPGtZ : Z -> CondPred                  (* Highlight when value > n *)
+  | CPLtZ : Z -> CondPred                  (* Highlight when value < n *)
+  | CPEqZ : Z -> CondPred                  (* Highlight when value = n *).
 
 Record CondRule : Type := mkCondRule
   { cr_tl   : CellRef

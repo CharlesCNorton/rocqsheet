@@ -114,7 +114,7 @@ Proof. vm_compute. reflexivity. Qed.
 Theorem sum_5x5_with_hole :
   let dst := mkRef 5 0 in
   let s := fill_5x5 new_sheet in
-  let s := set_cell s (mkRef 2 2) CEmpty in   (* clears the middle 13 *)
+  let s := set_cell s (mkRef 2 2) CEmpty in   (* Clears the middle 13 *)
   let s := set_cell s dst (CForm (ESum (mkRef 0 0) (mkRef 4 4))) in
   eval_cell DEFAULT_FUEL s dst = EVal (325 - 13)%Z.
 Proof. vm_compute. reflexivity. Qed.

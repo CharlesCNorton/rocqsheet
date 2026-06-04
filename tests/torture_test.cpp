@@ -138,7 +138,7 @@ void test_div_mod_zero_neg_pow() {
   s = form(s, 2, 0, S::Expr::emod(S::Expr::eref(S::CellRef{0, 0}),
                                    S::Expr::eint(0)));
   check("mod-by-0 → EErr", is_err(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{2, 0})));
-  // Item 37: 2^-3 = 1/8 as a float (EFVal 0.125); 0^-3 stays EErr.
+  // 2^-3 = 1/8 as a float (EFVal 0.125); 0^-3 stays EErr.
   s = form(s, 3, 0, S::Expr::epow(S::Expr::eint(2), S::Expr::eint(-3)));
   {
     auto r = S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{3, 0});
@@ -333,7 +333,7 @@ void test_aggregation_with_holes() {
             325 - 13);
 }
 
-// Item 79: COUNT counts numeric cells, COUNTA counts non-empty
+// COUNT counts numeric cells, COUNTA counts non-empty
 // cells, RANGE_SIZE keeps the original rectangle cardinality.
 void test_count_counta() {
   // A1=1, B1=2.5f, C1="x", D1=TRUE, E1 empty, F1==A1+1, G1==1/0.
@@ -373,7 +373,7 @@ void test_count_counta() {
             as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{5, 1})), 0);
 }
 
-// Item 25: SUMIF / COUNTIF / AVERAGEIF with a CmpOp-against-literal
+// SUMIF / COUNTIF / AVERAGEIF with a CmpOp-against-literal
 // predicate and an offset aggregation range.
 void test_if_aggregates() {
   // Criteria column A rows 1-5; data column C rows 1-5.
@@ -403,7 +403,7 @@ void test_if_aggregates() {
         is_err(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{4, 4})));
 }
 
-// Item 27: VAR / VARP / STDEV / STDEVP over integer cells.  The
+// VAR / VARP / STDEV / STDEVP over integer cells.  The
 // classic dataset 2,4,4,4,5,5,7,9: n=8, mean 5, population variance
 // 4, population stdev 2.  Sample variance 32/7 truncates to 4.
 void test_var_stdev() {
@@ -431,7 +431,7 @@ void test_var_stdev() {
         is_err(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{3, 5})));
 }
 
-// Item 4: CSV import through the extracted scanner and its iterative
+// CSV import through the extracted scanner and its iterative
 // C++ driver.
 void test_csv_import() {
   auto sh = Csv::csv_import("7,hi\n\"a,b\",-3\n", S::new_sheet,
@@ -467,7 +467,7 @@ void test_csv_import() {
         std::holds_alternative<S::Cell::CLit>(last.v()));
 }
 
-// Item 22: UPPER / LOWER / TRIM / FIND / REPLACE.
+// UPPER / LOWER / TRIM / FIND / REPLACE.
 void test_string_funcs() {
   auto s = put(S::new_sheet, 0, 0, S::Cell::cstr("  Hello, World  "));
   auto str_at = [&](const S::Sheet& sh, int c, int r) {
@@ -501,7 +501,7 @@ void test_string_funcs() {
   check("SUBSTR OOB clamps", str_at(s, 7, 0) == "");
 }
 
-// Items 23 / 24: MEDIAN / MODE / RANK / PERCENTILE / NPV.
+// MEDIAN / MODE / RANK / PERCENTILE / NPV.
 void test_order_stats_npv() {
   auto s = S::new_sheet;
   const int64_t xs[5] = {9, 1, 5, 7, 5};
@@ -530,7 +530,7 @@ void test_order_stats_npv() {
         is_err(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{4, 1})));
 }
 
-// Item 21: VLOOKUP / HLOOKUP / MATCH / INDEX (exact match).
+// VLOOKUP / HLOOKUP / MATCH / INDEX (exact match).
 void test_lookups() {
   // Key column A: 10, 20, 30; value column B: 100, 200, 300; C: text.
   auto s = S::new_sheet;
@@ -580,7 +580,7 @@ void test_lookups() {
             as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{4, 6})), 3000);
 }
 
-// Item 19 (string half): numeric strings coerce in integer contexts.
+// numeric strings coerce in integer contexts.
 void test_string_coercion() {
   auto s = put(S::new_sheet, 0, 0, S::Cell::cstr("5"));
   s = put(s, 1, 0, S::Cell::cstr("x"));
@@ -595,6 +595,40 @@ void test_string_coercion() {
                                   S::Expr::eint(2)));
   check("\"x\"+2 → EErr",
         is_err(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{4, 0})));
+}
+
+// CDate cells, DATE / WEEKDAY / EDATE / EOMONTH, and
+// the floored-division extraction fix.
+void test_dates() {
+  auto s = put(S::new_sheet, 0, 0, S::Cell::cdate(20608));  // 2026-06-04
+  s = form(s, 1, 0, S::Expr::eadd(S::Expr::eref(S::CellRef{0, 0}),
+                                  S::Expr::eint(1)));
+  check_int("date + 1",
+            as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{1, 0})), 20609);
+  s = form(s, 2, 0, S::Expr::edate3(S::Expr::eint(2026), S::Expr::eint(6),
+                                    S::Expr::eint(4)));
+  check_int("DATE(2026,6,4)",
+            as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{2, 0})), 20608);
+  s = form(s, 3, 0, S::Expr::eweekdayf(S::Expr::eint(20608)));
+  check_int("WEEKDAY",
+            as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{3, 0})), 4);
+  s = form(s, 4, 0, S::Expr::eedatef(S::Expr::eint(20608),
+                                     S::Expr::eint(-2)));
+  check_int("EDATE -2",
+            as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{4, 0})), 20547);
+  s = form(s, 5, 0, S::Expr::eeomonthf(S::Expr::eint(20608),
+                                       S::Expr::eint(0)));
+  check_int("EOMONTH",
+            as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{5, 0})), 20634);
+  // Floored division now matches the Coq spec on negatives.
+  s = form(s, 6, 0, S::Expr::ediv(S::Expr::eint(-7), S::Expr::eint(2)));
+  check_int("floored div",
+            as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{6, 0})), -4);
+  s = form(s, 7, 0, S::Expr::emod(S::Expr::eint(-7), S::Expr::eint(2)));
+  check_int("floored mod",
+            as_int(S::eval_cell(S::DEFAULT_FUEL, s, S::CellRef{7, 0})), 1);
+  agree_iter_vs_spec("floored-div", s, S::CellRef{6, 0});
+  agree_iter_vs_spec("floored-mod", s, S::CellRef{7, 0});
 }
 
 void test_boolean_ops() {
@@ -784,6 +818,7 @@ int main() {
   test_order_stats_npv();
   test_lookups();
   test_string_coercion();
+  test_dates();
   test_boolean_ops();
   test_string_ops();
   test_correspondence_corpus();

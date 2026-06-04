@@ -1,4 +1,4 @@
-// Item 86: per-user "Open Recent" history persisted at
+// per-user "Open Recent" history persisted at
 // ~/.config/rocqsheet/recent (one path per line, newest first).
 // recent_helpers::record(path) prepends `path`, dedupes, caps the
 // list at MAX_RECENT, atomically rewrites the file via tmp + rename.

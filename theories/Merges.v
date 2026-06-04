@@ -89,7 +89,7 @@ Proof.
   apply (merged_get_in_region s tl br tl ms Hin).
 Qed.
 
-(* unmerge ∘ merge = id when the new merge's top-left is not already
+(* Unmerge ∘ merge = id when the new merge's top-left is not already
    present.  remove_merge picks the first matching entry and the
    add_merge above puts the fresh one at the head, so the operation
    pair cancels. *)

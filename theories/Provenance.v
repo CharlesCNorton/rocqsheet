@@ -19,7 +19,7 @@ Definition Digest : Type := Z.
 Section Hash.
   Variable digest : list Z -> Digest.
 
-  (* value_hash combines the formula digest [f] with the input
+  (* Value_hash combines the formula digest [f] with the input
      digests [ih] by feeding the concatenated list to [digest]. *)
   Definition value_hash (f : Digest) (ih : list Digest) : Digest :=
     digest (f :: ih).
