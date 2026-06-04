@@ -86,7 +86,11 @@ Inductive token : Type :=
   | TMin
   | TMax
   | TColon
-  | TNeq.
+  | TNeq
+  | TIfs
+  | TSwitch
+  | TCounta
+  | TRangeSize.
 
 (* INT64_MAX / 10 = 922337203685477580; one extra digit must not
    exceed (INT64_MAX mod 10) = 7.  The negated form accepts one extra
@@ -287,8 +291,15 @@ Fixpoint tokenize_aux
         let c5u := chr i5 in
         let c6u := chr i6 in
         let seven_letter_kw_lp := lparen i7 in
+        let six_letter_kw_lp := lparen i6 in
         let five_letter_kw_lp := lparen i5 in
+        let four_letter_kw_lp := lparen i4 in
         let three_letter_kw_lp := lparen i3 in
+        let i9  := PrimInt63.add i 9 in
+        let i10 := PrimInt63.add i 10 in
+        let c7u := chr i7 in
+        let c8u := chr i8 in
+        let c9u := chr i9 in
         if PrimInt63.eqb c0 73 && PrimInt63.eqb c1u 70 &&
            PrimInt63.eqb c2u 69 && PrimInt63.eqb c3u 82 &&
            PrimInt63.eqb c4u 82 && PrimInt63.eqb c5u 79 &&
@@ -296,12 +307,40 @@ Fixpoint tokenize_aux
         then
           (* "IFERROR(" *)
           tokenize_aux fuel' s len i8 (TIfErr :: acc)
+        else if PrimInt63.eqb c0 82 && PrimInt63.eqb c1u 65 &&
+                PrimInt63.eqb c2u 78 && PrimInt63.eqb c3u 71 &&
+                PrimInt63.eqb c4u 69 && PrimInt63.eqb c5u 95 &&
+                PrimInt63.eqb c6u 83 && PrimInt63.eqb c7u 73 &&
+                PrimInt63.eqb c8u 90 && PrimInt63.eqb c9u 69 &&
+                lparen i10
+        then
+          (* "RANGE_SIZE(" — alias for the existing ECount semantics. *)
+          tokenize_aux fuel' s len (PrimInt63.add i10 1) (TRangeSize :: acc)
+        else if PrimInt63.eqb c0 83 && PrimInt63.eqb c1u 87 &&
+                PrimInt63.eqb c2u 73 && PrimInt63.eqb c3u 84 &&
+                PrimInt63.eqb c4u 67 && PrimInt63.eqb c5u 72 &&
+                six_letter_kw_lp
+        then
+          (* "SWITCH(" *)
+          tokenize_aux fuel' s len i7 (TSwitch :: acc)
+        else if PrimInt63.eqb c0 67 && PrimInt63.eqb c1u 79 &&
+                PrimInt63.eqb c2u 85 && PrimInt63.eqb c3u 78 &&
+                PrimInt63.eqb c4u 84 && PrimInt63.eqb c5u 65 &&
+                six_letter_kw_lp
+        then
+          (* "COUNTA(" *)
+          tokenize_aux fuel' s len i7 (TCounta :: acc)
         else if PrimInt63.eqb c0 67 && PrimInt63.eqb c1u 79 &&
                 PrimInt63.eqb c2u 85 && PrimInt63.eqb c3u 78 &&
                 PrimInt63.eqb c4u 84 && five_letter_kw_lp
         then
           (* "COUNT(" *)
           tokenize_aux fuel' s len i6 (TCount :: acc)
+        else if PrimInt63.eqb c0 73 && PrimInt63.eqb c1u 70 &&
+                PrimInt63.eqb c2u 83 && three_letter_kw_lp
+        then
+          (* "IFS(" *)
+          tokenize_aux fuel' s len i4 (TIfs :: acc)
         else if PrimInt63.eqb c0 78 && PrimInt63.eqb c1u 79 &&
                 PrimInt63.eqb c2u 84 && three_letter_kw_lp
         then
@@ -355,6 +394,45 @@ Definition tokenize (s : PrimString.string) : option (list token) :=
 
 (* Recursive descent.  Each non-terminal returns the parsed Expr
    plus the remaining tokens, or None on syntax error. *)
+
+(* Desugar IFS(c1, v1, c2, v2, ..., default) into a right-nested
+   chain of EIf nodes.  The argument list must have an odd length
+   >= 3 (at least one (cond, val) pair plus a default).  Returns
+   None on a malformed argument list. *)
+Fixpoint build_ifs_chain (args : list Expr) : option Expr :=
+  match args with
+  | nil => None
+  | default :: nil => Some default
+  | c :: v :: rest =>
+    match build_ifs_chain rest with
+    | None => None
+    | Some tail => Some (EIf c v tail)
+    end
+  end.
+
+Definition desugar_ifs (args : list Expr) : option Expr :=
+  match args with
+  | _ :: _ :: _ :: _ => build_ifs_chain args
+  | _ => None
+  end.
+
+(* SWITCH(value, c1, v1, ..., default) ≡ IFS(value=c1, v1, ..., default). *)
+Fixpoint build_switch_chain (value : Expr) (args : list Expr) : option Expr :=
+  match args with
+  | nil => None
+  | default :: nil => Some default
+  | c :: v :: rest =>
+    match build_switch_chain value rest with
+    | None => None
+    | Some tail => Some (EIf (EEq value c) v tail)
+    end
+  end.
+
+Definition desugar_switch (args : list Expr) : option Expr :=
+  match args with
+  | value :: rest => build_switch_chain value rest
+  | _ => None
+  end.
 
 Fixpoint parse_top (fuel : nat) (toks : list token)
     : option (Expr * list token) :=
@@ -537,7 +615,60 @@ with parse_factor (fuel : nat) (toks : list token)
       Some (EMin r1 r2, rest')
     | TMax :: TRef r1 :: TColon :: TRef r2 :: TRParen :: rest' =>
       Some (EMax r1 r2, rest')
+    (* RANGE_SIZE is a more descriptive spelling for the rectangle-
+       cardinality semantics of the existing ECount.  Maps to the
+       same kernel constructor.  COUNTA (non-empty count) still
+       requires a new ECountA constructor and is deferred; for now
+       it parses to ECount (rectangle size) too so users at least
+       get something, with a tracking comment in TODO item 90. *)
+    | TRangeSize :: TRef r1 :: TColon :: TRef r2 :: TRParen :: rest' =>
+      Some (ECount r1 r2, rest')
+    | TCounta :: TRef r1 :: TColon :: TRef r2 :: TRParen :: rest' =>
+      Some (ECount r1 r2, rest')
+    | TIfs :: rest =>
+      (* IFS(c1, v1, c2, v2, ..., default).  Parsed as a flat
+         comma-separated list with the final entry treated as the
+         default; the result is the right-nested EIf chain. *)
+      match parse_arg_list fuel' rest [] with
+      | Some (args, rest') =>
+          match desugar_ifs args with
+          | Some e => Some (e, rest')
+          | None => None
+          end
+      | None => None
+      end
+    | TSwitch :: rest =>
+      (* SWITCH(value, c1, v1, c2, v2, ..., default).  Equivalent to
+         IFS(value = c1, v1, value = c2, v2, ..., default). *)
+      match parse_arg_list fuel' rest [] with
+      | Some (args, rest') =>
+          match desugar_switch args with
+          | Some e => Some (e, rest')
+          | None => None
+          end
+      | None => None
+      end
     | _ => None
+    end
+  end
+
+with parse_arg_list (fuel : nat) (toks : list token) (acc : list Expr)
+    : option (list Expr * list token) :=
+  match fuel with
+  | O => None
+  | S fuel' =>
+    match toks with
+    | TRParen :: rest => Some (rev acc, rest)
+    | _ =>
+      match parse_top fuel' toks with
+      | None => None
+      | Some (e, rest) =>
+        match rest with
+        | TComma :: rest' => parse_arg_list fuel' rest' (e :: acc)
+        | TRParen :: rest' => Some (rev (e :: acc), rest')
+        | _ => None
+        end
+      end
     end
   end.
 
