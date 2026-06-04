@@ -18,7 +18,10 @@ Inductive NumberFormat : Type :=
   | NFInteger
   | NFDecimal : Z -> NumberFormat   (* Number of fractional digits *)
   | NFCurrency : NumberFormat
-  | NFPercent : NumberFormat.
+  | NFPercent : NumberFormat
+  (* Render the integer as a calendar date (epoch days), matching
+     [date_to_string] on the kernel side. *)
+  | NFDate : NumberFormat.
 
 Definition default_number_format : NumberFormat := NFInteger.
 

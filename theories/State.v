@@ -191,6 +191,16 @@ Definition demo_sheet : Sheet :=
              (EMod (EInt 17%Z) (EInt 5%Z)) in
   let s := put_form s 1 31
              (EPow (EInt 2%Z) (EInt 10%Z)) in
+
+  (* Date demo: a CDate literal, a shifted month, and the gap in
+     whole days — the formula cells render as dates via the NFDate
+     entries in demo_formats. *)
+  let s := put_cell s 0 33 (CDate 20608%Z) in
+  let s := put_form s 1 33
+             (EEdateF (ERef (ref_at 0 33)) (EInt 1%Z)) in
+  let s := put_form s 2 33
+             (EDatedif (ERef (ref_at 0 33)) (ERef (ref_at 1 33))
+                       (EInt 0%Z)) in
   s.
 
 (* ----- Pretty printer (Cell -> source text) ----------------------- *)
@@ -627,7 +637,10 @@ Definition demo_formats : FormatMap :=
   ; (ref_at 3 2, mkFormat true 255%Z      (* 0x0000FF blue *)
                           true  AlignCenter NFPercent)
   ; (ref_at 2 4, mkFormat false 8388736%Z (* 0x800080 purple *)
-                          false AlignRight NFInteger) ].
+                          false AlignRight NFInteger)
+  (* The EDATE result on the date demo row renders as a calendar
+     date rather than a bare epoch-day integer. *)
+  ; (ref_at 1 33, mkFormat false 0%Z false AlignRight NFDate) ].
 
 Definition sales_sheet : Sheet :=
   let s := new_sheet in

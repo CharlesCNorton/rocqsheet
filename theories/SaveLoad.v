@@ -113,13 +113,15 @@ Fixpoint save_all_sheets_aux (ls : loop_state) (i : nat) (count : nat)
   end.
 
 (* Encode a NumberFormat as a save-file token: "I" for integer,
-   "D<digits>" for decimal, "C" for currency, "P" for percent. *)
+   "D<digits>" for decimal, "C" for currency, "P" for percent,
+   "T" for date ("D" is taken by Decimal). *)
 Definition save_nf_token (nf : NumberFormat) : PrimString.string :=
   match nf with
   | NFInteger     => "I"
   | NFDecimal n   => PrimString.cat "D" (string_of_z n)
   | NFCurrency    => "C"
   | NFPercent     => "P"
+  | NFDate        => "T"
   end.
 
 Definition save_align_token (a : Align) : PrimString.string :=
@@ -493,8 +495,8 @@ Definition parse_uint_field (txt : PrimString.string) (len i : int)
   end.
 
 (* Parse the NumberFormat tail of an F= line: "I", "D<digits>",
-   "C", or "P".  [start] is the offset of the leading char; returns
-   the parsed format and the eol position. *)
+   "C", "P", or "T".  [start] is the offset of the leading char;
+   returns the parsed format and the eol position. *)
 Definition parse_nf_token (txt : PrimString.string) (len start : int)
                           (fuel : nat)
   : option (NumberFormat * int) :=
@@ -508,6 +510,8 @@ Definition parse_nf_token (txt : PrimString.string) (len start : int)
     then Some (NFCurrency, eol)
     else if PrimInt63.eqb c 80 (* 'P' *)
     then Some (NFPercent, eol)
+    else if PrimInt63.eqb c 84 (* 'T' *)
+    then Some (NFDate, eol)
     else if PrimInt63.eqb c 68 (* 'D' *)
     then
       match parse_uint_aux fuel txt len (PrimInt63.add start 1) 0%Z false with
@@ -515,6 +519,34 @@ Definition parse_nf_token (txt : PrimString.string) (len start : int)
       | Some (digits, _) => Some (NFDecimal digits, eol)
       end
     else None.
+
+(* Every format token survives the save/parse round trip. *)
+Theorem nf_token_round_trip_integer :
+  parse_nf_token (save_nf_token NFInteger) 1 0 4%nat
+  = Some (NFInteger, 1%uint63).
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem nf_token_round_trip_currency :
+  parse_nf_token (save_nf_token NFCurrency) 1 0 4%nat
+  = Some (NFCurrency, 1%uint63).
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem nf_token_round_trip_percent :
+  parse_nf_token (save_nf_token NFPercent) 1 0 4%nat
+  = Some (NFPercent, 1%uint63).
+Proof. vm_compute. reflexivity. Qed.
+
+Theorem nf_token_round_trip_date :
+  parse_nf_token (save_nf_token NFDate) 1 0 4%nat
+  = Some (NFDate, 1%uint63).
+Proof. vm_compute. reflexivity. Qed.
+
+(* The decimal token goes through the FFI [string_of_z], which does
+   not reduce in Coq; assert the parse direction on the concrete
+   token shape save emits instead. *)
+Theorem nf_token_parse_decimal :
+  parse_nf_token "D2" 2 0 8%nat = Some (NFDecimal 2%Z, 2%uint63).
+Proof. vm_compute. reflexivity. Qed.
 
 (* Apply an F=col,row,bold,color,border,align,nf line starting at
    [i] (where 'F' has just been seen).  Returns the updated

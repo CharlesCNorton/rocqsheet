@@ -5,6 +5,7 @@
 
 #include "rocqsheet.h"
 #include "../src/eval_iter.h"
+#include "../src/number_format_helpers.h"
 
 #include <climits>
 #include <cstdint>
@@ -841,6 +842,28 @@ void test_workbook_invariants() {
             (int64_t)(last + 1));
 }
 
+// The NFDate display branch mirrors the proven Coq renderer: the
+// helper's hand-transcribed civil-from-days must agree with the
+// extracted date_to_string everywhere we probe, including the epoch
+// and pre-epoch days.
+void test_nfdate_format() {
+  const NumberFormat date_fmt{NumberFormat::NFDate{}};
+  for (int64_t z : {int64_t(20608), int64_t(0), int64_t(-1),
+                    int64_t(-719162), int64_t(11111), int64_t(45000)}) {
+    const std::string tag =
+        "NFDate matches date_to_string @" + std::to_string(z);
+    check(tag.c_str(),
+          number_format_helpers::format_z(z, date_fmt) ==
+              S::date_to_string(z));
+  }
+  check("NFDate literal render",
+        number_format_helpers::format_z(int64_t(20608), date_fmt) ==
+            "2026-06-04");
+  check("NFDate float truncates",
+        number_format_helpers::format_float(20608.7, date_fmt) ==
+            "2026-06-04");
+}
+
 }  // namespace
 
 int main() {
@@ -864,6 +887,7 @@ int main() {
   test_lookups();
   test_string_coercion();
   test_dates();
+  test_nfdate_format();
   test_boolean_ops();
   test_string_ops();
   test_correspondence_corpus();
