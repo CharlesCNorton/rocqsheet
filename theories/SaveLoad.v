@@ -856,15 +856,19 @@ Definition render_modals (ls : loop_state) : itree imguiE loop_state :=
      has no default constructor, so a declare-then-assign extraction
      does not compile (the same trap cond_apply documents). *)
   ls0 <- (if done then Ret (do_replace_pair ls ftxt ttxt) else Ret ls) ;;
+  (* Sheet rename prompt. *)
+  rn <- modal_text_prompt "Rename Sheet" "New name" ;;
+  let '(rdone, rname) := rn in
+  ls0b <- (if rdone then Ret (do_rename_sheet ls0 rname) else Ret ls0) ;;
   (* Item 2: crash recovery.  Loading the autosave marks the workbook
      dirty (it differs from the on-disk save); declining retires the
      snapshot so the prompt does not reappear every launch. *)
   rec <- modal_confirm "Recover autosave?"
            "An autosave newer than the last save exists. Load it?" ;;
   ls1 <- (if Z.eqb rec 1%Z
-          then l <- do_load_from ls0 autosave_path ;;
+          then l <- do_load_from ls0b autosave_path ;;
                Ret (set_dirty l true)
-          else Ret ls0) ;;
+          else Ret ls0b) ;;
   (if Z.eqb rec 2%Z then file_delete autosave_path else Ret tt) ;;
   (* Item 3: save-before-exit.  Save-and-close saves (clearing the
      dirty flag) and re-requests the close; discard clears the flag

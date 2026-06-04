@@ -97,6 +97,34 @@ inline int64_t confirm3(const std::string& id, const std::string& msg,
   return result;
 }
 
+// Single-text-field prompt (sheet rename and future consumers).
+// Returns (done, text); done is true exactly on the OK frame.
+inline std::pair<bool, std::string> text_prompt(const std::string& id,
+                                                const std::string& label) {
+  static char buf[256] = "";
+  bool done = false;
+  std::string out;
+  consume_pending(id.c_str());
+  if (ImGui::BeginPopupModal(id.c_str(), nullptr,
+                             ImGuiWindowFlags_AlwaysAutoResize)) {
+    ImGui::InputText(label.c_str(), buf, sizeof buf);
+    ImGui::Separator();
+    if (ImGui::Button("OK", ImVec2(120, 0))) {
+      done = true;
+      out = buf;
+      buf[0] = '\0';
+      ImGui::CloseCurrentPopup();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+      buf[0] = '\0';
+      ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
+  }
+  return {done, out};
+}
+
 // Item 39: Find / Replace modal.  Two integer-literal fields; the
 // pair is reported once, on the Replace All frame, with the buffers
 // left intact for the next invocation.

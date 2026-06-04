@@ -94,6 +94,10 @@ Inductive imguiE : Type -> Type :=
   | EModalConfirm3    : PrimString.string -> PrimString.string ->
                         PrimString.string -> PrimString.string ->
                         PrimString.string -> imguiE Z
+  (* Sheet-rename (and future single-field) prompt: returns
+     (done, text) where done is true exactly on the OK frame. *)
+  | EModalTextPrompt  : PrimString.string -> PrimString.string ->
+                        imguiE (bool * PrimString.string)
   (* Item 1: true at most once per 30-second window (C++ monotonic
      clock); gates the autosave write. *)
   | EAutosaveDue      : imguiE bool
@@ -212,6 +216,9 @@ Definition modal_find_replace
 Definition modal_confirm3 (id msg b1 b2 b3 : PrimString.string)
   : itree imguiE Z :=
   trigger (EModalConfirm3 id msg b1 b2 b3).
+Definition modal_text_prompt (id label : PrimString.string)
+  : itree imguiE (bool * PrimString.string) :=
+  trigger (EModalTextPrompt id label).
 Definition autosave_due : itree imguiE bool := trigger EAutosaveDue.
 Definition file_newer (a b : PrimString.string) : itree imguiE bool :=
   trigger (EFileNewer a b).
@@ -299,6 +306,7 @@ Crane Extract Inductive imguiE => ""
     "modal_helpers::confirm(%a0, %a1)"
     "modal_helpers::find_replace()"
     "modal_helpers::confirm3(%a0, %a1, %a2, %a3, %a4)"
+    "modal_helpers::text_prompt(%a0, %a1)"
     "autosave_helpers::due()"
     "autosave_helpers::newer(%a0, %a1)"
     "autosave_helpers::remove_file(%a0)"
@@ -404,6 +412,8 @@ Crane Extract Inlined Constant modal_find_replace =>
 Crane Extract Inlined Constant modal_confirm3 =>
   "modal_helpers::confirm3(%a0, %a1, %a2, %a3, %a4)"
   From "modal_helpers.h".
+Crane Extract Inlined Constant modal_text_prompt =>
+  "modal_helpers::text_prompt(%a0, %a1)" From "modal_helpers.h".
 Crane Extract Inlined Constant autosave_due =>
   "autosave_helpers::due()" From "autosave_helpers.h".
 Crane Extract Inlined Constant file_newer =>

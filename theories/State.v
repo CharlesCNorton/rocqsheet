@@ -662,6 +662,22 @@ Definition select_cell (ls : loop_state) (r : CellRef) : loop_state :=
          (ls_merges ls) (ls_sheet_names ls) (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls)
          (ls_dirty ls).
 
+(* Item 39: rename the active sheet.  Empty names are rejected; sheet
+   names persist via the save format's N= directive, so a rename
+   dirties the workbook. *)
+Definition do_rename_sheet (ls : loop_state) (name : PrimString.string)
+  : loop_state :=
+  if PrimInt63.eqb (PrimString.length name) 0 then ls
+  else
+    mkLoop (ls_sheet ls) (ls_selected ls) (ls_fbar_text ls)
+           (ls_edit_buf ls) (ls_parse_errs ls)
+           (ls_undo ls) (ls_redo ls) (ls_formats ls)
+           (ls_other_sheets ls) (ls_active ls) (ls_charts ls)
+           (ls_merges ls)
+           (list_set_nth_string (ls_sheet_names ls)
+              (nat_of_int (ls_active ls)) name)
+           (ls_show_formulas ls) (ls_zoom ls) (ls_auto_recalc ls) true.
+
 (* Items 1-3: dirty-flag writer used by save (false), load-recovery
    (true), and the discard-and-close path (false). *)
 Definition set_dirty (ls : loop_state) (d : bool) : loop_state :=

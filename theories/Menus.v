@@ -96,6 +96,9 @@ Definition edit_menu (ls : loop_state) : itree imguiE loop_state :=
      per-frame modal pump applies the committed pair. *)
   rep_clicked <- imgui_menu_item "Find / Replace... (Ctrl+H)" true ;;
   (if rep_clicked then modal_open "Find / Replace" else Ret tt) ;;
+  (* Sheet rename through the same modal framework. *)
+  ren_clicked <- imgui_menu_item "Rename Active Sheet..." true ;;
+  (if ren_clicked then modal_open "Rename Sheet" else Ret tt) ;;
   Ret ls_m.
 
 (* View menu: Show Formulas + Auto-Recalc toggles, Zoom controls.
